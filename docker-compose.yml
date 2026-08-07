@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        # 1 = kèm docling (mô hình bố cục). Ảnh phình lên nhiều GB vì torch.
+        WITH_LAYOUT: ${WITH_LAYOUT:-0}
+    image: docthau
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env                # bắt buộc có OPENROUTER_API_KEY
+    environment:
+      # Không kèm docling thì phải tắt hẳn, nếu không mỗi lần nạp bài lại thử
+      # import rồi mới rơi về đường lùi.
+      LAYOUT_BACKEND: ${LAYOUT_BACKEND:-off}
+    # Chạy bằng đúng uid/gid của người dùng trên máy chủ. Không có dòng này thì
+    # container (uid 10001) không ghi nổi vào ./data của máy chủ (uid 1000) và
+    # SQLite chết ngay với "unable to open database file".
+    #   echo "DOCKER_UID=$(id -u)" >> .env ; echo "DOCKER_GID=$(id -g)" >> .env
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    volumes:
+      # SQLite + PDF gốc + ảnh cắt ra. Nâng cấp ảnh không mất bài đã đọc.
+      - ./data:/data
+    restart: unless-stopped

@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đọc Thấu — đọc bài báo khoa học đến mức thật sự hiểu</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📑</text></svg>">
+</head>
+<body>
+
+<!-- ============================ MÀN HÌNH NHẬP ============================ -->
+<section id="start" class="screen">
+  <div class="start-wrap">
+    <header class="start-head">
+      <h1>Đọc Thấu</h1>
+      <p class="lede">
+        Đọc bài báo khoa học đến mức <strong>thật sự hiểu</strong>, không chỉ hiểu nghĩa chữ.
+        Dịch giữ nguyên mạch lập luận, chốt thuật ngữ trước khi dịch, giải thích từng đoạn
+        đang làm gì trong lý lẽ của bài — rồi bôi vàng ghi chú và dựng bộ slide để trình bày lại.
+      </p>
+    </header>
+
+    <div id="keyWarn" class="warn hidden">
+      Chưa thấy <code>OPENROUTER_API_KEY</code>. Copy <code>.env.example</code> thành
+      <code>.env</code>, điền key từ <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>, rồi khởi động lại server.
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab is-on" data-tab="file" role="tab">Tải PDF lên</button>
+      <button class="tab" data-tab="url" role="tab">arXiv / link PDF</button>
+      <button class="tab" data-tab="text" role="tab">Dán văn bản</button>
+    </div>
+
+    <div class="panel" data-pane="file">
+      <label id="drop" class="drop">
+        <input type="file" id="fileInput" accept=".pdf,.txt,.md" hidden>
+        <span class="drop-icon">📄</span>
+        <span class="drop-main">Kéo thả PDF vào đây, hoặc bấm để chọn</span>
+        <span class="drop-sub">PDF chữ (không phải bản scan ảnh), .txt, .md</span>
+      </label>
+      <p id="fileName" class="hint"></p>
+    </div>
+
+    <div class="panel hidden" data-pane="url">
+      <input id="urlInput" class="input" placeholder="1706.03762  ·  arxiv.org/abs/1706.03762  ·  https://…/paper.pdf">
+      <p class="hint">Nhận mã arXiv, link abs/pdf của arXiv, hoặc link PDF trực tiếp.</p>
+    </div>
+
+    <div class="panel hidden" data-pane="text">
+      <textarea id="textInput" class="input textarea" rows="9"
+        placeholder="Dán toàn văn bài báo vào đây. Giữ dòng trống giữa các đoạn để tách đoạn cho đúng."></textarea>
+    </div>
+
+    <div class="row">
+      <label class="check" id="layoutWrap" title="Dùng mô hình phát hiện bố cục (Docling) để xác định khung hình và bảng. Chính xác hơn nhiều ở trang có nhiều bảng/hình xếp sát nhau. Chậm hơn vài giây mỗi bài.">
+        <input type="checkbox" id="useLayout" checked> Mô hình bố cục
+      </label>
+      <label class="field">
+        <span>Model dịch</span>
+        <select id="modelSelect" class="input"></select>
+      </label>
+      <button id="importBtn" class="btn btn-primary">Nạp bài báo</button>
+    </div>
+    <div id="impProg" class="imp hidden">
+      <div class="imp-bar"><div id="impFill"></div></div>
+      <p class="imp-now">
+        <strong id="impStage">Đang bắt đầu…</strong>
+        <span id="impDetail" class="muted"></span>
+        <span class="spacer"></span>
+        <span id="impClock" class="muted"></span>
+      </p>
+      <ol id="impSteps" class="imp-steps"></ol>
+    </div>
+    <p id="startErr" class="err hidden"></p>
+
+    <p id="dbStats" class="hint"></p>
+
+    <div id="recentWrap" class="recent hidden">
+      <h2>Đã đọc gần đây</h2>
+      <ul id="recentList"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== BƯỚC 1 · KIỂM TRA CẤU TRÚC ====================== -->
+<section id="review" class="screen hidden">
+  <header class="topbar">
+    <button id="revBack" class="icon-btn" title="Về màn hình nhập">←</button>
+    <div class="topbar-title">
+      <strong>Bước 1 · Kiểm tra cấu trúc</strong>
+      <span id="revTitle"></span>
+    </div>
+    <select id="revModel" class="model-pick"
+            title="Model dùng để dịch. Đổi ở đây thì giá ước tính bên dưới tính lại theo model mới."></select>
+    <button id="revGo" class="btn btn-primary">Bước 2: Dịch →</button>
+  </header>
+
+  <div class="review-wrap">
+    <p class="lede">
+      Bóc tách xong, chưa gọi model lần nào nên chưa tốn gì. Soát nhanh phần dưới:
+      hình nào cắt sai thì bỏ, khối nào là rác thì loại — làm ở đây rẻ hơn nhiều
+      so với phát hiện sau khi đã dịch cả bài.
+    </p>
+
+    <div id="revStats" class="stats"></div>
+
+    <div class="tidy-card">
+      <div class="tidy-txt">
+        <b>Căn chỉnh lại bằng model</b>
+        <span>PDF không lưu khoảng trắng cũng không lưu cấu trúc, nên chữ bóc ra
+        hay dính nhau (<code>=∅or</code>), đứt gạch nối, và công thức bị đảo mảnh.
+        Một model rẻ dọn lại chỗ đó. Nó <em>chỉ</em> được sửa khoảng trắng và thứ
+        tự — thêm hay bớt dù một chữ là bị chặn và giữ nguyên bản gốc.</span>
+      </div>
+      <button id="tidyBtn" class="btn">✨ Căn chỉnh</button>
+    </div>
+    <p id="tidyMsg" class="hint hidden"></p>
+
+    <h2 class="rev-h">Cấu trúc bóc ra được</h2>
+    <div id="revKinds" class="kinds"></div>
+
+    <h2 class="rev-h">Hình và bảng bóc ra được</h2>
+    <p class="hint" id="figHint"></p>
+    <div id="revFigs" class="figgrid"></div>
+
+    <h2 class="rev-h">Khối đáng ngờ</h2>
+    <p class="hint">Khối rất ngắn hoặc nằm ở mép trang — thường là rác còn sót. Bỏ tick để loại khỏi bài.</p>
+    <div id="revSus"></div>
+
+    <details class="rev-all">
+      <summary>Xem toàn bộ <span id="revAllCount"></span> khối</summary>
+      <div id="revAll"></div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================ MÀN HÌNH ĐỌC ============================ -->
+<section id="reader" class="screen hidden">
+  <header class="topbar">
+    <button id="backBtn" class="icon-btn" title="Về màn hình nhập">←</button>
+    <button id="sideToggle" class="icon-btn" title="Hiện/ẩn cột tóm lược · mạch lập luận · thuật ngữ · mục lục">☰</button>
+    <div class="topbar-title">
+      <strong id="docTitleVi">…</strong>
+      <span id="docTitleEn"></span>
+    </div>
+    <div class="topbar-actions">
+      <div class="cols" role="group" aria-label="Cột hiển thị">
+        <label class="check" title="Bản gốc tiếng Anh. Có sẵn, không tốn gì.">
+          <input type="checkbox" id="colEn" checked> Gốc
+        </label>
+        <label class="check" title="Bản dịch tiếng Việt.">
+          <input type="checkbox" id="colVi" checked> Việt
+        </label>
+        <label class="check" title="Diễn giải cho người chưa có nền: nói lại bằng lời thường, định nghĩa khái niệm mới, giải thích cơ chế và vai trò trong lập luận.">
+          <input type="checkbox" id="colGl" checked> Giải thích
+        </label>
+      </div>
+      <select id="docModel" class="model-pick"
+              title="Model dùng cho các lượt dịch, giải thích và hỏi đáp sau. Đổi model không dịch lại phần đã xong."></select>
+      <label class="check" title="Thêm một lượt soát lại: đối chiếu bản dịch với bản gốc để bắt lỗi mất liên từ, lệch mức khẳng định, sai số liệu. Chậm và tốn hơn ~1.7 lần.">
+        <input type="checkbox" id="refineChk"> Dịch kỹ
+      </label>
+      <div class="menu">
+        <button id="pickBtn" class="icon-btn" title="Chọn dịch từng phần cho đỡ tốn — bỏ phụ lục, bỏ mục không định đọc">☑</button>
+        <div class="menu-pop menu-wide hidden" id="pickMenu">
+          <p class="hint" style="margin:0 0 .5rem">
+            Chọn mục cần dịch. Giá là ước tính cho <b>phần chưa dịch</b> của mục đó —
+            phần đã dịch lấy lại miễn phí từ bộ nhớ dịch.
+          </p>
+          <div id="pickList" class="pick-list"></div>
+          <div class="pick-foot">
+            <button id="pickAll" class="btn btn-sm" style="width:auto;margin:0">Chọn hết</button>
+            <button id="pickNone" class="btn btn-sm" style="width:auto;margin:0">Bỏ hết</button>
+            <span class="spacer"></span>
+            <b id="pickSum" class="hint"></b>
+          </div>
+        </div>
+      </div>
+      <button id="translateBtn" class="btn btn-primary">Dịch</button>
+      <button id="findBtn" class="icon-btn" title="Tìm trong bài (Ctrl+F)">🔍</button>
+      <button id="pdfBtn" class="icon-btn hidden" title="Mở bản PDF gốc để đối chiếu">📄</button>
+      <div class="menu">
+        <button id="viewBtn" class="icon-btn" title="Cỡ chữ · bề rộng · sáng tối">Aa</button>
+        <div class="menu-pop hidden" id="viewMenu">
+          <label class="vset">Cỡ chữ
+            <input type="range" id="fontSize" min="14" max="26" step="1">
+          </label>
+          <label class="vset">Bề rộng cột đọc
+            <input type="range" id="colWidth" min="40" max="100" step="5">
+          </label>
+          <hr>
+          <div class="seg" id="themeSeg">
+            <button class="seg-btn" data-theme="auto">Tự động</button>
+            <button class="seg-btn" data-theme="light">Sáng</button>
+            <button class="seg-btn" data-theme="dark">Tối</button>
+          </div>
+        </div>
+      </div>
+      <button id="askBtn" class="icon-btn" title="Hỏi đáp về bài">💬</button>
+      <button id="slidesBtn" class="icon-btn" title="Dựng bộ slide để trình bày lại bài này">🖥</button>
+      <div class="menu">
+        <button id="exportBtn" class="icon-btn" title="Tải về">⤓</button>
+        <div class="menu-pop hidden" id="exportMenu">
+          <a href="#" data-mode="bilingual" data-fmt="pdf">PDF song ngữ</a>
+          <a href="#" data-mode="vi" data-fmt="pdf">PDF chỉ tiếng Việt</a>
+          <hr>
+          <a href="#" data-mode="bilingual" data-fmt="html">HTML song ngữ — một file, đọc offline</a>
+          <a href="#" data-mode="vi" data-fmt="html">HTML chỉ tiếng Việt</a>
+          <hr>
+          <a href="#" data-mode="bilingual" data-fmt="md">Markdown song ngữ</a>
+          <a href="#" data-mode="vi" data-fmt="md">Markdown chỉ tiếng Việt</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="findBar" class="findbar hidden">
+    <input id="findInput" class="input input-sm" placeholder="Tìm trong bản gốc, bản dịch và phần giải thích…">
+    <span id="findCount" class="hint"></span>
+    <button id="findPrev" class="icon-btn" title="Kết quả trước (Shift+Enter)">↑</button>
+    <button id="findNext" class="icon-btn" title="Kết quả sau (Enter)">↓</button>
+    <button id="findClose" class="icon-btn" title="Đóng (Esc)">✕</button>
+  </div>
+
+  <div id="hiddenBar" class="hiddenbar hidden">
+    <span>Đang ẩn <b id="hiddenCount">0</b> khối khỏi mạch đọc</span>
+    <button id="hiddenToggle" class="btn btn-sm" style="width:auto;margin:0">Xem lại</button>
+  </div>
+
+  <div id="progress" class="progress hidden"><div id="progressBar"></div></div>
+  <p id="statusLine" class="status hidden"></p>
+
+  <div class="body">
+    <!-- ---------------------- cột trái: bộ khung bài ---------------------- -->
+    <aside id="side" class="side">
+      <nav class="side-tabs">
+        <button class="side-tab is-on" data-side="brief">Tóm lược</button>
+        <button class="side-tab" data-side="chain">Mạch lập luận</button>
+        <button class="side-tab" data-side="terms">Thuật ngữ</button>
+        <button class="side-tab" data-side="outline">Mục lục</button>
+        <button id="sideClose" class="icon-btn" title="Đóng cột này (mở lại bằng nút ☰ trên thanh công cụ)">✕</button>
+      </nav>
+
+      <div class="side-pane" data-pane="brief">
+        <div id="briefBox">
+          <p class="muted">Bấm <em>Dịch</em> để tool đọc toàn bài, dựng tóm lược và chốt bảng thuật ngữ trước khi dịch.</p>
+        </div>
+        <button id="rebriefBtn" class="btn btn-sm hidden"
+                title="Đọc lại toàn bài để dựng tóm lược và chốt lại bảng thuật ngữ. Tốn một lượt gọi model. Phần đã dịch giữ nguyên.">
+          Dựng lại tóm lược &amp; bảng thuật ngữ
+        </button>
+      </div>
+      <div class="side-pane hidden" data-pane="chain">
+        <div id="diagramBox"></div>
+        <div id="chainBox"></div>
+      </div>
+      <div class="side-pane hidden" data-pane="terms">
+        <input id="termSearch" class="input input-sm" placeholder="Tìm thuật ngữ…">
+        <div id="termsBox"></div>
+      </div>
+      <div class="side-pane hidden" data-pane="outline"><div id="outlineBox"></div></div>
+
+      <footer class="side-foot">
+        <span id="usageBox" class="muted">—</span>
+      </footer>
+    </aside>
+
+    <!-- ------------------------- cột chính: nội dung ------------------------ -->
+    <main id="doc" class="doc view-both"></main>
+
+    <!-- ---------------------- cột phải: PDF gốc để đối chiếu ---------------- -->
+    <aside id="pdfPane" class="pdfpane hidden">
+      <header class="pdf-bar">
+        <button id="pdfPrev" class="icon-btn" title="Trang trước">◀</button>
+        <span id="pdfPageLbl" class="muted small">—</span>
+        <button id="pdfNext" class="icon-btn" title="Trang sau">▶</button>
+        <label class="check" title="Tự lật trang theo đoạn đang đọc">
+          <input type="checkbox" id="pdfFollow" checked> Bám theo
+        </label>
+        <span class="spacer"></span>
+        <button id="pdfZoomOut" class="icon-btn" title="Thu nhỏ">−</button>
+        <button id="pdfZoomIn" class="icon-btn" title="Phóng to">+</button>
+        <button id="pdfClose" class="icon-btn" title="Đóng khung PDF">✕</button>
+      </header>
+      <div id="pdfStage" class="pdf-stage"><img id="pdfImg" alt="Trang PDF gốc"></div>
+    </aside>
+  </div>
+
+  <!-- ------------------------------ hỏi đáp ------------------------------ -->
+  <aside id="chat" class="chat hidden">
+    <header class="chat-head">
+      <strong>Hỏi về bài này</strong>
+      <button id="chatClose" class="icon-btn">✕</button>
+    </header>
+    <div id="chatLog" class="chat-log">
+      <p class="muted small">Toàn văn bài đã nằm trong ngữ cảnh. Hỏi thẳng: “Vì sao họ chọn cách này thay vì X?”, “Bằng chứng cho khẳng định ở Mục 4 là gì?”, “Kết quả này có đủ mạnh không?”</p>
+    </div>
+    <form id="chatForm" class="chat-form">
+      <textarea id="chatInput" rows="2" placeholder="Câu hỏi của bạn… (Enter để gửi)"></textarea>
+      <button class="btn btn-primary">Gửi</button>
+    </form>
+  </aside>
+</section>
+
+<!-- ==================== BƯỚC 3 · BỘ SLIDE TRÌNH BÀY ==================== -->
+<section id="slides" class="screen hidden">
+  <header class="topbar">
+    <button id="slBack" class="icon-btn" title="Về màn hình đọc">←</button>
+    <div class="topbar-title">
+      <strong>Bộ slide</strong>
+      <span id="slDocTitle"></span>
+    </div>
+    <div class="topbar-actions">
+      <button id="slPresent" class="icon-btn" title="Trình chiếu toàn màn hình (F5) · ← → chuyển slide · S xem lời nói · Esc thoát">▶</button>
+      <button id="slAdd" class="icon-btn" title="Thêm slide trắng sau slide đang chọn">＋</button>
+      <button id="slDup" class="icon-btn" title="Nhân đôi slide đang chọn">⧉</button>
+      <div class="sl-tabs">
+        <button id="slTabOutline" class="sl-tab is-on" title="Nội dung buổi nói: mỗi mục nói gì, lấy bằng chứng nào. Sửa ở đây trước khi dựng.">① Dàn ý</button>
+        <button id="slTabDeck" class="sl-tab" title="Slide đã dựng từ dàn ý">② Slide</button>
+      </div>
+      <button id="slOutlineBtn" class="btn">Soạn nội dung · tốn ít</button>
+      <button id="slGenBtn" class="btn btn-primary">Dựng slide · tốn tiền</button>
+      <div class="menu">
+        <button id="slExportBtn" class="icon-btn" title="Tải bộ slide về">⤓</button>
+        <div class="menu-pop hidden" id="slExportMenu">
+          <a href="#" data-fmt="pptx">PowerPoint (.pptx) — sửa được, sơ đồ là shape rời</a>
+          <hr>
+          <a href="#" data-fmt="slides-pdf">PDF — mở hộp in, mỗi slide một trang ngang</a>
+          <a href="#" data-fmt="slides">HTML — một file, chiếu offline được</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <p id="slStatus" class="status hidden"></p>
+
+  <!-- ===== bước 1: dàn ý — model đề xuất, người dùng quyết ===== -->
+  <div id="slOutlinePane" class="ol-pane hidden">
+    <div class="ol-head">
+      <p class="muted small" id="slOlEmpty">
+        Chưa có dàn ý. Bấm <b>Soạn nội dung</b> — bước này chỉ nghĩ xem buổi nói
+        kể chuyện gì và mỗi slide chứng minh điều gì, chưa dựng slide nên rẻ.
+        Soát và sửa xong mới bấm <b>Dựng slide</b>.
+      </p>
+      <div id="slOlTop" class="hidden">
+        <label class="sl-f">Điều người nghe phải mang về — một câu
+          <input id="slThesis" class="input">
+        </label>
+        <div id="slOlSecs" class="ol-secs"></div>
+        <p id="slOlWarn" class="ol-warn hidden"></p>
+      </div>
+    </div>
+    <ol id="slOlList" class="ol-list"></ol>
+    <details id="slOlBackWrap" class="sl-backup hidden">
+      <summary>Mục dự phòng <span id="slOlBackCount" class="muted"></span></summary>
+      <ol id="slOlBackList" class="ol-list"></ol>
+    </details>
+  </div>
+
+  <div class="body slides-body">
+    <!-- dải slide bên trái -->
+    <aside id="slStrip" class="sl-strip">
+      <p class="muted small" id="slEmpty">
+        Chưa có slide nào. Chọn độ dài buổi nói rồi bấm <b>Dựng slide</b>.
+      </p>
+      <ol id="slList" class="sl-list"></ol>
+      <details id="slBackupWrap" class="sl-backup hidden">
+        <summary>Slide dự phòng <span id="slBackupCount" class="muted"></span></summary>
+        <ol id="slBackupList" class="sl-list"></ol>
+      </details>
+    </aside>
+
+    <!-- slide đang chọn + ô sửa -->
+    <main id="slMain" class="sl-main">
+      <div id="slStage" class="sl-stage"></div>
+      <div id="slWarn" class="sl-warn hidden"></div>
+      <form id="slEdit" class="sl-edit hidden">
+        <label class="sl-f">Tiêu đề — một câu khẳng định, không phải nhãn chủ đề
+          <input id="slHead" class="input" maxlength="140">
+          <span id="slHeadCount" class="hint"></span>
+        </label>
+        <label class="sl-f">Gạch đầu dòng — mỗi dòng một mục, tối đa 4
+          <textarea id="slBullets" class="input textarea" rows="4"></textarea>
+        </label>
+        <label class="sl-f">Hình
+          <select id="slFig" class="input"></select>
+        </label>
+        <div class="sl-f" id="slArtWrap">
+          <span>Prompt vẽ ảnh minh hoạ — chép sang công cụ vẽ bạn tin dùng, rồi tải ảnh về đây</span>
+          <textarea id="slArtPrompt" class="input textarea" rows="4" readonly></textarea>
+          <div class="sl-actions">
+            <button type="button" id="slArtCopy" class="btn btn-sm" style="width:auto;margin:0">⧉ Chép prompt</button>
+            <label class="btn btn-sm" style="width:auto;margin:0;cursor:pointer">
+              ⬆ Tải ảnh lên<input type="file" id="slArtFile" accept="image/*" hidden>
+            </label>
+            <span class="hint" id="slArtMsg"></span>
+          </div>
+        </div>
+        <label class="sl-f">Chú giải hình — hình cắt từ bài có nhãn tiếng Anh, viết 1–3 câu dịch nhãn trục và chỉ rõ nhìn vào đâu
+          <textarea id="slFigNote" class="input textarea" rows="3"></textarea>
+        </label>
+        <label class="sl-f">Lời người nói — cái bạn nói ra miệng, 120–160 chữ
+          <textarea id="slNotes" class="input textarea" rows="5"></textarea>
+          <span id="slNotesCount" class="hint"></span>
+        </label>
+        <div class="sl-actions">
+          <button type="button" id="slCardAdd" class="btn btn-sm" style="width:auto;margin:0">＋ Thêm thẻ</button>
+          <button type="button" id="slCardDel" class="btn btn-sm" style="width:auto;margin:0">− Bớt thẻ cuối</button>
+          <span class="spacer"></span>
+        </div>
+        <div class="sl-actions">
+          <button type="submit" class="btn btn-primary">Lưu</button>
+          <button type="button" id="slFree" class="btn" title="Chuyển slide này sang bố cục tự do: kéo để di chuyển, kéo nút vuông để co giãn, mũi tên để nhích. Các slide khác giữ nguyên bố cục tự sắp.">⤢ Bố cục tự do</button>
+          <button type="button" id="slRegen" class="btn" title="Nhờ model viết lại slide này. Tốn tiền.">Làm lại slide này · tốn tiền</button>
+
+          <span class="spacer"></span>
+          <button type="button" id="slMove" class="btn" title="Chuyển giữa bộ chính và bộ dự phòng">Chuyển sang dự phòng</button>
+          <button type="button" id="slDrop" class="btn">Xoá slide</button>
+        </div>
+      </form>
+    </main>
+  </div>
+</section>
+
+<!-- ========================= TRÌNH CHIẾU ========================= -->
+<div id="present" class="present hidden">
+  <div id="presentStage" class="present-stage"></div>
+  <aside id="presentNotes" class="present-notes hidden"></aside>
+  <div class="present-bar">
+    <span id="presentNum"></span>
+    <span class="hint">← → chuyển · S lời nói · Esc thoát</span>
+  </div>
+</div>
+
+<!-- ======================= BÔI VÀNG & GHI CHÚ ======================= -->
+<div id="hlBar" class="hl-bar hidden">
+  <div class="hl-swatches" id="hlPick">
+    <button class="hl-sw" data-c="y" title="Vàng — cần nhớ"></button>
+    <button class="hl-sw" data-c="g" title="Xanh lá — đã hiểu / đồng ý"></button>
+    <button class="hl-sw" data-c="b" title="Xanh dương — định nghĩa, thuật ngữ"></button>
+    <button class="hl-sw" data-c="p" title="Hồng — nghi ngờ, cần kiểm lại"></button>
+    <button class="hl-sw" data-c="v" title="Tím — ý tưởng để dùng lại"></button>
+  </div>
+</div>
+
+<div id="hlPop" class="hl-pop hidden">
+  <header class="hl-pop-head">
+    <strong>Ghi chú</strong>
+    <span class="spacer"></span>
+    <button id="hlDel" class="icon-btn" title="Xoá vệt bôi này">🗑</button>
+    <button id="hlClose" class="icon-btn" title="Đóng (Esc)">✕</button>
+  </header>
+  <div class="hl-pop-tools">
+    <div class="hl-swatches" id="hlRecolor">
+      <button class="hl-sw" data-c="y" title="Vàng — cần nhớ"></button>
+      <button class="hl-sw" data-c="g" title="Xanh lá — đã hiểu"></button>
+      <button class="hl-sw" data-c="b" title="Xanh dương — định nghĩa"></button>
+      <button class="hl-sw" data-c="p" title="Hồng — cần kiểm lại"></button>
+      <button class="hl-sw" data-c="v" title="Tím — ý tưởng dùng lại"></button>
+    </div>
+    <span class="spacer"></span>
+    <button id="hlAsk" class="btn btn-sm" style="width:auto;margin:0"
+            title="Nhờ model giải thích đúng đoạn này. Tốn tiền.">✨ Giải thích · tốn tiền</button>
+  </div>
+  <p id="hlQuote" class="hl-quote"></p>
+  <textarea id="hlNote" class="input textarea" rows="5"
+            placeholder="Ghi chú của bạn… (tự lưu khi rời ô)"></textarea>
+  <p id="hlMsg" class="hint"></p>
+</div>
+
+<!-- ============ XEM NHANH HÌNH ĐƯỢC NHẮC TỚI TRONG ĐOẠN ============ -->
+<div id="figPeek" class="figpeek hidden">
+  <header class="figpeek-head">
+    <strong id="figPeekTitle">Hình</strong>
+    <span class="spacer"></span>
+    <button id="figPeekGo" class="icon-btn" title="Cuộn tới hình này trong bài">↧</button>
+    <button id="figPeekClose" class="icon-btn" title="Đóng (Esc)">✕</button>
+  </header>
+  <div class="figpeek-body"><img id="figPeekImg" alt=""></div>
+  <p id="figPeekCap" class="muted small"></p>
+</div>
+
+<!-- ======================= CẮT HÌNH THỦ CÔNG ======================= -->
+<div id="cropModal" class="modal hidden">
+  <div class="modal-box">
+    <header class="modal-head">
+      <strong>Tự chỉnh khung cắt</strong>
+      <span id="cropCap" class="muted small"></span>
+      <button id="cropClose" class="icon-btn">✕</button>
+    </header>
+
+    <div class="crop-bar">
+      <label class="check">Trang
+        <select id="cropPage" class="input input-sm" style="width:auto"></select>
+      </label>
+      <span class="hint">Kéo bên trong khung để di chuyển · kéo 8 nút ở viền để co giãn</span>
+      <span class="spacer"></span>
+      <button id="cropReset" class="btn">Về khung tự động</button>
+      <button id="cropSave" class="btn btn-primary">Lưu khung</button>
+    </div>
+
+    <div id="cropStage" class="crop-stage">
+      <img id="cropImg" alt="">
+      <div id="cropBox" class="crop-box">
+        <i data-h="nw"></i><i data-h="n"></i><i data-h="ne"></i>
+        <i data-h="w"></i><i data-h="e"></i>
+        <i data-h="sw"></i><i data-h="s"></i><i data-h="se"></i>
+      </div>
+    </div>
+    <p id="cropErr" class="err small"></p>
+  </div>
+</div>
+
+<script src="/vendor/mermaid.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

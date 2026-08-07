@@ -1,0 +1,12 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+openai>=1.60
+pymupdf>=1.24
+httpx>=0.27
+python-dotenv>=1.0
+python-multipart>=0.0.9
+python-pptx>=1.0        # xuất bộ slide ra .pptx sửa được
+docling>=2.0   # tuỳ chọn: mô hình phát hiện bố cục, xem README
+
+# chạy test: .venv/bin/python -m pytest
+pytest>=8.0

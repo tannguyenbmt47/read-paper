@@ -1,0 +1,15 @@
+.venv/
+.env
+data/
+__pycache__/
+*.pyc
+
+# gói phát hành, dựng lại được từ mã nguồn
+docthau-v*.zip
+.pytest_cache/
+
+# quyền cục bộ của Claude Code, gắn với máy đang ngồi
+.claude/settings.local.json
+
+# tài liệu tham khảo riêng, không thuộc mã nguồn công cụ
+SR_presentation_20_slides.pdf
