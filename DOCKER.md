@@ -1,62 +1,63 @@
-# Chạy bằng Docker
+# Running with Docker
 
-## Ba bước
+## Three steps
 
 ```bash
 cp .env.example .env
-# mở .env, điền OPENROUTER_API_KEY lấy từ https://openrouter.ai/keys
+# open .env and add OPENROUTER_API_KEY from https://openrouter.ai/keys
 echo "DOCKER_UID=$(id -u)" >> .env
 echo "DOCKER_GID=$(id -g)" >> .env
 
 docker compose up -d --build
 ```
 
-Mở http://127.0.0.1:8000
+Open <http://127.0.0.1:8000>. To change the port: `PORT=8010 docker compose up -d`
 
-Đổi cổng: `PORT=8010 docker compose up -d`
+## Two traps worth knowing about
 
-## Hai chỗ dễ vấp, đã gặp thật
+**1. `unable to open database file`.** The container runs under its own uid and
+cannot write to the host's `./data`. That is what `DOCKER_UID` and `DOCKER_GID`
+in `.env` are for: they make the container run as you. Without those two lines,
+SQLite fails the moment you open the first paper.
 
-**1. `unable to open database file`** — container chạy bằng uid riêng, không ghi
-nổi vào `./data` của máy chủ. Đó là lý do có `DOCKER_UID` / `DOCKER_GID` trong
-`.env`: chúng bắt container chạy bằng đúng uid của bạn. Thiếu hai dòng đó là
-SQLite chết ngay lúc mở bài đầu tiên.
+**2. The mount must be somewhere the Docker daemon can see.** Isolated temporary
+directories (`/tmp/...` in some environments) cannot be mounted — the volume
+silently comes up empty and the app reports no papers. Keeping `./data` next to
+`docker-compose.yml` avoids this.
 
-**2. Mount phải nằm ở chỗ Docker daemon nhìn thấy được.** Thư mục tạm của một số
-môi trường (`/tmp/...` bị cô lập) không mount được — volume im lặng thành rỗng và
-app tưởng chưa có bài nào. Cứ để `./data` cạnh `docker-compose.yml` là chắc.
+## Layout model (docling)
 
-## Mô hình bố cục (docling)
+The default image does **not** include docling: it pulls in torch and a model
+bundle, taking the image from **302MB to several GB**. Without it,
+`parser.parse_pdf()` still runs on PyMuPDF heuristics — figure crops are less
+accurate on pages with several tables, but nothing breaks.
 
-Ảnh mặc định **không** kèm docling: nó kéo theo torch và bộ mô hình, đẩy ảnh từ
-**302MB lên nhiều GB**. Không có nó thì `parser.parse_pdf()` vẫn chạy bằng
-heuristic của PyMuPDF — khung cắt hình kém chính xác hơn ở trang nhiều bảng, chứ
-không hỏng.
-
-Cần độ chính xác đó thì:
+If you need that accuracy:
 
 ```bash
 WITH_LAYOUT=1 docker compose build
-# rồi bỏ LAYOUT_BACKEND=off trong docker-compose.yml
+# then remove LAYOUT_BACKEND=off from docker-compose.yml
 ```
 
-## Dữ liệu
+## Data
 
-Tất cả nằm ở `./data` (SQLite `papers.db`, PDF gốc, ảnh cắt ra). Nâng cấp ảnh
-không mất bài đã đọc. Sao lưu = copy thư mục đó.
+Everything lives in `./data`: the SQLite database `papers.db`, source PDFs, and
+cropped images. Upgrading the image does not lose read papers. To back up, copy
+that directory.
 
-## Vì sao ảnh cần font
+## Why the image needs fonts
 
-`fonts-liberation` **không phải để hiển thị** — server không vẽ gì cả.
-`server/slide_fit.py` dùng nó để đo bề rộng chữ bằng metric thật (Liberation Sans
-tương thích metric với Arial, đúng font mà `_SLIDES_CSS` chỉ định), rồi tính xem
-slide có tràn khung 1280×720 không và tự co cỡ chữ cho vừa. Gỡ font đi thì bộ đo
-rơi về ước lượng thô và slide bị cắt mất chữ ở đáy.
+`fonts-liberation` is **not** for display — the server renders nothing.
+`server/slide_fit.py` uses it to measure text width from real font metrics
+(Liberation Sans is metric-compatible with Arial, the font `_SLIDES_CSS`
+specifies), then determines whether a slide overflows the 1280×720 frame and
+shrinks the type to fit. Remove the font and the measurement falls back to a
+crude estimate, which lets slides get clipped at the bottom.
 
-## Kiểm nhanh sau khi dựng
+## Checking the build
 
 ```bash
-docker compose ps                          # phải thấy "healthy"
+docker compose ps                          # should report "healthy"
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/config   # 200
-docker compose logs -f app                 # xem lỗi nếu có
+docker compose logs -f app                 # errors, if any
 ```

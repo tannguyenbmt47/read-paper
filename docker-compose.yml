@@ -5,7 +5,7 @@ services:
       args:
         # 1 = kèm docling (mô hình bố cục). Ảnh phình lên nhiều GB vì torch.
         WITH_LAYOUT: ${WITH_LAYOUT:-0}
-    image: docthau
+    image: loupe
     ports:
       - "${PORT:-8000}:8000"
     env_file:

@@ -1,4 +1,4 @@
-/* Đọc Thấu — giao diện. */
+/* Loupe — giao diện. */
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -2429,6 +2429,8 @@ function wireSlides() {
 
 /* Lưu ở localStorage chứ không ở server: đây là sở thích của máy đang ngồi,
    không phải thuộc tính của bài báo. */
+/* Giữ tiền tố cũ dù công cụ đã đổi tên: đổi là mọi sở thích người dùng đã lưu
+   (cỡ chữ, bề rộng cột, sáng/tối, chỗ đọc dở) biến mất im lặng. */
 const PREF = "docdoc:";
 const pref = (k, dflt) => localStorage.getItem(PREF + k) ?? dflt;
 const setPref = (k, v) => localStorage.setItem(PREF + k, v);

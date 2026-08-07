@@ -19,7 +19,7 @@ import pytest
 
 @pytest.fixture(scope="module")
 def app_client():
-    tmp = tempfile.mkdtemp(prefix="docthau-test-")
+    tmp = tempfile.mkdtemp(prefix="loupe-test-")
     os.environ["PAPER_DATA_DIR"] = tmp
     os.environ.setdefault("OPENROUTER_API_KEY", "test-key-khong-goi-model")
     # import SAU khi đặt env: `db.DATA_DIR` đọc biến môi trường ngay lúc import

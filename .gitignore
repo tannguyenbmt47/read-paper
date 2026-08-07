@@ -6,6 +6,7 @@ __pycache__/
 
 # gói phát hành, dựng lại được từ mã nguồn
 docthau-v*.zip
+loupe-v*.zip
 .pytest_cache/
 
 # quyền cục bộ của Claude Code, gắn với máy đang ngồi

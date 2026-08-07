@@ -24,7 +24,7 @@ from . import slide_fit  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 
-app = FastAPI(title="Đọc Thấu")
+app = FastAPI(title="Loupe")
 
 MODEL_CHOICES = [
     {"id": "~deepseek/deepseek-v4-flash-latest",

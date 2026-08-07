@@ -512,7 +512,8 @@ Quốc trả về chữ Hán (so với bản gốc, không cấm tuyệt đối)
   JS) lẫn lưới hai cột (cần CSS grid), thư viện PDF thuần Python không làm được.
   Mermaid nặng 3.5MB nên chỉ nhúng khi bài thật sự có sơ đồ.
 - Sở thích hiển thị (cỡ chữ, bề rộng, sáng/tối, chỗ đang đọc dở) nằm ở
-  `localStorage` với tiền tố `docdoc:` — thuộc về máy đang ngồi, không phải
+  `localStorage` với tiền tố `docdoc:` (tiền tố giữ tên cũ có chủ đích: đổi là
+  mọi sở thích đã lưu biến mất im lặng) — thuộc về máy đang ngồi, không phải
   thuộc tính của bài, nên cố ý không lưu vào DB.
 - Đổi chủ đề sáng/tối phải vẽ lại sơ đồ (`applyTheme` xoá `data-done` rồi
   `hydrateDiagrams`), vì mermaid nướng màu vào SVG lúc render.
