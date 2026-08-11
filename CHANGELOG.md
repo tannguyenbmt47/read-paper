@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.6.3
+
+**The label protocol no longer breaks when the model types a label slightly
+differently.** Translated text comes back as flat prose with each block marked
+`<<<b12>>>`, and the parser matched that syntax exactly. Two deviations seen in
+real output — `<<<b4_g>>` (one bracket short) and `### b9_g` (a Markdown
+heading) — matched nothing, so everything after them was appended to the
+*previous* block. One explanation cell had grown to **20,052 characters** holding
+a dozen blocks' worth of text, with 48 `###` labels showing as visible litter in
+the reading column; sixteen more cells had a translation and its explanation
+fused together.
+
+The fix is to stop guessing the syntax. `stream_chunk` already knows which block
+ids are in the batch, so the pattern is built from that set: a label is any line
+that is *only* a known id, however the model chose to decorate it. Two
+constraints hold it in place — a label must be alone on its line, or a sentence
+mentioning `[b12]` would split the document, and a label found inside body text
+marks the block dirty so it is never written to the translation memory. Existing
+documents were repaired in place by re-parsing the damaged cells: 25 collapsed
+blocks recovered, no model call.
+
 ## 1.6.2
 
 **Fix a translation in place, while reading.** Every block gets a ✎ button that

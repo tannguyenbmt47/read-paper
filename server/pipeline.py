@@ -142,13 +142,47 @@ def cached_prefix(doc: dict) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _parse_labeled(text: str) -> dict[str, str]:
-    """Bóc `<<<id>>> nội dung` thành dict, chịu được đầu ra bị cắt giữa chừng."""
+def _label_re(ids) -> "re.Pattern | None":
+    """Biểu thức dò nhãn, dựng từ ĐÚNG tập mã đã yêu cầu ở mẻ này.
+
+    Không đoán "nhãn trông thế nào" — ta đã biết chính xác mẻ này gồm mã nào,
+    nên chỉ việc tìm đúng những mã đó ở vị trí của một nhãn. Nhờ vậy dung được
+    mọi biến thể mà model hay gõ ra, mà không có nguy cơ cắt nhầm giữa bài.
+
+    Hai kiểu lệch đã gặp thật, mỗi kiểu đủ để phá cả giao thức:
+      `<<<b4_g>>`  — thiếu đúng MỘT dấu `>`
+      `### b9_g`   — model đổi hẳn sang dạng tiêu đề Markdown
+    Cả hai đều làm `<<<id>>>` không khớp, và **20 nghìn ký tự của mười mấy khối
+    dồn hết vào một ô**, im lặng.
+    """
+    ids = [i for i in ids if i]
+    if not ids:
+        return None
+    alt = "|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True))
+    return re.compile(
+        r"^[ \t]*(?:"
+        r"<{2,4}[ \t]*(?P<a>" + alt + r")[ \t]*>{2,4}"       # <<<b12>>> và <<b12>>
+        r"|#{1,6}[ \t]*(?P<b>" + alt + r")_?[ \t]*"           # ### b12
+        r"|\*\*[ \t]*(?P<c>" + alt + r")[ \t]*\*\*"         # **b12**
+        r"|\[[ \t]*(?P<d>" + alt + r")[ \t]*\]"              # [b12]
+        r")[ \t]*:?[ \t]*$",
+        re.M)
+
+
+def _parse_labeled(text: str, ids=None) -> dict[str, str]:
+    """Bóc `<<<id>>> nội dung` thành dict, chịu được đầu ra bị cắt giữa chừng.
+
+    Có `ids` thì dò theo đúng tập mã đó (xem `_label_re`) — chắc hơn hẳn. Không
+    có thì rơi về dạng `<<<id>>>` thuần, cho những chỗ gọi chưa biết trước mã.
+    """
+    rx = _label_re(ids) if ids else LABEL
     out: dict[str, str] = {}
-    matches = list(LABEL.finditer(text))
+    matches = list(rx.finditer(text))
     for i, m in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        out[m.group(1)] = text[m.end():end].strip()
+        key = next((g for g in m.groups() if g), None) if ids else m.group(1)
+        if key:
+            out[key] = text[m.end():end].strip()
     return out
 
 
@@ -297,8 +331,8 @@ async def relayout(doc_id: str, batch_chars: int = 12_000) -> tuple[dict, dict, 
             reasoning=NO_REASONING,
         )
         usage.add(u)
-        got = _parse_labeled(raw)
         by_id = {b["id"]: b["text"] for b in group}
+        got = _parse_labeled(raw, list(by_id))
         for bid, new in got.items():
             src = by_id.get(bid)
             if src is None:
@@ -447,6 +481,9 @@ async def stream_chunk(
         return
 
     items = todo
+
+    # Tập mã hợp lệ của mẻ này — dò nhãn theo đúng nó, xem `_label_re`.
+    want_ids = [it["id"] for it in items] + [it["id"] + "_g" for it in items]
     prefix = cached_prefix(doc)
     # mode: "vi" = chỉ dịch · "plain" = chỉ diễn giải · "both" = cả hai
     if mode == "plain":
@@ -482,7 +519,7 @@ async def stream_chunk(
             continue
         buf += payload
         # phát block ngay khi nhãn kế tiếp xuất hiện => đã xong block trước
-        parsed = _parse_labeled(buf)
+        parsed = _parse_labeled(buf, want_ids)
         labels = list(parsed.keys())
         for key in labels[:-1]:
             if key in emitted:
@@ -493,7 +530,7 @@ async def stream_chunk(
             else:
                 yield "block", json.dumps({"id": key, "vi": parsed[key]})
 
-    parsed = _parse_labeled(buf)
+    parsed = _parse_labeled(buf, want_ids)
     for key, val in parsed.items():
         if key in emitted:
             continue
@@ -516,7 +553,7 @@ async def stream_chunk(
                 model=doc["model"], session_id=doc_id,
                 max_tokens=12000, temperature=0.2, reasoning=NO_REASONING,
             )
-            for key, val in _parse_labeled(raw).items():
+            for key, val in _parse_labeled(raw, want_ids).items():
                 bid = key[:-2] if key.endswith("_g") else key
                 if bid in plains or not val.strip():
                     continue
@@ -537,7 +574,7 @@ async def stream_chunk(
             temperature=0.1,
             reasoning=NO_REASONING,
         )
-        fixed = _parse_labeled(raw)
+        fixed = _parse_labeled(raw, want_ids)
         for bid, vi in fixed.items():
             if vi and vi != final.get(bid):
                 final[bid] = vi
@@ -554,25 +591,38 @@ async def stream_chunk(
     # có đoạn y hệt đều nhận lại đúng cái rác đó, miễn phí và im lặng.
     #
     # Đã gặp thật: một đoạn dịch ra `띠ᥕᥕᥲᥕᥱ` thay cho chữ "bảo toàn".
+    # Nhãn của khối KHÁC còn nằm trong nội dung nghĩa là bước tách nhãn đã hỏng
+    # và mấy khối bị dồn vào một ô. Đã gặp: 20 nghìn ký tự của mười mấy khối dồn
+    # vào `b7` vì model gõ `### b9_g` thay cho `<<<b9_g>>>`.
+    leak_rx = _label_re(want_ids)
     dirty: dict[str, str] = {}
     for bid in set(final) | set(plains):
         if bid not in by_id:
             continue
-        bad = script_leak(f"{final.get(bid, '')} {plains.get(bid, '')}", by_id[bid])
+        body = f"{final.get(bid, '')} {plains.get(bid, '')}"
+        bad = script_leak(body, by_id[bid])
         if bad:
             dirty[bid] = "".join(sorted(bad))[:12]
+        elif leak_rx and leak_rx.search(body):
+            dirty[bid] = "nhãn lọt vào chữ"
 
     db.tm_put([(by_id[bid], final.get(bid, ""), plains.get(bid, ""))
                for bid in set(final) | set(plains)
                if bid in by_id and bid not in dirty], doc["model"])
     if dirty:
+        nhan = [b for b, ly in dirty.items() if ly == "nhãn lọt vào chữ"]
+        chu = {ly for ly in dirty.values() if ly != "nhãn lọt vào chữ"}
+        vi_sao = []
+        if chu:
+            vi_sao.append("lẫn ký tự thuộc hệ chữ lạ (" + ", ".join(sorted(chu)[:3]) + ")")
+        if nhan:
+            vi_sao.append("còn sót nhãn khối, nghĩa là mấy khối bị dồn vào một ô")
         yield "warn", json.dumps({
             "kind": "rò_hệ_chữ",
             "blocks": list(dirty),
-            "msg": ("Bản dịch của "
-                    + ", ".join(sorted(dirty)[:6])
-                    + " lẫn ký tự thuộc hệ chữ lạ (" + ", ".join(sorted(set(dirty.values()))[:3])
-                    + ") — model trả về rác. Chưa ghi vào bộ nhớ dịch; sửa tay bằng nút ✎ "
+            "msg": ("Bản dịch của " + ", ".join(sorted(dirty)[:6]) + " "
+                    + " và ".join(vi_sao)
+                    + " — model trả về rác. Chưa ghi vào bộ nhớ dịch; sửa tay bằng nút ✎ "
                       "hoặc dịch lại khối đó."),
         })
 

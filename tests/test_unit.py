@@ -605,3 +605,34 @@ def test_hai_ben_dung_cung_mot_luat_dam():
     py = pathlib.Path("server/main.py").read_text()
     assert r'.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")' in js
     assert r'r"\*\*([^*]+)\*\*", r"<strong>\1</strong>"' in py
+
+
+# ------------------- giao thức nhãn: dung sai với biến thể model gõ ra
+
+def test_bat_nhan_du_model_go_lech():
+    """Hai kiểu lệch đã gặp thật, mỗi kiểu đủ để phá cả giao thức và dồn 20 nghìn
+    ký tự của mười mấy khối vào một ô, im lặng."""
+    from server.pipeline import _parse_labeled
+    ids = ["b4", "b9", "b11"] + [f"b{n}_g" for n in (4, 9, 11)]
+    assert _parse_labeled("<<<b4_g>>\nMột.\n<<<b9_g>>\nHai.", ids) == \
+        {"b4_g": "Một.", "b9_g": "Hai."}          # thiếu một dấu >
+    assert _parse_labeled("### b4_g\nMột.\n### b9_g\nHai.", ids) == \
+        {"b4_g": "Một.", "b9_g": "Hai."}          # dạng tiêu đề Markdown
+    assert _parse_labeled("**b4**\nMột.\n[b9]\nHai.", ids) == \
+        {"b4": "Một.", "b9": "Hai."}              # in đậm và ngoặc vuông
+
+
+def test_ma_nhac_giua_cau_khong_bi_cat_thanh_nhan():
+    """Nhãn phải đứng MỘT MÌNH trên dòng. Không thế thì mọi câu nhắc tới mã khối
+    đều cắt bài làm đôi."""
+    from server.pipeline import _parse_labeled
+    ids = ["b4", "b9", "b12"]
+    body = ("Mô hình b4 tốt hơn b9 trong thí nghiệm này.\n"
+            "Xem thêm phần [b12] ở phụ lục để biết chi tiết.")
+    assert _parse_labeled("<<<b4>>>\n" + body, ids) == {"b4": body}
+
+
+def test_khong_co_ids_thi_van_chay_dang_chuan():
+    """Chỗ gọi chưa biết trước mã vẫn phải dùng được, rơi về `<<<id>>>` thuần."""
+    from server.pipeline import _parse_labeled
+    assert _parse_labeled("<<<b4>>>\nMột.") == {"b4": "Một."}

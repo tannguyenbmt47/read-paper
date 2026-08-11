@@ -134,6 +134,29 @@ trong lúc stream (phát block khi nhãn kế tiếp xuất hiện) nên chịu 
 cắt cụt. Đổi định dạng nhãn là phải đổi đồng thời `prompts.py`, `_parse_labeled`,
 và `split()` trong `stream_chunk`.
 
+**Nhưng bộ bóc phải nhận theo TẬP MÃ CỦA MẺ, không theo cú pháp nhãn.** Model
+gõ lệch một ký tự là cả giao thức sập, và sập **im lặng**: `<<<b4_g>>` (thiếu một
+dấu `>`) hay `### b9_g` (dạng tiêu đề Markdown) đều không khớp mẫu cũ, nên phần
+nội dung sau nó bị dồn hết vào ô của nhãn *trước đó*. Đo trên bài thật: một ô
+`plain` phình lên **20.052 ký tự** chứa diễn giải của mười mấy khối, kèm 48 nhãn
+`###` hiện thành rác ngay trong cột đọc; 16 ô khác dính bản dịch lẫn diễn giải.
+
+Vì `stream_chunk` **biết trước** mẻ này gồm mã nào, `_label_re(ids)` dựng mẫu từ
+chính tập mã đó — nhãn chỉ cần *chứa* một mã đã biết, còn bao quanh nó là `<<<>>>`,
+`###`, `**…**` hay `[…]` đều nhận. `want_ids` phải truyền vào **cả bốn** chỗ gọi
+trong `stream_chunk` và cả `relayout`; thiếu một chỗ là chỗ đó vẫn hỏng như cũ.
+
+Hai ràng buộc ngược lại, cùng quan trọng:
+
+- **Nhãn phải đứng một mình trên dòng** (`^…$` với `re.M`). Nới ra là mọi câu
+  nhắc tới mã khối — *"xem thêm phần [b12] ở phụ lục"* — cắt bài làm đôi.
+- **Nhãn lọt vào thân chữ thì khối đó vào `dirty`**, không ghi xuống `tm`. Cùng
+  lý do với `script_leak()`: rác trong `doc` thì người đọc sửa được, rác trong
+  `tm` thì quay lại mãi mãi.
+
+Mẫu dựng từ mã, nên mã dài phải xếp trước (`sorted(key=len, reverse=True)`) —
+không thì `b1` khớp trước và `b12` mất phần đuôi.
+
 Chế độ `mode` (`vi` / `plain` / `both`) do frontend quyết theo hai ô tick cột —
 cột nào tắt thì **không sinh ra**, tức không trả tiền. Heading và equation cố ý
 không có cột giải thích; `chunkDone()` bên `web/app.js` phải biết điều đó, nếu
