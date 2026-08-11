@@ -1333,8 +1333,174 @@ def _trim_overlaps(boxes: list[tuple], keep: float = 0.55) -> list[tuple]:
     return out
 
 
+def _widen_to_glyphs(page, rect, max_grow: float = 0.45):
+    """Nới khung cắt cho ôm trọn mọi span nó chạm phải, để không cắt đôi chữ.
+
+    Chỉ nới **ngang**, và chỉ khi phần nới thêm còn khiêm tốn (`max_grow` lần bề
+    ngang khung). Không có trần thì một span dài chạm mép khung sẽ kéo khung ra
+    hết cột, và ảnh công thức thành ảnh cả đoạn văn.
+    """
+    import fitz
+
+    r = fitz.Rect(rect)
+    x0, x1 = r.x0, r.x1
+    limit = r.width * max_grow
+    for b in page.get_text("dict")["blocks"]:
+        if b.get("type") != 0:
+            continue
+        for l in b.get("lines", []):
+            for s in l.get("spans", []):
+                if not (s.get("text") or "").strip():
+                    continue
+                sx0, sy0, sx1, sy1 = s["bbox"]
+                # chỉ xét span nằm trong dải dọc của khung và có phần chồng ngang
+                if sy1 <= r.y0 or sy0 >= r.y1 or sx1 <= r.x0 or sx0 >= r.x1:
+                    continue
+                if r.x0 - sx0 <= limit:
+                    x0 = min(x0, sx0)
+                if sx1 - r.x1 <= limit:
+                    x1 = max(x1, sx1)
+    return fitz.Rect(x0 - 1, r.y0, x1 + 1, r.y1) & page.rect
+
+
+def _uncovered(page, boxes: list[tuple], figs: list[tuple], body: float) -> list[dict]:
+    """Span trên trang này không rơi vào khung nào của mô hình bố cục.
+
+    Bỏ ngay hai loại: span nằm trong vùng hình/bảng (đó là chữ trong hình, vốn
+    phải biến mất khỏi mạch đọc), và span có cỡ chữ khác hẳn thân bài (số trang,
+    header, nhãn trục).
+    """
+    out = []
+    for b in page.get_text("dict")["blocks"]:
+        if b.get("type") != 0:
+            continue
+        for l in b.get("lines", []):
+            for s in l.get("spans", []):
+                if not (s.get("text") or "").strip():
+                    continue
+                x0, y0, x1, y1 = s["bbox"]
+                cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+                if any(r[0] <= cx <= r[2] and r[1] <= cy <= r[3] for r in boxes):
+                    continue
+                if any(r[0] <= cx <= r[2] and r[1] <= cy <= r[3] for r in figs):
+                    continue
+                if not body * 0.86 <= s["size"] <= body * 1.16:
+                    continue
+                out.append(s)
+    return out
+
+
+def _loose_paras(spans: list[dict], page_width: float) -> list[tuple]:
+    """Gom span rơi vãi thành đoạn: **tách cột trước**, rồi mới dựng dòng.
+
+    Thứ tự đó bắt buộc. `_rows()` gom theo baseline trên cả trang, nên ở bài hai
+    cột, một dòng bên trái và một dòng bên phải cùng độ cao thành MỘT dòng; ghép
+    lại theo trục x là chữ hai cột cài răng lược vào nhau:
+
+        "…static evidence repre-  summarized as follows:  sentation, failing…"
+
+    Đã ra đúng như vậy ở bản đầu.
+    """
+    if not spans:
+        return []
+
+    # Có tách được thành hai cột không? Phép kiểm đúng câu hỏi cần trả lời:
+    # **không span nào vắt qua đường giữa**, và có chữ ở cả hai bên. Dùng
+    # `_page_columns` ở đây thì sai — nó tính trên khung KHỐI, còn ở đây chỉ có
+    # span rời rạc nên nó luôn đoán một cột.
+    mid = page_width / 2
+    slack = page_width * 0.02
+    crosses = sum(1 for s in spans
+                  if s["bbox"][0] < mid - slack < mid + slack < s["bbox"][2])
+    left = sum(1 for s in spans if s["bbox"][2] <= mid)
+    right = sum(1 for s in spans if s["bbox"][0] >= mid)
+    # Ngưỡng theo TỈ LỆ, không phải "có hay không". Một span vắt qua đường giữa
+    # là chuyện bình thường — số trang nằm chính giữa chân trang là đủ. Bản đầu
+    # dùng `any()` nên đúng một cái `26182` tắt luôn phép tách cột cho cả trang,
+    # và chữ hai cột lại cài răng lược.
+    ncol = 1 if (crosses > max(2, len(spans) * 0.10) or not (left and right)) else 2
+
+    def col_of(s):
+        return 0 if ncol == 1 else (0 if (s["bbox"][0] + s["bbox"][2]) / 2 < mid else 1)
+
+    paras: list[list[dict]] = []
+    for col in range(max(1, ncol)):
+        got = [s for s in spans if col_of(s) == col]
+        boxed = []
+        for r in (r for r in _rows(got) if r):
+            boxed.append({
+                "box": (min(s["bbox"][0] for s in r), min(s["bbox"][1] for s in r),
+                        max(s["bbox"][2] for s in r), max(s["bbox"][3] for s in r)),
+                "col": col, "spans": r,
+            })
+            boxed[-1]["h"] = boxed[-1]["box"][3] - boxed[-1]["box"][1]
+        boxed.sort(key=lambda d: d["box"][1])
+
+        for d in boxed:
+            prev = paras[-1][-1] if paras and paras[-1][-1]["col"] == col else None
+            # Cách nhau chưa tới hai dòng thì vẫn là một đoạn. Xa hơn nghĩa là đã
+            # sang khối khác — nối vào là dính hai đoạn rời làm một.
+            if prev and 0 <= d["box"][1] - prev["box"][3] <= max(prev["h"], d["h"]) * 1.6:
+                paras[-1].append(d)
+            else:
+                paras.append([d])
+
+    out = []
+    for grp in paras:
+        sp = [s for d in grp for s in d["spans"]]
+        out.append(((min(d["box"][0] for d in grp), min(d["box"][1] for d in grp),
+                     max(d["box"][2] for d in grp), max(d["box"][3] for d in grp)),
+                    text_from_spans(sp)))
+    return out
+
+
+def recover_uncovered(doc, items: list[dict], regions: list[dict] | None) -> list[dict]:
+    """Nhặt lại phần chữ mà mô hình bố cục bỏ sót, dựng thành khối `para`.
+
+    **Đây là chỗ mất chữ âm thầm.** `assign_spans()` gán mỗi span vào khung nhỏ
+    nhất chứa tâm nó; span không thuộc khung nào thì rơi ra ngoài và không ai
+    nhặt. Nếu docling bỏ sót một vùng chữ — chuyện xảy ra thường xuyên với đoạn
+    vắt qua ranh giới cột — thì cả đoạn đó **biến mất khỏi bài mà không có lỗi
+    nào**. Đo trên bài CIRAG: **20,4% số span rơi ngoài**, trong đó có cả đoạn
+    thân bài; người đọc thấy một đoạn đứt giữa chừng ở chữ "Current" rồi nhảy
+    sang ý khác.
+
+    Chỗ này không thể sửa bằng cách tin mô hình hơn. Cách sửa là **đừng vứt**:
+    lấy phần rơi ngoài, loại chữ trong hình và chữ khác cỡ thân bài, gom lại
+    thành đoạn, rồi thả vào `items` như một khối bình thường. Từ đó trở đi nó đi
+    chung đường với mọi khối khác — sắp thứ tự đọc, gán span, dựng `Block`.
+
+    Đặt lọc chặt tay hơn `_is_prose` một chút: khối nhặt lại chỉ nhận nếu trông
+    như văn xuôi. Dương tính giả ở đây tệ hơn âm tính giả — nhặt nhầm một mảnh
+    bảng vào giữa bài thì mạch đọc gãy, còn bỏ sót thì chỉ như hiện trạng.
+    """
+    figs_by_page: dict[int, list[tuple]] = {}
+    for r in regions or []:
+        figs_by_page.setdefault(r["page"], []).append(tuple(r["bbox"]))
+    boxes_by_page: dict[int, list[tuple]] = {}
+    for it in items:
+        boxes_by_page.setdefault(it["page"], []).append(tuple(it["bbox"]))
+
+    body = _body_size(doc)
+    extra: list[dict] = []
+    for pno in range(doc.page_count):
+        loose = _uncovered(doc[pno], boxes_by_page.get(pno, []),
+                           figs_by_page.get(pno, []), body)
+        if not loose:
+            continue
+        for bbox, text in _loose_paras(loose, doc[pno].rect.width):
+            text = clean_text(text)
+            if len(text) < 60 or not _is_prose(text):
+                continue
+            extra.append({"kind": "para", "text": text, "marker": "", "level": 0,
+                          "page": pno, "bbox": list(bbox), "recovered": True})
+    return items + extra
+
+
 def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
-                       eq_dpi: int = 200) -> tuple[str, list[Block], dict[str, bytes]]:
+                       eq_dpi: int = 200,
+                       regions: list[dict] | None = None,
+                       ) -> tuple[str, list[Block], dict[str, bytes]]:
     """Dựng danh sách Block từ cấu trúc do mô hình bố cục trả về.
 
     Phân công: **mô hình quyết định khối nào đứng đâu và là loại gì**, còn
@@ -1367,6 +1533,10 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
 
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         body = _body_size(doc)
+
+        # Nhặt lại phần chữ mô hình bố cục bỏ sót TRƯỚC khi sắp thứ tự đọc, để
+        # khối nhặt được đi chung đường với mọi khối khác. Xem `recover_uncovered`.
+        items = recover_uncovered(doc, items, regions)
 
         # Ranh giới khối của mô hình thì đáng tin, nhưng thứ tự đọc của nó thì
         # không phải lúc nào cũng đúng — nó hay dồn cả cụm công thức xuống cuối.
@@ -1462,6 +1632,13 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
                                   min(s["bbox"][1] for s in sp) - 3,
                                   max(s["bbox"][2] for s in sp) + 3,
                                   max(s["bbox"][3] for s in sp) + 3) & doc[pno].rect
+                    # Khung cắt KHÔNG BAO GIỜ được cắt đôi một chữ. Khung dựng
+                    # từ span của riêng khối này, nên khi một mảnh dòng văn bên
+                    # cạnh lọt vào khối thì mép trái rơi vào giữa từ: ảnh hiện ra
+                    # "ere at step t…" thay vì "where at step t…". Nới khung ra
+                    # cho ôm trọn mọi span mà nó chạm phải — thà thừa một chữ
+                    # còn hơn thiếu nửa chữ, và người đọc còn nút ✂ để chỉnh.
+                    r = _widen_to_glyphs(doc[pno], r)
                     if not r.is_empty and r.height >= 8:
                         # Khoá theo toạ độ + chữ, KHÔNG theo id() đối tượng:
                         # bản sao tài liệu sinh ra span mới hoàn toàn, so bằng

@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from .depth import DEPTH_RULES
+
 # ------------------------------------------------------------- luật vẽ hình
 
 LANGUAGE_RULE = """\
@@ -780,6 +782,31 @@ Mỗi slide nội dung: **3–5 ý**, mỗi ý **10–25 chữ**, viết thành 
 được dùng liên từ (`nên`, `vì`, `trong khi`, `nếu`). Đừng nhắc lại `message` bằng
 chữ khác — mỗi ý nói thêm một điều *mới*.
 
+**Phép thử wakalixes.** Thay tên phương pháp trong một ý bằng một từ vô nghĩa.
+Nếu ý đó vẫn nghe hợp lý thì nó chưa nói gì — nó mới đặt tên cho hiện tượng.
+*"CIRAG cải thiện chất lượng truy hồi"* → thay "CIRAG" bằng "wakalixes", câu vẫn
+"đúng". Viết lại thành cơ chế: *"Mệnh đề nào không được mệnh đề khác đỡ thì tắt
+dần qua mỗi vòng, nên nhiễu bị loại theo mức ăn khớp chứ không theo ngưỡng cứng."*
+
+### Bắt buộc: ít nhất MỘT slide đi hết cơ chế bằng một ví dụ chạy tay
+
+Đây là chỗ mọi bộ slide về bài báo phương pháp thường hỏng, và hỏng theo cách
+người trình bày không nhận ra: kể được bài toán, kể được kết quả, nhưng phần
+giữa — **cách nó thật sự chạy** — thì chỉ còn cái tên và một sơ đồ ba hộp.
+Người nghe gật đầu suốt buổi rồi ra về không kể lại được cho ai.
+
+Trong các mục về cách làm, phải có **ít nhất một slide** làm đúng việc này:
+
+- Lấy **một đầu vào cụ thể có thật trong bài** (một câu hỏi, một ảnh, một mẫu).
+- Đi từng bước: bước này nhận gì, làm gì với nó, ra gì.
+- Ở mỗi bước nói **vì sao** bước ấy cần thiết — bỏ nó đi thì hỏng chỗ nào.
+- Kết lại bằng đầu ra cụ thể của chính đầu vào đã lấy.
+
+Trừu tượng trước thì người nghe không có chỗ bám. Ví dụ chạy tay trước, khái
+quát sau — và thường thì khái quát không cần nói nữa, họ tự suy ra.
+
+`evidence.kind` của slide này nên là `diagram`, và `points` của nó là các bước.
+
 ### Slide phải TỰ ĐỨNG ĐƯỢC
 
 Người đọc slide có thể đang ngồi nghe, có thể đang xem lại file một mình sau buổi
@@ -867,6 +894,9 @@ cắt đi thì cho xuống đây, đừng nhồi lên slide chính.** 3–5 mụ
   "backup": [ "cùng cấu trúc với một mục trong items" ]
 }
 """
+
+
+OUTLINE_TASK += DEPTH_RULES
 
 
 def outline_user(brief: dict, blocks: list[dict], tr: dict,
@@ -1122,6 +1152,9 @@ mức chung ở trên) chính là để vẽ ra được thứ đáng vẽ:
 Phép thử: che tiêu đề slide đi, nhìn sơ đồ vẫn hiểu được cơ chế hoạt động thế
 nào. Nếu sơ đồ chỉ nhắc lại tiêu đề bằng hình hộp thì đừng vẽ, để rỗng còn hơn.
 """
+
+
+SLIDES_TASK += DEPTH_RULES
 
 
 def render_user(outline: dict, batch: list[dict], brief: dict,

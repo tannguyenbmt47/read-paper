@@ -5,19 +5,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Chạy và kiểm tra
 
 ```bash
-./run.sh                 # tạo .venv + cài deps + chạy uvicorn ở 127.0.0.1:8000
-PORT=8010 ./run.sh       # đổi cổng
-.venv/bin/uvicorn server.main:app --reload --port 8000   # dev, tự nạp lại
+./run.sh                 # tạo .venv + cài deps + chạy uvicorn ở 127.0.0.1:8010
+PORT=9000 ./run.sh       # đổi cổng
+.venv/bin/uvicorn server.main:app --reload --port 8010   # dev, tự nạp lại
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 76 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 148 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
-node --check web/app.js             # chưa có test cho frontend
+.venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
+node --check web/app.js web/survey.js   # chưa có test cho frontend
 ```
 
 `tests/test_unit.py` — logic thuần, không cần server: chốt soát số liệu trên
 slide, bộ đo tràn khung, bộ bóc Mermaid, chỉ số trên/dưới.
+
+**`tests/conftest.py` là hàng rào giữ bộ test khỏi `data/` thật, và nó phải nằm
+ở conftest chứ không phải ở fixture.** `server/db.py` đọc `PAPER_DATA_DIR` **ngay
+lúc import**, mà pytest **import mọi file test lúc thu thập** — và
+`tests/test_unit.py` import `server.pipeline` ở cấp module. Nên tới lúc fixture
+của `test_api.py` đặt biến môi trường thì `db.DATA_DIR` đã chốt vào `data/` thật
+từ lâu. Đã hỏng đúng vậy: chạy `pytest` ghi 2 bài rác và 66 kho survey rác lẫn
+vào dữ liệu người dùng. Hai hệ quả phải giữ:
+
+- `conftest.py` đặt biến ở **cấp module**, không đặt trong fixture;
+- fixture trong từng file test dùng `os.environ.setdefault(...)`, **không gán
+  đè** — gán đè thì biến môi trường trỏ một nơi còn dữ liệu nằm một nơi khác, và
+  chính phép kiểm bảo vệ cũng nói dối theo.
+
+`test_bo_test_khong_ghi_vao_data_that` canh cho hàng rào này không bị gỡ mất.
+
+`tests/test_survey.py` — kho survey, chạy với `EMBED_BACKEND=off` nên không kéo
+về 2,3GB trọng số và không đòi GPU. Đường BM25 phải chạy đúng một mình, vì đó
+cũng là đường mà máy không có GPU sẽ chạy. Bộ này canh mấy chỗ đã vỡ thật: chỉ
+mục FTS5 external content lệch với bảng `chunk` (hỏng câm, chỉ lộ ra ở một lệnh
+xoá rất lâu sau), giao dịch ghi bị bỏ quên làm luồng khác nhận `database is
+locked`, và bộ lọc thư mục tham khảo.
 
 `tests/test_api.py` — gọi API thật trên `PAPER_DATA_DIR` tạm nên **không đụng
 `data/` của người dùng**, và **không gọi model nên miễn phí**. Nó tồn tại vì
@@ -209,6 +232,26 @@ Vì thế nhãn (mục / danh sách / công thức / chú thích / footnote / he
 là do mô hình, không còn đoán bằng regex và cỡ chữ. Không có docling thì rơi về
 `parse_pdf()` — toàn bộ heuristic cũ vẫn nguyên vẹn làm đường lùi.
 
+**Span không rơi vào khung nào thì phải NHẶT LẠI, không được vứt.** `assign_spans`
+gán mỗi span vào khung nhỏ nhất chứa tâm nó; span ngoài mọi khung trước đây rơi
+ra ngoài và không ai nhặt. Docling bỏ sót một vùng chữ — hay gặp ở đoạn vắt qua
+ranh giới cột — thì **cả đoạn biến mất khỏi bài mà không có lỗi nào**. Đo trên
+bài CIRAG: 20,4% số span rơi ngoài; người đọc thấy một đoạn đứt giữa chừng ở chữ
+"Current" rồi nhảy sang ý khác.
+
+`recover_uncovered()` gom phần rơi ngoài thành khối `para` rồi thả vào `items`
+trước khi sắp thứ tự đọc, nên nó đi chung đường với mọi khối khác. Hai bộ lọc
+giữ cho nó không nhặt nhầm: bỏ span nằm trong vùng hình/bảng (đó là chữ trong
+hình, vốn phải biến mất khỏi mạch đọc) và bỏ span khác cỡ thân bài (số trang,
+nhãn trục). Đo lại theo tỉ lệ từ giữ được: **82,5% → 89,7%** trên CIRAG.
+
+Bẫy trong chính bản vá: **phải tách cột TRƯỚC khi dựng dòng.** `_rows()` gom theo
+baseline trên cả trang, nên ở bài hai cột một dòng trái và một dòng phải cùng độ
+cao thành MỘT dòng, ghép theo trục x là chữ hai cột cài răng lược:
+*"…static evidence repre- summarized as follows: sentation, failing…"*. Đã ra
+đúng vậy ở bản đầu. Và đừng dùng `_page_columns` để đoán số cột ở đây — nó tính
+trên khung KHỐI, đưa span rời vào thì luôn trả về một cột.
+
 Ba chỗ phải tự lo, vì mô hình không giải quyết được:
 
 - **`assign_spans()`** — mỗi span thuộc đúng một khối, chọn khung **nhỏ nhất**
@@ -314,6 +357,14 @@ tránh). Đi sau `cached_prefix(doc)` giống pass giải thích nên gần như
 tiền đầu ra; `minutes` là thứ thay đổi theo request nên nằm ở message `user`.
 Kết quả lưu ở cột `slides`, xem/sửa ở màn `#slides`, xuất qua
 `?fmt=slides` (tải file) và `?fmt=slides-pdf` (mở hộp in).
+
+**Bắt buộc có một slide đi hết cơ chế bằng ví dụ chạy tay.** Đây là chỗ mọi bộ
+slide về bài phương pháp thường hỏng, và hỏng theo cách người trình bày không
+nhận ra: kể được bài toán, kể được kết quả, nhưng phần giữa — cách nó thật sự
+chạy — chỉ còn cái tên và một sơ đồ ba hộp. Người nghe gật đầu suốt buổi rồi ra
+về không kể lại được cho ai. `OUTLINE_TASK` đòi ít nhất một slide lấy **một đầu
+vào cụ thể có thật trong bài**, đi từng bước, và ở mỗi bước nói **vì sao** bước
+ấy cần thiết. `pipeline.check_depth()` kiểm ở mức cả bộ (xem mục "Chuẩn độ sâu").
 
 **Luật slide là khẳng-định-và-bằng-chứng, và đó là quyết định có bằng chứng.**
 Garner & Alley 2013 giữ nguyên kịch bản nói 1.000 từ, chỉ đổi thiết kế slide:
@@ -461,6 +512,44 @@ quét khai node, không thì `|"thiếu"|` bị đọc thành node tên `u` và 
 Công thức dựng bằng `baseline` ở mức run (`_rich_runs`), không cần OMML — vì
 `^{…}` / `_{…}` vốn đã là dạng lưu.
 
+### Sửa tay bản dịch, và chốt chặn rò hệ chữ
+
+Nút ✎ trên mỗi khối ở màn đọc mở một `<textarea>` chứa **văn bản thô đang lưu**,
+không phải `contenteditable` trên nội dung đã hiển thị — cột đó đã đi qua `sci()`
+nên có `<sup>`, `<sub>` và thẻ `<a>`; lấy HTML đó làm nội dung lưu thì mỗi lần
+sửa lại nhân thêm một lớp thẻ và `^{…}` gốc mất luôn. Cùng lý do với
+`paintHighlights` dùng DOM Range chứ không cắt chuỗi HTML.
+
+Bản sửa ghi cả vào `tm`, nên nó theo đoạn văn chứ không theo bài: đoạn y hệt ở
+bài khác, hoặc chính bài này sau khi bóc lại, lấy đúng bản người dùng đã sửa.
+
+**`script_leak()` là chốt chặn của pass dịch, và pass dịch trước đây không có
+cái nào.** `cjk_leak` chỉ biết CJK/Hangul, mà đã gặp bản dịch chứa `띠ᥕᥕᥲᥕᥱ` thay
+cho chữ "bảo toàn" — `ᥕᥲᥱ` là chữ Limbu, ngoài mọi dải nó biết. Liệt kê hệ chữ
+**cấm** là trò đuổi bắt không hồi kết; `_OK_SCRIPT` liệt kê hệ chữ **được phép**
+(Latinh, dấu tiếng Việt, Hy Lạp, toán, chỉ số trên/dưới) nên mọi thứ lạ đều bị
+bắt, kể cả hệ chữ chưa ai gặp.
+
+Chỗ phải chặn cho bằng được là **`tm`**, không phải `doc`: bản dịch rác nằm
+trong `doc` thì người đọc thấy và sửa được, nhưng nằm trong `tm` thì nó quay lại
+mãi mãi — mọi bài sau có đoạn y hệt đều nhận lại đúng cái rác đó, miễn phí và im
+lặng. Quét dữ liệu thật đã tìm ra 4 mục `tm` nhiễm (Cyrillic, Devanagari,
+Armenian) và 2 khối trong bài.
+
+### Bóc lại từ PDF mà giữ nguyên bản dịch
+
+`POST /api/doc/{id}/reparse` bóc lại từ file gốc (bỏ qua `parse_cache`) rồi
+`pipeline.reparse_merge()` ghép **theo NỘI DUNG, không theo vị trí**: khối mới
+trùng văn bản khối cũ thì lấy lại đúng mã cũ, nên bản dịch, ghi chú, vệt bôi và
+`source_block_ids` của slide vẫn trỏ đúng chỗ. Ghép theo vị trí thì bản bóc mới
+chèn thêm một khối là mọi chỉ số phía sau lệch đi một, bản dịch dán vào nhầm
+đoạn — **tệ hơn mất bản dịch**, vì nhìn vẫn có vẻ đúng.
+
+Khối trùng nội dung nhau phải khớp **theo thứ tự xuất hiện** (dict text → *danh
+sách* mã). Khớp một-một thì khối thứ hai luôn phải mint mã mới, và mint lại mỗi
+lần bóc — đo trên bài thật: 12 khối churn mỗi lượt, và bản dịch của chúng rơi
+theo. Sau khi sửa, bóc lại hai lần liên tiếp cho `kept: 282, new: 0, dropped: 0`.
+
 ### Bôi vàng và ghi chú
 
 Người đọc bôi một đoạn trong màn `#reader`, vệt bôi lưu ở cột `highlights`, rê
@@ -495,6 +584,191 @@ slide.
 Để mặc định thì DeepSeek V4 / GPT-5.x tiêu sạch `max_tokens` vào phần nghĩ thầm
 rồi trả về rỗng hoặc JSON dở dang. `cjk_leak()` bắt trường hợp model gốc Trung
 Quốc trả về chữ Hán (so với bản gốc, không cấm tuyệt đối) và gọi lại một lần.
+
+## Cơ chế thứ hai: kho survey (`server/survey/`)
+
+Đây là **một công cụ khác**, không phải một tính năng của luồng đọc-hiểu. Luồng
+cũ xoay quanh `cached_prefix(doc)` — toàn văn **một** bài nhét vào system prompt.
+Kiến trúc đó không dùng lại được cho câu hỏi cần ba mươi bài.
+
+Ranh giới phải giữ: `pipeline.py`, `prompts.py`, `parser.py`, `layout.py` **không
+đổi một dòng nào**; `main.py` chỉ thêm hai dòng `include_router`. Kho dùng chung
+`data/papers.db` nhưng **không chung bảng nào** với `documents`/`parse_cache`/`tm`.
+
+Ràng buộc chi phối toàn bộ thiết kế: **dịch 50 bài là không khả thi về tiền.**
+Nên kho **không dịch bài** — nó bóc, đánh chỉ mục, và rút mỗi bài thành một
+*phiếu* (`card`) ~600 token.
+
+```
+PDF → đoạn → ngữ cảnh hoá → vector → cây RAPTOR → phiếu → đồ thị thực thể
+                                   ↓
+hỏi → lập kế hoạch → tìm → đọc → chấm thiếu → tìm tiếp → tổng hợp → kiểm chứng
+```
+
+| Bước | Chạy bằng | Giá/bài |
+|---|---|---|
+| bóc PDF, cắt đoạn, chỉ mục FTS5 | — | **$0** |
+| vector hoá | GPU tại máy | **$0** |
+| ngữ cảnh hoá · cây · phiếu · đồ thị | model rẻ | ~$0,034 |
+
+### Năm kết quả nghiên cứu, và luật nào sinh ra từ kết quả nào
+
+Đây là phần **không được sửa theo cảm tính** — mỗi hằng số dưới đây có một phép
+đo đứng sau.
+
+1. **Vòng lặp tìm-đọc-tìm-tiếp thắng cả bằng chứng hoàn hảo** (80,9% so với
+   69,1% khi đưa sẵn gold context; không ngữ cảnh 37,2%). Từ đó ra `MAX_STEPS=5`,
+   `PER_STEP=10`, `CARRY=2` trong `agent.py`. Bốn kiểu hỏng đo được, mỗi kiểu một
+   chốt chặn:
+
+   | Kiểu hỏng | Thiệt hại | Chốt |
+   |---|---|---|
+   | thiếu phủ | 77,9% → 49,2% | bảng kiểm tường minh; mục trống **ghi thẳng** vào câu trả lời |
+   | hỏng tổng hợp | **87,3% số câu sai** | tổng hợp bằng model **mạnh**, bằng chứng **nhóm theo câu hỏi con** |
+   | bám nhầm mồi | −53,9 điểm | mỗi vòng bắt buộc mang **từ khoá mới** |
+   | dừng sớm quá tự tin | → 61,5% | cấm dừng ở vòng 1 khi còn mục trống |
+
+2. **RRF (k=60)** trộn theo **thứ hạng**, nên cắm thêm/rút bớt bộ tìm không phải
+   chỉnh hệ số. Đây cũng là lý do `EMBED_BACKEND=off` chạy được mà không rẽ nhánh
+   code. Đo thật trên máy này: cosine của BGE-M3 nằm trong dải hẹp 0,31–0,57 —
+   cộng điểm thẳng với BM25 (điểm âm) là vô nghĩa.
+3. **Contextual Retrieval** — chèn một câu ngữ cảnh do model sinh vào trước mỗi
+   đoạn rồi mới đánh chỉ mục: giảm ~67% tỉ lệ tìm trượt. Đoạn *"we reach 62.3
+   EM"* tự nó không tìm ra được bằng bất cứ truy vấn tự nhiên nào.
+4. **query2doc** — sinh một đoạn văn giả **tiếng Anh** rồi ghép vào truy vấn. Có
+   lợi cho cả BM25 lẫn dense (khác HyDE vốn chỉ giúp dense). Đây cũng là cách câu
+   hỏi tiếng Việt bắt được bài tiếng Anh.
+5. **RAPTOR (ICLR 2024)** — truy vấn kiểu **"collapsed tree"**: đổ hết mọi node
+   của mọi tầng vào **cùng một chỉ mục** rồi tìm một lần, ăn đứt cách đi lần từ
+   gốc xuống lá. Vì thế **không có bảng riêng cho node cây**: tầng tóm lược ghi
+   thẳng vào `chunk` với `level > 0`.
+6. **GraphRAG** — bản đầy đủ đắt tới mức không dùng được (LazyGraphRAG đưa chi
+   phí nạp về **0,1%**), nên ở đây **không dựng bản tóm lược cộng đồng**. Và đồ
+   thị dùng để **mở rộng sau khi đã tìm**, không phải một đường tìm song song:
+   hỏi tra cứu chi tiết thì vector thường **hơn** đồ thị (F1 64,8 vs 63,0), hỏi
+   bắc cầu thì đồ thị hơn (70,3 vs 67,0).
+
+### Bất biến quan trọng nhất: `corpus_digest`
+
+`prompts.corpus_digest(papers)` ghép phiếu của cả kho thành một khối phải
+**byte-identical giữa mọi câu hỏi** của cùng một dự án, và luôn đứng trước phần
+thay đổi. Đây là `cached_prefix` của cơ chế survey, và bẫy y hệt: nhét câu hỏi,
+thời gian hay số vòng vào đó là hỏng cache và chi phí nhân lên nhiều lần. Bài xếp
+theo `id` chứ không theo `updated_at` — xếp theo thời gian thì mở lại một bài
+cũng đảo thứ tự và cache trượt sạch. `session_id=survey_id` cho mọi lần gọi.
+
+### Bẫy FTS5 external content — đã làm hỏng DB một lần
+
+`chunk_fts` là bảng `content='chunk'`: FTS5 không giữ nội dung mà đọc ngược về
+bảng `chunk` qua rowid. Đổi lấy dung lượng bằng một nghĩa vụ — **lệnh xoá phải
+mang đúng từng byte nội dung cũ**. Sai một ký tự thì lệnh chạy trót lọt, không
+báo gì, rồi rất lâu sau ném `database disk image is malformed` ở một chỗ chẳng
+liên quan.
+
+Đã vỡ đúng vậy vì `title` lúc đầu được truyền vào như tham số rời lấy từ bảng
+`paper`. Cách sửa **không phải** là cẩn thận hơn, mà là làm cho việc lệch trở nên
+bất khả: `title` được chép hẳn vào bảng `chunk`, nên nội dung chỉ mục là **hàm
+thuần của một dòng `chunk`**, và mọi lần ghi đều đi qua `_fts_write()`. Phần
+thưởng kèm theo: `reindex()` (`'rebuild'`) chạy được, vì mọi cột của `chunk_fts`
+đều là cột có thật trong `chunk`. Đổi `paper.title` thì `update_paper` tự đồng bộ
+xuống `chunk.title` rồi reindex.
+
+Bẫy anh em: **DML ngoài `with conn():` là giao dịch ghi không bao giờ đóng.** Kết
+nối là thread-local, nên luồng khác nhận `database is locked` ở một chỗ hoàn toàn
+khác. Đã vấp với `integrity()`.
+
+### Bộ lọc thư mục tham khảo — hai tầng, và vì sao cần cả hai
+
+`parse_pdf` gắn nhãn `reference` khi tìm được tiêu đề mục tham khảo, nhưng có bài
+nó không tìm ra — lúc đó cả thư mục rơi vào mục cuối cùng. Đo trên bài thật: một
+mục thư mục đứng **hạng nhất** cho câu hỏi về nội dung. Thư mục dày đặc từ khoá
+chủ đề mà không mang nội dung nào, nên nó là thứ gây nhiễu tệ nhất trong chỉ mục.
+
+- `_is_ref_block()` chấm **từng khối**, chạy **trước khi gộp**. Gộp rồi mới chấm
+  thì đoạn văn thật nằm cạnh thư mục bị vứt theo — đã mất luôn câu kết luận.
+- `_looks_like_refs()` chấm **cụm đã gộp**, cho trường hợp nhiều mục ngắn.
+- Và phải chạy **cả ở nhánh khối quá dài** (`len > MAX_CHARS`): khối đó đi thẳng
+  vào kết quả, vòng qua `_flush`. Thư mục của bài hai cột hay bị nối thành một
+  dòng dài duy nhất — đã lọt đúng ca này.
+
+Dấu hiệu bắt buộc là **nơi công bố** (`In Proceedings`, `arXiv:`, `Springer`),
+không phải mật độ năm hay `et al.`: đoạn văn *"RAG tốt với truy vấn đơn (Lewis et
+al., 2020; Lin et al., 2024; Ram et al., 2023) nhưng…"* có mật độ năm **cao hơn**
+cả thư mục thật.
+
+### Chuẩn độ sâu (`server/depth.py`) — dùng chung cho tổng hợp, hỏi đáp và slide
+
+Ba chốt chặn cũ (`content_kept`, `check_answer`, `check_slides`) đều chặn model
+**bịa**. Không cái nào chặn được kiểu hỏng phổ biến nhất và khó thấy nhất: câu
+đúng sự thật, có trích dẫn đàng hoàng, mà **không mang thông tin nào**.
+
+> "CIRAG dùng cơ chế construction-integration để cải thiện chất lượng truy hồi."
+
+Không sai, và cũng vô dụng. Feynman gọi đúng chỗ này khi phê một cuốn sách giáo
+khoa viết *"năng lượng làm cho nó chuyển động"*: thay "năng lượng" bằng một từ vô
+nghĩa thì câu vẫn "đúng" y như cũ. **Phép thử wakalixes** ấy giờ nằm trong prompt
+của cả ba pass, và ba phép kiểm cơ học đi kèm:
+
+| Phép kiểm | Bắt gì |
+|---|---|
+| `find_filler` | cụm rỗng: "đóng vai trò quan trọng", "góp phần nâng cao"… |
+| `vague_claim` | "cải thiện / nâng cao / tối ưu" mà không nói **bằng cách nào** |
+| `missing_mechanism` | câu đủ dài, không có quan hệ nhân quả, cũng không có số |
+| `circular` | lời giải thích chỉ lặp lại chính khái niệm đang giải thích |
+
+Hai chỗ dễ làm hỏng bộ này:
+
+- **Ngưỡng phải nới tay.** `missing_mechanism` bỏ qua câu ngắn và câu có số —
+  đòi nhân quả ở một khẳng định gọn là bắt viết dài dòng cho đủ hình thức. Đã
+  hiệu chỉnh trên 3 câu nông + 4 câu sâu: bắt 3/3, kêu oan 0/4. Sửa ngưỡng thì
+  chạy lại `tests/test_unit.py::test_do_sau_*`.
+- **`DEPTH_RULES` là một nguồn duy nhất** nhúng vào `SYNTH_SYSTEM`,
+  `ANSWER_SYSTEM`, `OUTLINE_TASK`, `SLIDES_TASK`. Sửa luật ở một chỗ, đừng chép
+  ra bốn chỗ rồi để chúng trôi mỗi nơi một kiểu.
+
+Ở mức **cả bộ slide**, `check_depth()` thêm một phép kiểm mà từng slide không
+thấy được: deck về bài phương pháp mà **không có slide nào đi hết cơ chế** thì
+người nghe nắm được bài toán và kết quả nhưng không kể lại được cách nó chạy.
+`_walks_mechanism()` đòi **cả** dấu hiệu trình tự (bước / trước hết / đầu vào)
+**lẫn** quan hệ nhân quả — đòi một từ khoá thì model học được cách rắc vào cho qua.
+
+### Nhãn bài ngắn `P1`, `P2` — và vì sao không dùng mã thật
+
+Mã bài (`p50d58cb2d3`, 11 ký tự) chỉ khác mã đoạn (`p50d58cb2d3c14`) ở phần đuôi.
+Model lẫn hai thứ liên tục rồi viết ra mã 12 ký tự không tồn tại — đo trên bài
+thật: **6 trong 9 cảnh báo** của một bản tổng hợp là "mã bài không có trong kho",
+và vì không mã nào khớp nên cả phần hướng tiếp cận thành vô dụng.
+
+`prompts.paper_labels()` đổi sang `P1`, `P2`… trong `corpus_digest`, `synth._clean`
+đổi ngược về mã thật. Nhãn xếp theo `id` chứ không theo thứ tự truyền vào, vì
+`corpus_digest` phải byte-identical thì cache mới hit.
+
+### Bóc số: hai bên cố ý KHÔNG đối xứng
+
+`verify.source_numbers()` bóc số ở phía **nguồn** rộng tay hơn `_NUM` (cho phép
+đuôi chữ: `100M`, `7B`, `62.3%`, và cả `1,000` ↔ `1000`).
+
+Phía câu trả lời phải chặt, vì ở đó đang hỏi "cái này có phải số liệu bịa không"
+và `Qwen2.5-7B` không được tính là số liệu. Phía nguồn chỉ là đống cỏ để tìm kim:
+bóc rộng hơn chỉ làm giảm báo động giả, **không thể** làm lọt số bịa. Đã báo oan
+đúng vì chỗ này — bài ghi `100M frames`, câu trả lời viết "100 triệu khung hình".
+
+### Chốt chặn: `verify.check_answer()`
+
+Bản sao của `content_kept()` / `check_slides()` cho pass này, cùng triết lý
+**cảnh báo chứ không chặn**. Phép kiểm đáng giá nhất vẫn là ràng buộc số liệu:
+mọi con số phải có mặt nguyên văn trong đoạn đã trích (dùng lại `pipeline._NUM`,
+`_URLISH`, `_norm_num`). Thêm ba thứ riêng của cơ chế này:
+
+- mã đoạn phải **nằm trong tập đã lấy về ở lượt này** — trích một mã có thật
+  trong kho nhưng không thuộc lượt này cũng là bịa, model không hề đọc nó;
+- **giấu chỗ chưa tìm ra** bị bắt: còn mục chưa có bằng chứng mà câu trả lời
+  không nói ra thì gắn cờ. Đây là kiểu hỏng tệ nhất của công cụ này;
+- `check_entailment()` bắt *trích dẫn hình thức*: mã nguồn có thật, số liệu có
+  thật, nhưng đoạn ấy không nói điều câu đó khẳng định.
+
+Cảnh báo neo theo **chỉ số câu** (`split_sentences` giữ `start`/`end`), để giao
+diện tô đúng câu chứ không tô cả bài.
 
 ### Các quy ước nhỏ dễ vấp
 

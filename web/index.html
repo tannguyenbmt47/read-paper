@@ -5,9 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Loupe — đọc bài báo khoa học đến mức thật sự hiểu</title>
 <link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/survey.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📑</text></svg>">
 </head>
 <body>
+
+<!-- ===== THANH CÔNG CỤ BÊN TRÁI =====
+     Hai công cụ, không phải hai tính năng của một công cụ: một cái đọc kỹ MỘT
+     bài, một cái hỏi cả MỘT KHO. Để chúng cạnh nhau ở đây thì ranh giới đó hiện
+     ra ngay từ lúc mở app, khỏi phải giải thích. -->
+<!-- Icon vẽ bằng SVG chứ không dùng emoji: emoji do hệ điều hành vẽ nên mỗi máy
+     một kiểu, luôn có màu riêng không theo được chủ đề sáng/tối, và cỡ thì
+     không canh được với chữ. `stroke: currentColor` để icon đổi màu cùng nhãn. -->
+<nav id="rail" aria-label="Công cụ">
+  <div class="rail-mark" title="Loupe" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+      <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/>
+    </svg>
+  </div>
+  <button class="rail-item is-on" data-tool="doc"
+          title="Đọc và dịch một bài báo, giữ nguyên mạch lập luận">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" aria-hidden="true">
+      <path d="M5 3.5h9l5 5v12H5z"/><path d="M14 3.5v5h5"/>
+      <path d="M8.5 13h7M8.5 16.5h4.5"/>
+    </svg>
+    <span class="rail-lb">Dịch</span>
+  </button>
+  <button class="rail-item" data-tool="survey"
+          title="Nạp cả kho tài liệu rồi hỏi — câu trả lời có trích dẫn tới từng đoạn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 5.5c2.5-1.2 5-1.2 7.5 0v13c-2.5-1.2-5-1.2-7.5 0z"/>
+      <path d="M11.5 5.5c2.5-1.2 5-1.2 7.5 0v6"/>
+      <circle cx="16.5" cy="16" r="3.2"/><path d="M18.9 18.4 21 20.5"/>
+    </svg>
+    <span class="rail-lb">Tìm hiểu</span>
+  </button>
+</nav>
 
 <!-- ============================ MÀN HÌNH NHẬP ============================ -->
 <section id="start" class="screen">
@@ -79,6 +114,19 @@
     <div id="recentWrap" class="recent hidden">
       <h2>Đã đọc gần đây</h2>
       <ul id="recentList"></ul>
+    </div>
+
+    <!-- Lối vào chính là thanh bên trái. Khối này chỉ để người mới biết công cụ
+         thứ hai tồn tại và nó khác gì — bấm vào cũng ra cùng chỗ. -->
+    <div class="sv-entry">
+      <h2>Hoặc hỏi cả một kho tài liệu</h2>
+      <p class="hint">
+        Nạp hàng chục bài một lúc, rồi hỏi bằng tiếng Việt và nhận câu trả lời
+        <strong>có trích dẫn tới từng đoạn</strong>. Kho không dịch bài — nó đánh chỉ mục,
+        dựng cây tóm lược cho từng bài và nối các bài bằng đồ thị thực thể, nên
+        nạp năm mươi bài vẫn rẻ.
+      </p>
+      <button id="goSurvey" class="btn btn-primary">🔍 Mở phần Tìm hiểu →</button>
     </div>
   </div>
 </section>
@@ -246,6 +294,10 @@
         <div id="briefBox">
           <p class="muted">Bấm <em>Dịch</em> để tool đọc toàn bài, dựng tóm lược và chốt bảng thuật ngữ trước khi dịch.</p>
         </div>
+        <button id="reparseBtn" class="btn btn-sm"
+                title="Bóc lại bài từ file PDF gốc bằng bộ bóc mới nhất. MIỄN PHÍ — không gọi model. Bản dịch, ghi chú, vệt bôi vàng đều giữ nguyên: khối được ghép lại theo nội dung chứ không theo vị trí. Chỉ phần chữ mới nhặt về là chưa có bản dịch.">
+          Bóc lại từ PDF (miễn phí)
+        </button>
         <button id="rebriefBtn" class="btn btn-sm hidden"
                 title="Đọc lại toàn bài để dựng tóm lược và chốt lại bảng thuật ngữ. Tốn một lượt gọi model. Phần đã dịch giữ nguyên.">
           Dựng lại tóm lược &amp; bảng thuật ngữ
@@ -512,7 +564,198 @@
   </div>
 </div>
 
+<!-- ======================= MÀN HÌNH KHO SURVEY =========================
+     Cơ chế thứ hai, tách hẳn khỏi luồng đọc-hiểu ở trên: nhiều bài, tìm kiếm,
+     hỏi đáp có trích dẫn. Mã ở web/survey.js, không đụng vào app.js. -->
+<section id="survey" class="screen hidden">
+  <header class="sv-top">
+    <select id="svPick" class="sv-pick" aria-label="Kho đang mở"></select>
+    <span id="svStats" class="sv-stats"></span>
+    <span class="grow"></span>
+    <span class="sv-modelnote" title=""></span>
+    <span id="svEngine" class="sv-engine"></span>
+    <div class="sv-menu">
+      <button id="svMore" class="icon-btn" title="Thêm">⋯</button>
+      <div id="svMoreBox" class="sv-menubox hidden">
+        <button id="svNew">Tạo kho mới</button>
+        <button id="svRename">Đổi tên kho</button>
+        <button id="svDrop" class="is-danger">Xoá kho này</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="sv-body">
+    <!-- ------------------------------ cột trái: tài liệu ----------------- -->
+    <aside class="sv-left">
+      <div class="sv-lhead">
+        <h2 id="svCount">Tài liệu</h2>
+        <button id="svAddTog" class="btn btn-ghost xs">+ Thêm</button>
+      </div>
+
+      <div id="svAddBox" class="sv-addbox">
+        <label id="svDrop2" class="sv-drop">
+          <input type="file" id="svFiles" accept=".pdf" multiple hidden>
+          <b>Kéo thả PDF vào đây</b>
+          <span>hoặc bấm để chọn · nhiều file một lúc</span>
+        </label>
+        <div class="sv-row">
+          <input id="svUrl" class="input" placeholder="arXiv hoặc link PDF…">
+          <button id="svUrlGo" class="btn">Nạp</button>
+        </div>
+        <div class="sv-row">
+          <input id="svFind" class="input" placeholder="Tìm bài trên arXiv / OpenAlex…">
+          <button id="svFindGo" class="btn">Tìm</button>
+        </div>
+        <button id="svFromLoupe" class="sv-link">Lấy bài đã đọc trong phần Dịch →</button>
+        <label class="check sv-enrich">
+          <input type="checkbox" id="svEnrich" checked>
+          <span>Bơm nội dung ngay khi nạp
+            <i>Nạp thô miễn phí. Bơm thì tìm chính xác hơn nhiều — ~$0,034/bài.</i></span>
+        </label>
+      </div>
+
+      <p id="svProg" class="sv-prog"></p>
+      <ul id="svPapers" class="sv-papers"></ul>
+      <button id="svMorePapers" class="sv-link hidden">Xem thêm…</button>
+    </aside>
+
+    <!-- ------------------------------ giữa: ba tab ----------------------- -->
+    <main class="sv-main">
+      <nav class="sv-tabs">
+        <button id="svTabSyn"  class="sv-tab is-on">Tổng hợp</button>
+        <button id="svTabAsk"  class="sv-tab">Hỏi đáp</button>
+        <button id="svTabGrid" class="sv-tab">Bảng so sánh</button>
+        <button id="svTabMap"  class="sv-tab">Tra đoạn &amp; bản đồ</button>
+      </nav>
+
+      <!-- ---- tab 0: tổng hợp — thứ để ĐỌC MÀ HIỂU, đặt trước hỏi đáp vì hỏi
+           đáp giả định người ta đã biết phải hỏi gì ---- -->
+      <section id="svPaneSyn" class="sv-pane">
+        <div class="sv-col">
+          <div class="sv-synbar">
+            <div>
+              <b>Bản tổng hợp cả kho</b>
+              <p class="small muted">Đọc phiếu của mọi bài rồi dựng ra: bài toán chung,
+                các hướng tiếp cận và cái mỗi hướng <em>đặt cược</em> vào, ai kế thừa ai,
+                tính mới thật của từng bài, và chỗ các bài nói ngược nhau.</p>
+            </div>
+            <span class="grow"></span>
+            <label class="sv-inline">Model
+              <select id="svSynModel" class="input"></select>
+            </label>
+            <a id="svSynMd" class="btn xs" target="_blank" rel="noopener">Markdown</a>
+            <button id="svSynGo" class="btn btn-primary">Dựng · ~$0,09</button>
+          </div>
+          <p class="sv-modelnote sv-cost"></p>
+          <p id="svSynProg" class="sv-cost"></p>
+          <div id="svSynWarns" class="sv-warns"></div>
+          <article id="svSyn" class="sv-syn"></article>
+        </div>
+      </section>
+
+      <!-- ---- tab 1: hỏi đáp ---- -->
+      <section id="svPaneAsk" class="sv-pane hidden">
+        <div class="sv-col">
+          <div class="sv-askbar">
+            <textarea id="svQ" rows="3"
+              placeholder="Hỏi cả kho bằng tiếng Việt — ví dụ: các cách chọn bằng chứng khác nhau ở đâu?"></textarea>
+            <div class="sv-askfoot">
+              <details class="sv-opts">
+                <summary>Tuỳ chọn &amp; model</summary>
+                <div class="sv-optbox">
+                  <label>Model tổng hợp câu trả lời
+                    <select id="svModel" class="input"></select>
+                    <i>Chỉ chạy MỘT lần mỗi câu hỏi, nhưng hỏng khâu tổng hợp là
+                      phần lớn số câu sai — nên chọn model khá ở đây.</i>
+                  </label>
+                  <label>Model cho các bước còn lại
+                    <select id="svFastModel" class="input"></select>
+                    <i>Lập kế hoạch, chấm lại kết quả, đọc đoạn, và cả lúc nạp bài.
+                      Số lượt gọi nhiều gấp bội — đây mới là chỗ quyết định hoá đơn.</i>
+                  </label>
+                  <label>Trần chi phí mỗi câu hỏi
+                    <input id="svBudget" class="input inp-xs" type="number" step="0.05" min="0" value="0.5">
+                    <i>USD. Kiểm trước mỗi lần gọi model, hết thì dừng và nói rõ.</i>
+                  </label>
+                  <label class="check"><input type="checkbox" id="svEntail" checked>
+                    <span>Soát trích dẫn <i>bắt câu có nguồn nhưng nguồn không đỡ được</i></span></label>
+                  <label class="check"><input type="checkbox" id="svCache" checked>
+                    <span>Dùng lại câu đã hỏi <i>kho chưa đổi thì miễn phí</i></span></label>
+                </div>
+              </details>
+              <span class="grow"></span>
+              <button id="svStop" class="btn hidden">Dừng</button>
+              <button id="svAsk" class="btn btn-primary">Hỏi</button>
+            </div>
+          </div>
+
+          <div id="svSteps" class="sv-steps"></div>
+          <article id="svAnswer" class="sv-answer"></article>
+          <div id="svWarns" class="sv-warns"></div>
+          <p id="svCost" class="sv-cost"></p>
+          <div id="svHistory" class="sv-history"></div>
+        </div>
+      </section>
+
+      <!-- ---- tab 2: bảng so sánh ---- -->
+      <section id="svPaneGrid" class="sv-pane hidden">
+        <div class="sv-gridbar">
+          <span class="small muted">Dựng thẳng từ phiếu của từng bài — mở bảng không tốn tiền.</span>
+          <span class="grow"></span>
+          <a id="svCsv" class="btn xs" download>Tải CSV</a>
+          <a id="svMd" class="btn xs" target="_blank" rel="noopener">Markdown</a>
+        </div>
+        <div class="sv-gridwrap"><table id="svGrid" class="sv-grid"></table></div>
+        <button id="svMoreRows" class="sv-link hidden"></button>
+      </section>
+
+      <!-- ---- tab 3: tra đoạn + bản đồ ---- -->
+      <section id="svPaneMap" class="sv-pane hidden">
+        <div class="sv-col">
+          <div class="sv-row">
+            <input id="svSearch" class="input" placeholder="Tra trong kho — miễn phí, không gọi model">
+            <button id="svSearchGo" class="btn btn-primary">Tra</button>
+          </div>
+          <div id="svHits" class="sv-hits"></div>
+          <button id="svMoreHits" class="sv-link hidden">Xem thêm kết quả…</button>
+          <h3 class="sv-h3">Bản đồ thực thể</h3>
+          <p class="small muted">Thực thể xuất hiện ở nhiều bài nhất, và quan hệ mà chính các bài phát biểu ra.</p>
+          <div id="svGraph" class="sv-graph"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- hộp kết quả tìm bài trên web -->
+  <div id="svFindBox" class="modal hidden">
+    <div class="modal-card">
+      <header class="modal-head">
+        <b>Kết quả tìm bài</b>
+        <span class="grow"></span>
+        <label class="check small"><input type="checkbox" id="svFindEnrich" checked> Bơm nội dung khi nạp</label>
+        <button id="svFindAdd" class="btn btn-primary">Nạp bài đã tick</button>
+        <button id="svFindClose" class="btn btn-ghost">Đóng</button>
+      </header>
+      <div id="svFindList" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- hộp chọn bài từ luồng đọc -->
+  <div id="svDocBox" class="modal hidden">
+    <div class="modal-card">
+      <header class="modal-head">
+        <b>Bài đã có trong Loupe</b>
+        <span class="grow"></span>
+        <button id="svDocAdd" class="btn btn-primary">Kéo sang kho</button>
+        <button id="svDocClose" class="btn btn-ghost">Đóng</button>
+      </header>
+      <div id="svDocList" class="modal-body"></div>
+    </div>
+  </div>
+</section>
+
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/app.js"></script>
+<script src="/survey.js"></script>
 </body>
 </html>

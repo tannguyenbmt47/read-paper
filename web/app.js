@@ -353,8 +353,17 @@ async function openDoc(id) {
 /* ============================ bước 1: kiểm tra ============================ */
 
 function showScreen(id) {
-  ["start", "review", "reader", "slides"].forEach((s) =>
+  ["start", "review", "reader", "slides", "survey"].forEach((s) =>
     $("#" + s).classList.toggle("hidden", s !== id));
+  syncRail(id);
+}
+
+/* Thanh bên trái phải luôn chỉ đúng công cụ đang mở, kể cả khi màn hình đổi từ
+   chỗ khác (mở bài từ #doc= trên thanh địa chỉ, bấm nút quay lại…). Nên đồng bộ
+   ở ĐÂY chứ không ở chỗ bấm nút — chỗ bấm nút chỉ là một trong nhiều đường vào. */
+function syncRail(id) {
+  const tool = id === "survey" ? "survey" : "doc";
+  $$(".rail-item").forEach((b) => b.classList.toggle("is-on", b.dataset.tool === tool));
 }
 
 function mountReview(doc) {
@@ -682,7 +691,10 @@ function wireCrop() {
       const { block } = await r.json();
       Object.assign(crop.block, block);
       closeCrop();
-      renderReview();
+      // Vẽ lại đúng màn đang mở. Gọi cứng `renderReview()` thì sửa khung ở màn
+      // đọc xong ảnh vẫn là ảnh cũ cho tới khi tải lại trang.
+      if (!$("#reader").classList.contains("hidden")) renderDoc();
+      else renderReview();
     } catch (e) {
       $("#cropErr").textContent = e.message;
     } finally {
@@ -832,6 +844,34 @@ function wireReader() {
 
   // Bảng thuật ngữ bị đóng băng trong brief. Sửa luật dịch xong mà không dựng
   // lại brief thì bài đang đọc vẫn dùng bảng cũ.
+  /* Bóc lại từ PDF. Miễn phí, và phần đã dịch giữ nguyên — nên nút này không
+     cần cảnh báo giá, chỉ cần nói rõ nó sẽ đổi gì. */
+  $("#reparseBtn").onclick = async () => {
+    const btn = $("#reparseBtn");
+    if (!confirm("Bóc lại bài từ file PDF gốc bằng bộ bóc mới nhất?\n\n"
+      + "Miễn phí, không gọi model. Bản dịch, ghi chú và vệt bôi vàng giữ nguyên "
+      + "— khối được ghép lại theo nội dung. Phần chữ mới nhặt về sẽ chưa có bản "
+      + "dịch; bấm Dịch tiếp là xong, và đoạn nào từng dịch rồi thì lấy lại miễn phí.")) return;
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = "Đang bóc lại…";
+    try {
+      const r = await fetch(`/api/doc/${state.doc.id}/reparse`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json()).detail || "không bóc lại được");
+      const res = await r.json();
+      mountDoc(res.doc);
+      const st = res.stats;
+      status(`Bóc lại xong: ${st.blocks} khối · giữ ${st.kept} bản dịch cũ · `
+        + `${st.new} khối mới` + (st.to_translate ? ` · ${st.to_translate} khối chờ dịch` : "")
+        + (st.dropped ? ` · bỏ ${st.dropped} khối không còn` : ""));
+    } catch (e) {
+      status("Lỗi: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  };
+
   $("#rebriefBtn").onclick = async () => {
     const btn = $("#rebriefBtn");
     if (!confirm("Đọc lại toàn bài để chốt lại bảng thuật ngữ?\n\n" +
@@ -2750,17 +2790,25 @@ function pairHTML(b, vi, note) {
   const tools = `<div class="tools">
        ${b.type === "para" || b.type === "caption" ? `
          <button data-act="explain" title="Giải thích — đoạn này đang làm gì trong lập luận của bài?">💡</button>
-         <button data-act="copy" title="Chép bản dịch">⧉</button>` : ""}
+         <button data-act="copy" title="Chép bản dịch">⧉</button>
+         <button data-act="edit" title="Sửa tay bản dịch. Miễn phí, và bản sửa được ghi vào bộ nhớ dịch nên đoạn y hệt ở bài khác cũng dùng bản của bạn.">✎</button>` : ""}
        ${b.hidden
          ? `<button data-act="unhide" title="Đưa khối này trở lại mạch đọc">↩</button>`
          : `<button data-act="hide" title="Ẩn khối này khỏi mạch đọc (giữ nguyên bản dịch, hiện lại được)">⊘</button>`}
      </div>`;
   // Hình/bảng cắt từ PDF hiện trên caption. Công thức cũng là ảnh cắt từ PDF —
   // toán hai chiều dựng lại bằng chữ thì mất hình dạng, ảnh thì đúng bản in.
+  // Khung cắt sai thì phải sửa được NGAY TẠI CHỖ ĐANG ĐỌC. Trước đây nút ✂ chỉ
+  // có ở màn soát, nên gặp một công thức bị cắt cụt giữa lúc đọc thì phải quay
+  // ra, tìm lại đúng khối, sửa, rồi vào đọc lại từ đầu — đủ phiền để người ta
+  // bỏ qua và đọc tiếp với cái ảnh hỏng.
   const fig = b.figure
     ? `<figure class="${b.type === "equation" ? "eqfig" : "figure"}">
          <img src="/api/doc/${esc(state.doc.id)}/img/${esc(b.figure)}.png"
               alt="${esc(b.text.slice(0, 90))}" loading="lazy">
+         ${b.figure_page >= 0
+           ? `<button class="fig-crop" data-crop="${esc(b.id)}"
+                title="Khung cắt sai? Kéo lại khung trên trang PDF gốc.">✂</button>` : ""}
        </figure>`
     : "";
   const gl = state.doc.plain?.[b.id] || "";
@@ -2771,6 +2819,65 @@ function pairHTML(b, vi, note) {
     <div class="gl" data-gl>${sci(gl)}</div>
     ${note ? noteHTML(note) : ""}
   </div>`;
+}
+
+/* Sửa tay một ô — bản dịch hoặc phần diễn giải.
+
+   Dùng `<textarea>` chứa **văn bản thô đang lưu**, không dùng `contenteditable`
+   trên nội dung đã hiển thị: cột đó đã đi qua `sci()` nên có `<sup>`, `<sub>` và
+   thẻ `<a>` cho tham chiếu hình. Lấy HTML đó làm nội dung lưu thì mỗi lần sửa
+   lại nhân thêm một lớp thẻ, và `^{…}` gốc mất luôn. */
+function editCell(pair, which) {
+  const id = pair.dataset.id;
+  const cell = $(which === "vi" ? "[data-vi]" : "[data-gl]", pair);
+  if (!cell || cell.querySelector("textarea")) return;
+
+  const raw = (which === "vi" ? state.doc.translations : state.doc.plain)?.[id] || "";
+  const before = cell.innerHTML;
+  cell.innerHTML = `<textarea class="cell-edit" rows="3"></textarea>
+    <div class="cell-edit-bar">
+      <button data-e="save" class="btn btn-sm">Lưu</button>
+      <button data-e="cancel" class="btn btn-sm">Huỷ</button>
+      <span class="hint">Ctrl+Enter lưu · Esc huỷ · giữ nguyên <code>^{…}</code> và <code>_{…}</code></span>
+    </div>`;
+  const ta = $("textarea", cell);
+  ta.value = raw;
+  ta.style.height = "auto";
+  ta.style.height = Math.max(70, ta.scrollHeight) + "px";
+  ta.focus();
+  ta.setSelectionRange(raw.length, raw.length);
+
+  const cancel = () => { cell.innerHTML = before; };
+  const save = async () => {
+    const val = ta.value;
+    if (val === raw) return cancel();
+    try {
+      const r = await fetch(`/api/doc/${state.doc.id}/translation`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ block_id: id, [which]: val }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "không lưu được");
+      const res = await r.json();
+      if (which === "vi") state.doc.translations[id] = res.vi;
+      else state.doc.plain[id] = res.plain;
+      cell.innerHTML = sci(which === "vi" ? res.vi : res.plain);
+      cell.classList.add("was-edited");
+      status("Đã lưu bản sửa — bộ nhớ dịch cũng được cập nhật");
+    } catch (e) {
+      status("Lỗi: " + e.message);
+      cancel();
+    }
+  };
+  cell.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-e]");
+    if (!b) return;
+    e.stopPropagation();
+    (b.dataset.e === "save" ? save : cancel)();
+  });
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.stopPropagation(); cancel(); }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+  });
 }
 
 function noteHTML(n) {
@@ -2808,10 +2915,13 @@ function wirePairs() {
     el.addEventListener("click", (e) => {
       const ref = e.target.closest("[data-figref]");
       if (ref) { e.stopPropagation(); return openFigPeek(ref.dataset.figref); }
+      const cut = e.target.closest("[data-crop]");
+      if (cut) { e.stopPropagation(); return openCrop(cut.dataset.crop); }
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "hide") return setBlockHidden(el.dataset.id, true);
       if (act === "unhide") return setBlockHidden(el.dataset.id, false);
       if (act === "explain") return explainBlock(el.dataset.id);
+      if (act === "edit") return editCell(el, "vi");
       if (act === "copy") {
         navigator.clipboard.writeText($("[data-vi]", el).textContent.trim());
         e.target.textContent = "✓";
@@ -3106,6 +3216,17 @@ function streamChunk(i, refine, mode, only) {
       if (cell) { cell.innerHTML = sci(vi); cell.classList.remove("pending"); }
     });
     es.addEventListener("status", (e) => status(JSON.parse(e.data).msg));
+    /* Model trả về ký tự thuộc hệ chữ lạ. Bản dịch vẫn hiện ra (người đọc cần
+       thấy để sửa), nhưng nó KHÔNG được ghi vào bộ nhớ dịch — nằm trong đó thì
+       nó quay lại mãi mãi. Đánh dấu khối để mắt tìm ra ngay. */
+    es.addEventListener("warn", (e) => {
+      const d = JSON.parse(e.data);
+      status(d.msg);
+      (d.blocks || []).forEach((id) => {
+        const el = $(`#p-${CSS.escape(id)}`);
+        if (el) el.classList.add("bad-script");
+      });
+    });
     es.addEventListener("done", (e) => {
       const d = JSON.parse(e.data);
       if (d.usage) { state.doc.usage = d.usage; renderUsage(); }

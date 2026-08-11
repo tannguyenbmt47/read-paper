@@ -82,9 +82,37 @@ def _with_chunks(doc: dict) -> dict:
 # ----------------------------------------------------------------- trang web
 
 
+_ASSETS = ("style.css", "survey.css", "app.js", "survey.js")
+
+
+def _asset_tag() -> str:
+    """Vân tay của bộ file tĩnh — đổi mỗi khi một file trong đó được sửa."""
+    stamp = "".join(str((WEB / f).stat().st_mtime_ns) for f in _ASSETS if (WEB / f).exists())
+    return db.sha(stamp)[:10]
+
+
 @app.get("/")
 async def index():
-    return FileResponse(WEB / "index.html")
+    """Trang chính, kèm đánh dấu phiên bản vào đường dẫn CSS/JS.
+
+    `Cache-Control: no-cache` ở `_NoCacheStatic` chỉ có tác dụng cho những lần
+    tải **về sau**. Bản đã nằm sẵn trong cache của trình duyệt được lấy về khi
+    chưa có chỉ dẫn nào, nên trình duyệt tự đoán thời hạn và giữ nó lại — người
+    dùng vẫn nhận CSS cũ dù server đã sửa. Đã vấp đúng vậy, hai lần.
+
+    Đổi URL là cách duy nhất chắc chắn: `style.css?v=abc123` là một khoá cache
+    khác hẳn, không có bản cũ nào để mà lấy. Vân tay tính từ `mtime` nên sửa file
+    là tự đổi, không phải nhớ tăng số tay.
+
+    Bản thân trang này thì `no-store`: nó nhỏ, và nó là chỗ chứa các đường dẫn
+    có vân tay — cache nó lại thì vân tay mới không bao giờ tới được trình duyệt.
+    """
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    tag = _asset_tag()
+    for f in _ASSETS:
+        html = html.replace(f'"/{f}"', f'"/{f}?v={tag}"')
+    return Response(html, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "no-store"})
 
 
 # -------------------------------------------------------------------- config
@@ -355,6 +383,111 @@ async def relayout(doc_id: str):
         raise HTTPException(502, f"{type(e).__name__}: {e}")
     return {"stats": stats, "run": run, "total": total,
             "doc": _with_chunks(store.load(doc_id))}
+
+
+@app.patch("/api/doc/{doc_id}/translation")
+async def edit_translation(doc_id: str, body: dict = Body(...)):
+    """Sửa tay bản dịch hoặc phần diễn giải của một khối. **Miễn phí.**
+
+    Bản sửa được ghi cả vào **bộ nhớ dịch**, nên nó không chỉ sửa cho bài này:
+    đoạn y hệt ở bài khác, hoặc chính bài này sau khi bóc lại, sẽ lấy đúng bản
+    người dùng đã sửa chứ không quay về bản máy dịch. Sửa một lần, giữ mãi.
+
+    Nhận **văn bản thô** (giữ nguyên `^{…}` / `_{…}`), không nhận HTML: cột hiển
+    thị đã đi qua `sci()` nên nó có `<sup>`, `<sub>` và thẻ `<a>` cho tham chiếu
+    hình — lấy HTML đó làm nội dung lưu là mỗi lần sửa lại nhân thêm một lớp thẻ.
+    """
+    try:
+        doc = store.load(doc_id)
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy tài liệu") from None
+
+    bid = str(body.get("block_id") or "")
+    blk = next((b for b in doc["blocks"] if b["id"] == bid), None)
+    if blk is None:
+        raise HTTPException(404, "Không có khối này")
+
+    changed = []
+    if "vi" in body:
+        vi = str(body["vi"]).strip()
+        if vi:
+            doc["translations"][bid] = vi
+        else:
+            doc["translations"].pop(bid, None)
+        changed.append("vi")
+    if "plain" in body:
+        pl = str(body["plain"]).strip()
+        if pl:
+            doc["plain"][bid] = pl
+        else:
+            doc["plain"].pop(bid, None)
+        changed.append("plain")
+    if not changed:
+        raise HTTPException(400, "Không có gì để sửa")
+
+    # Slide dựa trên khối này thì gắn cờ — nội dung nó trích đã đổi.
+    pipeline.mark_stale(doc, {bid})
+    store.save(doc)
+
+    db.tm_put([(blk.get("text") or "",
+                doc["translations"].get(bid, ""),
+                doc["plain"].get(bid, ""))], doc.get("model") or llm.DEFAULT_MODEL)
+    return {"ok": True, "block_id": bid, "changed": changed,
+            "vi": doc["translations"].get(bid, ""), "plain": doc["plain"].get(bid, "")}
+
+
+@app.post("/api/doc/{doc_id}/reparse")
+async def reparse(doc_id: str):
+    """Bóc lại bài từ file PDF gốc, giữ nguyên bản dịch và ghi chú. **Miễn phí.**
+
+    Dùng khi bộ bóc khá lên: bản vá nhặt lại chữ mô hình bố cục bỏ sót thu về ~7
+    điểm phần trăm số từ trên bài hai cột. Bỏ qua `parse_cache` — chính cache đó
+    là thứ giữ bài ở lại với bản bóc cũ.
+    """
+    doc = store.load(doc_id)
+    pdf = store.pdf_path(doc_id)
+    if pdf is None:
+        raise HTTPException(400, "Bài này không có file PDF gốc (nạp bằng văn bản dán "
+                                 "hoặc file đã bị xoá) nên không bóc lại được.")
+    data = pdf.read_bytes()
+    loop = asyncio.get_running_loop()
+
+    blocks: list = []
+    imgs: dict = {}
+    if layout.available():
+        try:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                f.write(data)
+                tmp = f.name
+            read = await loop.run_in_executor(None, layout.read, tmp)
+            os.unlink(tmp)
+            _t, blocks, imgs = await loop.run_in_executor(
+                None, lambda: parser.blocks_from_layout(
+                    read["items"], data, regions=read["regions"]))
+            better = await loop.run_in_executor(
+                None, parser.apply_layout, blocks, read["regions"], data)
+            if better:
+                imgs.update(better)
+        except Exception as e:  # noqa: BLE001 — mô hình hỏng thì rơi về heuristic
+            print(f"[reparse] mô hình bố cục lỗi, dùng heuristic: {e}")
+            blocks = []
+    if len(blocks) < 10:
+        _t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
+
+    if not blocks:
+        raise HTTPException(422, "Bóc lại không ra khối nào — giữ nguyên bản cũ.")
+
+    stats = pipeline.reparse_merge(doc, [b.dict() for b in blocks])
+    store.save(doc)
+
+    # Ảnh cắt theo mã khối, mà mã khối vừa đổi cho phần mới — ghi lại toàn bộ.
+    if imgs:
+        store.save_images(doc_id, imgs)
+    # Bản bóc mới thay luôn bản trong cache, để lần sau nạp cùng file được bản tốt.
+    db.put_parse(db.sha(data), doc.get("title", ""), [b.dict() for b in blocks],
+                 layout.available())
+    return {"doc": _with_chunks(doc), "stats": stats}
 
 
 @app.post("/api/doc/{doc_id}/confirm")
@@ -662,7 +795,8 @@ async def import_doc(
                 _say(job, "Dựng khối từ kết quả mô hình",
                      f"{len(read['items'])} vùng", 70)
                 t2, blocks2, eq_imgs = await loop.run_in_executor(
-                    None, parser.blocks_from_layout, read["items"], pdf_bytes)
+                    None, lambda: parser.blocks_from_layout(
+                        read["items"], pdf_bytes, regions=read["regions"]))
                 if len(blocks2) >= 10:
                     t, blocks, imgs = (t2 or t), blocks2, eq_imgs
             better = await loop.run_in_executor(
@@ -2054,4 +2188,30 @@ def _export_slides_html(doc: dict, *, for_print: bool = False) -> Response:
                     headers={"Content-Disposition": f'attachment; filename="{doc_id}-slide.html"'})
 
 
-app.mount("/", StaticFiles(directory=WEB), name="web")
+# Kho survey — cơ chế thứ hai, tách hẳn khỏi luồng đọc-hiểu ở trên. Phải gắn
+# TRƯỚC dòng mount bên dưới, nếu không bộ phục vụ file tĩnh nuốt hết và trả 404.
+from . import survey_api  # noqa: E402
+
+app.include_router(survey_api.router)
+
+
+class _NoCacheStatic(StaticFiles):
+    """File tĩnh luôn phải hỏi lại server xem có bản mới không.
+
+    `StaticFiles` mặc định chỉ gửi `last-modified` + `etag` mà **không** gửi
+    `Cache-Control`. Thiếu chỉ dẫn, trình duyệt tự đoán bằng heuristic và giữ bản
+    cũ lại một lúc — nên sau khi sửa CSS/JS, người dùng nhận HTML mới kèm CSS cũ:
+    giao diện vỡ tan mà không có lỗi nào. Đã vấp đúng vậy.
+
+    `no-cache` KHÔNG phải là không cache: bản cũ vẫn nằm trên đĩa, trình duyệt
+    chỉ hỏi lại một câu và nhận `304 Not Modified` nếu file không đổi. Với công
+    cụ chạy trên máy mình thì giá của câu hỏi đó bằng không.
+    """
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers.setdefault("Cache-Control", "no-cache")
+        return resp
+
+
+app.mount("/", _NoCacheStatic(directory=WEB), name="web")

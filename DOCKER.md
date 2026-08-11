@@ -11,7 +11,7 @@ echo "DOCKER_GID=$(id -g)" >> .env
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8000>. To change the port: `PORT=8010 docker compose up -d`
+Open <http://127.0.0.1:8010>. To change the port: `PORT=9000 docker compose up -d`
 
 ## Two traps worth knowing about
 
@@ -58,6 +58,6 @@ crude estimate, which lets slides get clipped at the bottom.
 
 ```bash
 docker compose ps                          # should report "healthy"
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/config   # 200
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8010/api/config   # 200
 docker compose logs -f app                 # errors, if any
 ```

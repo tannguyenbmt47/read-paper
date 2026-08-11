@@ -106,6 +106,53 @@ a { color: var(--accent); }
 code { font-family: var(--mono); font-size: .88em; background: var(--surface-2); padding: .1em .35em; border-radius: 4px; }
 
 /* -------------------------------------------------------- màn hình nhập */
+/* ---------------------------------------- thanh công cụ bên trái (app shell)
+
+   Hai công cụ chứ không phải hai tính năng: đọc kỹ MỘT bài, và hỏi cả MỘT KHO.
+   Thanh này là chỗ ranh giới đó hiện ra, nên nó luôn có mặt ở mọi màn hình.
+   Rộng 62px — đủ cho icon và một nhãn ngắn, đủ hẹp để không lấn phần đọc. */
+:root { --rail-w: 62px; }
+
+#rail {
+  position: fixed; left: 0; top: 0; bottom: 0; width: var(--rail-w);
+  background: var(--surface-2); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding-top: 12px; z-index: 40;
+}
+.rail-mark {
+  width: 22px; height: 22px; color: var(--accent);
+  margin-bottom: 16px; opacity: .9;
+}
+.rail-mark svg { width: 100%; height: 100%; display: block; }
+
+.rail-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  width: 50px; padding: 8px 2px 7px; border: 0; border-radius: 9px;
+  background: none; color: var(--muted); font: inherit; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.rail-item svg { width: 21px; height: 21px; display: block; }
+.rail-item:hover { background: var(--surface); color: var(--ink-2); }
+.rail-item.is-on { background: var(--accent-soft); color: var(--accent); }
+.rail-lb { font-size: 10px; line-height: 1; letter-spacing: .005em; }
+.rail-item.is-on .rail-lb { font-weight: 600; }
+
+/* Mọi màn hình lùi sang phải nhường chỗ cho thanh. Dùng padding trên body chứ
+   không margin trên từng màn: màn đọc và màn slide có phần con `position:fixed`
+   (thanh xuất, khung PDF) vốn không biết gì về margin của cha. */
+body { padding-left: var(--rail-w); }
+
+@media (max-width: 700px) {
+  :root { --rail-w: 0px; }
+  #rail {
+    right: 0; bottom: 0; top: auto; width: auto; height: 52px;
+    flex-direction: row; justify-content: center; gap: 18px;
+    border-right: 0; border-top: 1px solid var(--line); padding-top: 0;
+  }
+  .rail-mark { display: none; }
+  body { padding-left: 0; padding-bottom: 52px; }
+}
+
 .screen { min-height: 100vh; }
 .start-wrap { max-width: 720px; margin: 0 auto; padding: 4rem 1.25rem 5rem; }
 .start-head h1 { font-family: var(--serif); font-size: 2.1rem; margin: 0 0 .4rem; letter-spacing: -.01em; }
@@ -1159,3 +1206,47 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   border-top: 1px solid var(--line); margin-top: .5rem; padding-top: .5rem;
 }
 .pick-foot .spacer { flex: 1; }
+
+/* Nút chỉnh khung ngay trên ảnh trong màn đọc. Chỉ hiện khi rê chuột vào ảnh —
+   nó là việc sửa lỗi thỉnh thoảng mới cần, không đáng chiếm chỗ thường trực
+   giữa mạch đọc. */
+.pair figure { position: relative; }
+.fig-crop {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+  padding: 4px 7px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  opacity: 0; transition: opacity .12s;
+}
+.pair figure:hover .fig-crop, .fig-crop:focus { opacity: 1; }
+.fig-crop:hover { border-color: var(--accent); color: var(--accent); }
+@media (hover: none) { .fig-crop { opacity: .75; } }
+
+/* Ô sửa tay bản dịch. `.btn-sm` toàn cục có `width:100%` cho nút trong cột
+   trái hẹp — trong thanh này thì đúng luật ấy làm hai nút xếp chồng chiếm cả
+   cột, nên phải gỡ ra. */
+.cell-edit {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font: inherit; font-family: var(--sans); font-size: .95em; line-height: 1.55;
+  padding: .5rem .6rem; border-radius: var(--radius);
+  border: 1px solid var(--accent); background: var(--surface); color: var(--ink);
+}
+.cell-edit:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.cell-edit-bar {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .45rem;
+}
+.cell-edit-bar .btn-sm { width: auto; margin-top: 0; }
+.cell-edit-bar .hint { font-size: .74em; margin: 0; flex: 1 1 100%; }
+.cell-edit-bar .hint code { font-size: .95em; }
+
+/* Ô vừa được sửa tay — đánh dấu nhạt để phân biệt với bản máy dịch. */
+.vi.was-edited { box-shadow: inset 3px 0 0 var(--ok); padding-left: .5rem; }
+
+/* Khối mà model trả về ký tự hệ chữ lạ. Bản dịch vẫn hiện — người đọc cần thấy
+   để sửa — nhưng phải tìm ra được ngay giữa một bài dài. */
+.pair.bad-script .vi { background: var(--warn-bg); box-shadow: inset 3px 0 0 var(--warn); }
+.pair.bad-script .vi::before {
+  content: "⚠ Model trả về ký tự lạ ở đoạn này — bấm ✎ để sửa. Chưa ghi vào bộ nhớ dịch.";
+  display: block; font-family: var(--sans); font-size: .78em;
+  color: var(--warn); margin-bottom: .35rem;
+}

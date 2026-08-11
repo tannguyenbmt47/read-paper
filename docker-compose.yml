@@ -7,7 +7,7 @@ services:
         WITH_LAYOUT: ${WITH_LAYOUT:-0}
     image: loupe
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-8010}:8010"
     env_file:
       - .env                # bắt buộc có OPENROUTER_API_KEY
     environment:

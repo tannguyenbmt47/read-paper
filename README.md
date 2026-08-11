@@ -1,10 +1,11 @@
 # Loupe
 
-**A local reading environment for scientific papers: English → Vietnamese
-translation that preserves the argument, paragraph-level explanations of what
-each passage is doing, and assertion–evidence slide generation.**
+**A local research environment for scientific papers. Two tools that share a
+codebase but not a workflow: a *reader* that translates one paper English →
+Vietnamese while preserving its argument, and a *corpus* that indexes dozens of
+papers and answers questions about them with citations down to the passage.**
 
-Version 1.4.0 · runs locally · models called through
+Version 1.6.0 · runs locally · models called through
 [OpenRouter](https://openrouter.ai) · [CHANGELOG](CHANGELOG.md) ·
 [Docker](DOCKER.md)
 
@@ -12,9 +13,16 @@ A loupe is the lens a jeweller holds to one stone at a time. Machine translation
 gives you the words at a glance; this is for the reading where you need to see
 exactly what every claim rests on.
 
+| | Reader | Survey corpus |
+|---|---|---|
+| Scale | one paper, read closely | 20–50 papers, queried |
+| Output | bilingual columns, explanations, slides | answers with per-passage citations |
+| Translation | full, and it is the point | none — indexing instead |
+| Cost | ~$0.30 per paper | ~$0.034 per paper, then ~$0.03 per question |
+
 ```bash
 ./run.sh          # creates .env on first run; add your key and run again
-# open http://localhost:8000   (change the port with PORT=8010 ./run.sh)
+# open http://localhost:8010   (change the port with PORT=9000 ./run.sh)
 ```
 
 ---
@@ -213,6 +221,76 @@ a single self-contained file that reads offline with working diagrams. PDF expor
 goes through the browser's print dialog — the only route that preserves both the
 Mermaid diagrams and the two-column grid.
 
+## The survey corpus
+
+The reader puts one paper's full text into the system prompt. That design is
+what makes close reading work, and it is exactly what cannot answer *"how do
+these approaches differ?"* — that needs thirty papers, and thirty papers do not
+fit in a prompt.
+
+So the corpus is a **second mechanism**, sharing infrastructure but not a single
+line of the reader's pipeline. Its governing constraint: translating fifty
+papers is not financially viable, so it **does not translate**. It indexes, and
+it compresses each paper into a structured ~600-token *card*.
+
+```
+PDF → passages → context sentence → vectors → RAPTOR tree → card → entity graph
+                                            ↓
+  question → plan → search → read → check gaps → search again → answer → verify
+```
+
+**Retrieval is hybrid and every stage is there for a measured reason.**
+
+- **BM25 (SQLite FTS5) + dense (BGE-M3), fused with Reciprocal Rank Fusion.**
+  RRF reads only ranks, so it mixes BM25's unbounded negative scores with
+  cosine's narrow band without any normalisation — and lets the dense retriever
+  be switched off entirely without branching the code.
+- **Embeddings run on your machine.** OpenRouter serves no embedding endpoint,
+  so the alternative was a second paid API key. BGE-M3 is multilingual by
+  construction, which is the whole problem here: the corpus is English, the
+  questions are Vietnamese. Measured on this repo's own papers, Vietnamese
+  queries retrieve the right English passages in 9–71 ms; BM25 alone returns
+  noise for the same queries.
+- **Contextual retrieval.** Each passage gets a generated English sentence
+  placed beside it before indexing. A passage reading *"we reach 62.3 EM"*
+  contains no method name, no dataset, no word a person would search for; the
+  context sentence supplies them.
+- **query2doc.** The planner writes a short fake English paragraph in the voice
+  of a paper answering the question, then searches with it. This is also how a
+  Vietnamese question reaches English text without a translation step.
+- **A RAPTOR tree per paper.** Passages are clustered and summarised
+  recursively. Queries hit *every level at once* — the original paper found that
+  this "collapsed tree" beats walking down from the root, because a question
+  often needs a number from a leaf and framing from a higher level together.
+- **An entity graph across papers.** Extracted once per paper, with no community
+  summaries (the part that makes full GraphRAG prohibitively expensive). It is
+  used to *expand* results after retrieval, not as a parallel search path:
+  plain vector search wins on single-fact lookup, graphs win on multi-hop, and
+  expansion gets both.
+- **Two rerank stages.** A cross-encoder cuts 60 candidates to 20 for free on
+  the GPU; a model call then cuts 20 to 10 while seeing the sub-questions, which
+  a cross-encoder cannot. A cap of 3 passages per paper enforces coverage.
+
+**The deep-dive loop is bounded and honest.** It plans a checklist of
+sub-questions, then searches, reads, marks which items now have evidence, and
+searches again for the ones that do not — at most five rounds, carrying the two
+best passages forward each time. Every round streams to the screen, the budget
+is checked *before* each model call, and if the loop stops early the answer says
+so. Items that never found evidence are stated as not found rather than papered
+over; that failure — fluent prose covering a gap — is the one that makes a
+research tool actively harmful.
+
+**Answers are verified mechanically before you see them.** Every number must
+appear verbatim in a cited passage; every citation must be a passage that was
+actually retrieved this run; citations are clickable and open the exact text.
+An optional entailment pass catches the subtler failure where the citation is
+real but does not support the claim. Warnings are shown, not enforced — you have
+the screen to judge for yourself.
+
+**Cost.** Parsing, chunking, indexing and embedding are free. Enrichment costs
+about $0.034 per paper, once. A three-round question costs about $0.03, and
+asking the same question again while the corpus is unchanged is free.
+
 ## Installation
 
 Requires Python 3.10+.
@@ -294,30 +372,48 @@ a table without telling you.
 ```
 server/
   parser.py    PDF/text → structured blocks; crops figures and tables to images
-  prompts.py   every prompt — where quality is decided; change this first
+  prompts.py   every prompt for the reader — where quality is decided
   llm.py       OpenRouter wrapper: streaming, cache breakpoints, sticky sessions
-  pipeline.py  orchestrates the passes and assembles shared context
+  pipeline.py  orchestrates the reader's passes and assembles shared context
   layout.py    layout-detection model (Docling), optional
   db.py        SQLite: documents, parse cache, translation memory
   store.py     facade over db.py; images and source PDFs stay on disk
   main.py      HTTP API, SSE, and PDF/HTML/Markdown/PPTX export
-web/           front end, no framework
+  survey/      the corpus tool — separate mechanism, shares only infrastructure
+    db.py      its own tables + FTS5 index + vectors + entity graph
+    ingest.py  PDF → passages → context → vectors → tree → card → graph
+    tree.py    per-paper RAPTOR tree (recursive cluster and summarise)
+    graph.py   entity and relation extraction, cross-paper edges
+    embed.py   BGE-M3 embeddings and cross-encoder reranking, on your own GPU
+    search.py  hybrid retrieval: BM25 + dense → RRF → two rerank stages
+    agent.py   the budgeted deep-dive loop
+    verify.py  citation and number grounding — the guard rail for answers
+    prompts.py every prompt for the corpus tool
+  survey_api.py  its routes, mounted into the same app
+web/           front end, no framework (app.js = reader, survey.js = corpus)
 ```
 
-To change translation quality, edit `server/prompts.py`. Everything else is
-plumbing.
+To change translation quality, edit `server/prompts.py`; for the corpus tool,
+`server/survey/prompts.py`. Everything else is plumbing.
 
 ## Development
 
 ```bash
-.venv/bin/python -m pytest                        # 76 tests, ~3 minutes
-.venv/bin/python -m pytest tests/test_unit.py -q  # pure logic, ~3 seconds
-node --check web/app.js
+.venv/bin/python -m pytest                          # 114 tests, ~3 minutes
+.venv/bin/python -m pytest tests/test_unit.py -q    # pure logic, ~3 seconds
+.venv/bin/python -m pytest tests/test_survey.py -q  # corpus tool, ~4 seconds
+node --check web/app.js web/survey.js
 ```
 
-`tests/test_api.py` exercises the real API against a temporary `PAPER_DATA_DIR`,
-so it never touches your own `data/`, and it makes no model calls, so it costs
-nothing.
+`tests/test_api.py` and `tests/test_survey.py` exercise the real API against a
+temporary `PAPER_DATA_DIR`, so they never touch your own `data/`, and they make
+no model calls, so they cost nothing. The corpus tests run with
+`EMBED_BACKEND=off`: the BM25-only path has to work on its own, because that is
+the path a machine without a GPU takes.
+
+Note that the source comments, prompts, and user-facing strings are written in
+Vietnamese — that is the audience the tool is built for. This README and
+[CHANGELOG](CHANGELOG.md) are the English-facing documentation.
 
 Note on conventions: docstrings, comments, button labels, and user-facing error
 messages are written **in Vietnamese**, since that is the audience the tool

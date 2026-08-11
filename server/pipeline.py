@@ -18,7 +18,7 @@ import json
 import re
 from typing import AsyncIterator
 
-from . import db, llm, prompts, store
+from . import db, depth, llm, prompts, store
 from .parser import Block, chunk_blocks
 
 LABEL = re.compile(r"<<<\s*([A-Za-z0-9_]+)\s*>>>")
@@ -42,6 +42,43 @@ _MD = re.compile(r"\*\*(.+?)\*\*|__(.+?)__|(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)")
 def strip_md(text: str) -> str:
     """Bỏ dấu nhấn markdown, giữ nguyên chữ bên trong."""
     return _MD.sub(lambda m: m.group(1) or m.group(2) or m.group(3) or "", text)
+
+
+# Ký tự được phép có mặt trong bản dịch tiếng Việt mà bản gốc không có: chữ
+# Latinh (kể cả dấu tiếng Việt), số, dấu câu, ký hiệu toán và chữ Hy Lạp — công
+# thức dùng thật. Mọi thứ ngoài đây mà bản gốc không có là model trả về rác.
+_OK_SCRIPT = re.compile(
+    "["
+    "\\t\\n\\r"
+    "\\u0020-\\u024F"      # ASCII + Latinh mở rộng
+    "\\u02B0-\\u02FF"      # dấu rời (TeX đặt mũ bằng `ˆ` đứng trước chữ)
+    "\\u0300-\\u036F"      # dấu tổ hợp
+    "\\u0370-\\u03FF"      # Hy Lạp — công thức dùng thật
+    "\\u1D00-\\u1DBF"      # chữ cái dạng chỉ số trên/dưới — parser sinh ra thật
+    "\\u1E00-\\u1EFF"      # Latinh mở rộng bổ sung (dấu tiếng Việt)
+    "\\u2000-\\u206F"      # dấu câu
+    "\\u2070-\\u209F"      # chỉ số trên/dưới
+    "\\u20A0-\\u20CF"      # tiền tệ
+    "\\u2100-\\u23FF"      # ký hiệu chữ, mũi tên, toán, kỹ thuật
+    "\\u25A0-\\u26FF"      # hình học, ký hiệu khác
+    "\\uFB00-\\uFB4F"      # ligature
+    "]")
+
+
+def script_leak(out: str, src: str) -> set[str]:
+    """Ký tự thuộc hệ chữ lạ mà bản gốc không hề có — dấu hiệu model trả về rác.
+
+    Tổng quát hơn `cjk_leak`, và cần đúng như vậy: đã gặp bản dịch chứa
+    `띠ᥕᥕᥲᥕᥱ` thay cho chữ "bảo toàn". `띠` là Hangul nên `cjk_leak` bắt được,
+    nhưng `ᥕᥲᥱ` là chữ **Limbu** — ngoài mọi dải mà `cjk_leak` biết. Liệt kê
+    từng hệ chữ cấm là trò đuổi bắt không có hồi kết; liệt kê hệ chữ **được
+    phép** thì mọi thứ lạ đều bị bắt, kể cả hệ chữ chưa ai gặp bao giờ.
+
+    So với bản gốc chứ không cấm tuyệt đối: bài về NLP đa ngữ trích tiếng Trung,
+    tiếng Ả Rập là chuyện thường, và bản dịch giữ nguyên nguyên văn là đúng.
+    """
+    bad = {c for c in out if not _OK_SCRIPT.match(c)}
+    return bad - set(src)
 
 
 def cjk_leak(out: str, src: str) -> bool:
@@ -511,8 +548,33 @@ async def stream_chunk(
 
     # ghi vào bộ nhớ dịch để lần sau — và bài sau — không phải dịch lại
     by_id = {it["id"]: it["text"] for it in items}
+    # Soát rò hệ chữ TRƯỚC khi ghi vào bộ nhớ dịch. Đây là chỗ duy nhất phải
+    # chặn cho bằng được: bản dịch rác nằm trong `doc` thì người đọc thấy và sửa
+    # tay được, nhưng nằm trong `tm` thì nó **quay lại mãi mãi** — mọi bài sau
+    # có đoạn y hệt đều nhận lại đúng cái rác đó, miễn phí và im lặng.
+    #
+    # Đã gặp thật: một đoạn dịch ra `띠ᥕᥕᥲᥕᥱ` thay cho chữ "bảo toàn".
+    dirty: dict[str, str] = {}
+    for bid in set(final) | set(plains):
+        if bid not in by_id:
+            continue
+        bad = script_leak(f"{final.get(bid, '')} {plains.get(bid, '')}", by_id[bid])
+        if bad:
+            dirty[bid] = "".join(sorted(bad))[:12]
+
     db.tm_put([(by_id[bid], final.get(bid, ""), plains.get(bid, ""))
-               for bid in set(final) | set(plains) if bid in by_id], doc["model"])
+               for bid in set(final) | set(plains)
+               if bid in by_id and bid not in dirty], doc["model"])
+    if dirty:
+        yield "warn", json.dumps({
+            "kind": "rò_hệ_chữ",
+            "blocks": list(dirty),
+            "msg": ("Bản dịch của "
+                    + ", ".join(sorted(dirty)[:6])
+                    + " lẫn ký tự thuộc hệ chữ lạ (" + ", ".join(sorted(set(dirty.values()))[:3])
+                    + ") — model trả về rác. Chưa ghi vào bộ nhớ dịch; sửa tay bằng nút ✎ "
+                      "hoặc dịch lại khối đó."),
+        })
 
     doc = store.load(doc_id)
     doc["translations"].update(final)
@@ -895,6 +957,7 @@ def check_slides(doc: dict, deck: list[dict]) -> list[dict]:
         sl["warn"] = warn
 
     _check_agenda(deck)
+    check_depth(deck)
     return deck
 
 
@@ -902,6 +965,53 @@ def check_slides(doc: dict, deck: list[dict]) -> list[dict]:
 _BARE_AGENDA = {"phương pháp", "cách làm", "kết quả", "thực nghiệm", "giới thiệu",
                 "mở đầu", "kết luận", "thảo luận", "tổng quan", "bối cảnh",
                 "giới hạn", "đánh giá", "động lực", "bài toán"}
+
+
+# Dấu hiệu một slide đang ĐI HẾT CƠ CHẾ chứ chỉ nhắc tên nó: có bước, có nhân
+# quả, có đầu vào cụ thể. Đòi nhiều dấu hiệu cùng lúc chứ không đòi một từ khoá,
+# vì một từ khoá thì model học được cách rắc vào cho qua.
+_STEPY = ("bước", "trước hết", "sau đó", "cuối cùng", "lần lượt", "mỗi vòng",
+          "đầu vào", "đầu ra", "nhận", "trả về", "→")
+
+
+def _walks_mechanism(sl: dict) -> bool:
+    t = slide_text(sl).lower()
+    steps = sum(1 for k in _STEPY if k in t)
+    causal = sum(1 for k in depth.CAUSAL if k in t)
+    return steps >= 2 and causal >= 2
+
+
+def check_depth(deck: list[dict]) -> None:
+    """Gắn cảnh báo độ sâu — bắt slide đúng mà rỗng.
+
+    `check_slides` đã chặn được bịa số và nhãn chủ đề trống. Nó KHÔNG chặn được
+    slide gồm toàn câu đúng mà không mang thông tin: *"CIRAG cải thiện chất lượng
+    truy hồi"* — thay tên phương pháp bằng một từ vô nghĩa thì câu vẫn "đúng".
+    Xem `server/depth.py`.
+
+    Và một phép kiểm ở mức cả bộ: bộ slide về bài phương pháp mà **không có slide
+    nào đi hết cơ chế** thì người nghe ra về với cái tên và một sơ đồ ba hộp. Đó
+    là kiểu hỏng người trình bày không tự nhận ra, vì cả buổi ai cũng gật đầu.
+    """
+    for sl in deck:
+        if sl.get("kind") in ("title", "agenda", "section", "thanks"):
+            continue
+        w = sl.setdefault("warn", [])
+        for b in (sl.get("bullets") or []):
+            w += [x["msg"] for x in depth.check_text(b, label="ý")]
+        for c in (sl.get("cards") or []):
+            for b in ((c or {}).get("bullets") or []):
+                w += [x["msg"] for x in depth.check_text(b, label="thẻ")]
+        w += [x["msg"] for x in depth.check_text(sl.get("sub") or "", label="phụ đề")]
+        sl["warn"] = list(dict.fromkeys(w))[:8]
+
+    body = [s for s in deck if s.get("kind") not in ("title", "agenda", "section", "thanks")]
+    if len(body) >= 6 and not any(_walks_mechanism(s) for s in body):
+        for s in body[:1]:
+            s.setdefault("warn", []).insert(
+                0, "CẢ BỘ SLIDE không có slide nào đi hết cơ chế bằng ví dụ cụ thể — "
+                   "người nghe sẽ nắm được bài toán và kết quả nhưng không kể lại "
+                   "được cách nó chạy")
 
 
 def _check_agenda(deck: list[dict]) -> None:
@@ -1264,7 +1374,13 @@ def check_outline(doc: dict, outline: dict) -> dict:
         if cjk_leak(msg + " " + " ".join(pts), " ".join(text_of.values())):
             warn.append("Có chữ Hán/Kana lọt vào mục này.")
 
-        it["warn"] = warn
+        # Độ sâu — bắt ở đây rẻ hơn hẳn: sửa một dòng dàn ý, thay vì dựng lại
+        # slide rồi mới thấy nó rỗng. Xem `server/depth.py`.
+        for pt in pts:
+            warn += [x["msg"] for x in depth.check_text(pt, label="ý")]
+        warn += [x["msg"] for x in depth.check_text(msg, label="thông điệp")]
+
+        it["warn"] = list(dict.fromkeys(warn))[:8]
 
     secs = outline.get("sections") or []
     if not 3 <= len(secs) <= 4:
@@ -1491,6 +1607,85 @@ async def regen_slide(doc_id: str, slide_id: str, hint: str = "") -> tuple[dict,
     doc["usage"] = total.dict()
     store.save(doc)
     return new, usage.dict(), total.dict()
+
+
+def reparse_merge(doc: dict, new_blocks: list[dict]) -> dict:
+    """Thay danh sách khối bằng bản bóc mới, **giữ nguyên mọi thứ đã trả tiền**.
+
+    Bóc lại là cần thiết mỗi khi `parser.py` khá lên (bản vá nhặt lại chữ mô hình
+    bố cục bỏ sót là ví dụ). Nhưng nạp lại bài từ đầu thì mất sạch bản dịch, ghi
+    chú, vệt bôi vàng và bộ slide — cái giá đó lớn hơn phần chữ thu về, nên người
+    dùng sẽ không bóc lại, và bản vá thành vô dụng với bài họ đang đọc.
+
+    Cách giữ: **ghép theo NỘI DUNG, không theo vị trí.** Khối mới nào có văn bản
+    trùng một khối cũ thì lấy lại đúng mã cũ, nên mọi thứ trỏ theo mã (bản dịch,
+    diễn giải, ghi chú, vệt bôi, `source_block_ids` của slide) vẫn trỏ đúng chỗ.
+    Ghép theo vị trí thì sai ngay: bản bóc mới chèn thêm khối, mọi chỉ số phía
+    sau lệch đi một, và bản dịch dán vào nhầm đoạn — tệ hơn hẳn mất bản dịch, vì
+    nhìn vẫn có vẻ đúng.
+
+    Khối mới không khớp gì thì nhận mã mới và **chưa có bản dịch** — người dùng
+    bấm dịch tiếp, và chỉ trả tiền cho đúng phần đó.
+
+    Khối cũ biến mất khỏi bản bóc mới thì bản dịch của nó cũng bỏ theo. Không mất
+    gì thật: `tm` khoá theo nội dung đoạn, nên nếu đoạn ấy quay lại ở lần bóc
+    sau, bản dịch lấy lại miễn phí.
+    """
+    # Nội dung → DANH SÁCH mã cũ theo đúng thứ tự xuất hiện. Dùng dict một-một
+    # thì khối thứ hai có cùng nội dung (công thức lặp, dòng ngắn giống nhau)
+    # không khớp được với gì, phải mint mã mới — và mint lại **mỗi lần** bóc
+    # lại, nên mã cứ phình ra dù nội dung y hệt. Khớp theo lần xuất hiện thì
+    # bóc lại hai lần liên tiếp cho kết quả giống hệt nhau.
+    old_by_text: dict[str, list[str]] = {}
+    for b in doc.get("blocks") or []:
+        key = db.norm(b.get("text") or "")
+        if key:
+            old_by_text.setdefault(key, []).append(b["id"])
+
+    used: set[str] = set()
+    n_max = 0
+    for b in doc.get("blocks") or []:
+        m = re.fullmatch(r"b(\d+)", b["id"])
+        if m:
+            n_max = max(n_max, int(m.group(1)))
+
+    out: list[dict] = []
+    kept = fresh = 0
+    for nb in new_blocks:
+        nb = dict(nb)
+        key = db.norm(nb.get("text") or "")
+        queue = old_by_text.get(key) or []
+        old = ""
+        while queue and not old:
+            cand = queue.pop(0)
+            if cand not in used:
+                old = cand
+        if old:
+            nb["id"] = old
+            used.add(old)
+            kept += 1
+        else:
+            n_max += 1
+            nb["id"] = f"b{n_max}"
+            fresh += 1
+        out.append(nb)
+
+    doc["blocks"] = out
+    alive = {b["id"] for b in out}
+    dropped = [k for k in (doc.get("translations") or {}) if k not in alive]
+    for key in ("translations", "plain", "notes", "highlights"):
+        d = doc.get(key) or {}
+        doc[key] = {k: v for k, v in d.items() if k in alive}
+
+    # Slide dựa trên khối đã biến mất thì gắn cờ, không xoá — công sửa tay của
+    # người dùng nằm trong đó.
+    if dropped:
+        mark_stale(doc, set(dropped))
+
+    todo = [b for b in out if b.get("translate") and not b.get("hidden")
+            and b["id"] not in (doc.get("translations") or {})]
+    return {"blocks": len(out), "kept": kept, "new": fresh,
+            "dropped": len(dropped), "to_translate": len(todo)}
 
 
 def mark_stale(doc: dict, ids) -> None:

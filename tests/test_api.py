@@ -19,8 +19,10 @@ import pytest
 
 @pytest.fixture(scope="module")
 def app_client():
-    tmp = tempfile.mkdtemp(prefix="loupe-test-")
-    os.environ["PAPER_DATA_DIR"] = tmp
+    # `setdefault`, KHÔNG gán đè — `tests/conftest.py` đặt biến này trước khi mọi
+    # module test được import, và `server/db.py` chốt `DATA_DIR` ngay lúc import.
+    # Gán đè ở đây thì biến môi trường trỏ một nơi còn dữ liệu nằm một nơi khác.
+    os.environ.setdefault("PAPER_DATA_DIR", tempfile.mkdtemp(prefix="loupe-test-"))
     os.environ.setdefault("OPENROUTER_API_KEY", "test-key-khong-goi-model")
     # import SAU khi đặt env: `db.DATA_DIR` đọc biến môi trường ngay lúc import
     import importlib

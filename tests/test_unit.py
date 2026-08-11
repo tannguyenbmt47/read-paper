@@ -301,3 +301,275 @@ def test_sua_khoi_nguon_thi_danh_dau_ca_dan_y():
     d["slides"] = {"deck": [], "backup": [], "outline": _outline()}
     pipeline.mark_stale(d, ["b1"])
     assert d["slides"]["outline"]["items"][0]["stale"] is True
+
+
+# ------------------------------------------------- chốt chặn độ sâu
+
+def test_do_sau_bat_cau_dat_ten_thay_vi_giai_thich():
+    """Phép thử wakalixes: thay thuật ngữ bằng từ vô nghĩa mà câu vẫn "đúng"
+    thì nó chưa giải thích gì."""
+    from server import depth
+    for nong in (
+        "CIRAG dùng cơ chế construction-integration để cải thiện chất lượng truy hồi.",
+        "Phương pháp này đóng vai trò quan trọng trong việc nâng cao hiệu quả.",
+        "Việc mở rộng dữ liệu góp phần nâng cao chất lượng bộ điều khiển.",
+    ):
+        assert depth.check_text(nong), nong
+
+
+def test_do_sau_khong_keu_oan_cau_co_co_che_hoac_so_lieu():
+    """Chốt chặn kêu oan vài lần là người dùng thôi đọc nó, lúc đó cảnh báo thật
+    cũng trôi theo."""
+    from server import depth
+    for sau in (
+        "CIRAG dựng mạng mệnh đề từ các đoạn lấy về rồi cho chúng kích hoạt lẫn "
+        "nhau, nên mệnh đề không được đoạn nào khác đỡ sẽ tắt dần.",
+        "Theia đạt 62,3 điểm trên CortexBench, cao hơn baseline mạnh nhất 4,1 điểm.",
+        "Bằng cách chưng cất nhiều teacher vào một encoder, mô hình giữ được đặc "
+        "trưng không gian mà vẫn chạy nhanh hơn.",
+    ):
+        assert depth.check_text(sau) == [], sau
+
+
+def test_do_sau_bat_giai_thich_vong_tron():
+    from server import depth
+    assert depth.circular("mạng mệnh đề", "Mạng mệnh đề là một mạng gồm các mệnh đề.")
+    assert not depth.circular(
+        "mạng mệnh đề",
+        "Mỗi câu thành một nút; hai nút nối nhau khi cùng nhắc một thực thể, "
+        "nên cụm rời rạc sẽ yếu dần qua từng vòng.")
+
+
+def test_do_sau_bo_qua_cau_ngan():
+    """Câu ngắn có thể là một khẳng định gọn — đòi nhân quả ở đó là bắt viết dài
+    dòng cho đủ hình thức."""
+    from server import depth
+    assert depth.check_text("Mô hình dùng ViT-B.") == []
+
+
+def test_slide_thieu_slide_co_che_thi_bao_ca_bo():
+    """Bộ slide kể được bài toán và kết quả nhưng bỏ mất phần giữa — kiểu hỏng
+    người trình bày không tự nhận ra."""
+    from server import pipeline
+    deck = [{"kind": "content", "headline": f"Khẳng định số {i} đạt 9{i} điểm",
+             "bullets": ["Kết quả đo trên tập thử nghiệm cho thấy 9%d điểm" % i]}
+            for i in range(6)]
+    pipeline.check_depth(deck)
+    assert any("không có slide nào đi hết cơ chế" in w
+               for s in deck for w in s.get("warn", []))
+
+
+def test_slide_co_slide_co_che_thi_khong_bao():
+    from server import pipeline
+    deck = [{"kind": "content", "headline": f"Khẳng định {i}", "bullets": ["x"]}
+            for i in range(5)]
+    deck.append({"kind": "content", "headline": "Cách CIRAG chạy trên một câu hỏi",
+                 "bullets": [
+                     "Bước 1: câu hỏi vào bộ tìm, trả về 10 đoạn ứng viên",
+                     "Bước 2: mỗi đoạn thành một nút, nên nút rời rạc sẽ yếu dần",
+                     "Cuối cùng đầu ra là 3 đoạn còn sáng, vì chúng đỡ lẫn nhau"]})
+    pipeline.check_depth(deck)
+    assert not any("không có slide nào đi hết cơ chế" in w
+                   for s in deck for w in s.get("warn", []))
+
+
+# --------------------------- nhặt lại chữ mô hình bố cục bỏ sót
+
+def _span(text, x0, y0, size=10.0):
+    """Span giả đúng hình dạng PyMuPDF trả về."""
+    return {"text": text, "size": size, "bbox": (x0, y0, x0 + len(text) * 5, y0 + 11),
+            "origin": (x0, y0 + 9), "flags": 0}
+
+
+def test_nhat_lai_khong_tron_chu_hai_cot():
+    """`_rows()` gom theo baseline trên CẢ TRANG, nên hai cột cùng độ cao thành
+    một dòng và chữ cài răng lược vào nhau. Đã ra đúng vậy ở bản đầu:
+    "…static evidence repre- summarized as follows: sentation, failing…"
+    """
+    from server.parser import _loose_paras
+    trai = [_span("paradigms typically adopt a static", 50, 100),
+            _span("evidence representation, failing to", 50, 112)]
+    phai = [_span("summarized as follows:", 320, 100),
+            _span("we propose CIRAG which", 320, 112)]
+    got = _loose_paras(trai + phai, page_width=612)
+    texts = [t for _b, t in got]
+    assert len(got) == 2, texts
+    assert any("paradigms typically" in t and "summarized" not in t for t in texts)
+    assert any("summarized as follows" in t and "paradigms" not in t for t in texts)
+
+
+def test_nhat_lai_tach_doan_khi_cach_xa():
+    """Hai dòng cách nhau hơn hai dòng là hai khối khác — nối lại thì dính."""
+    from server.parser import _loose_paras
+    spans = [_span("dong dau cua doan mot", 50, 100),
+             _span("dong hai cua doan mot", 50, 112),
+             _span("doan hai o tan duoi trang", 50, 400)]
+    assert len(_loose_paras(spans, page_width=612)) == 2
+
+
+def test_nhat_lai_bo_chu_trong_hinh_va_chu_khac_co():
+    """Chữ trong vùng hình phải biến mất khỏi mạch đọc; chữ khác cỡ thân bài
+    (số trang, nhãn trục) cũng vậy."""
+    import fitz
+    from server.parser import _uncovered
+
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_text((50, 100), "cau van xuoi nam ngoai moi khung", fontsize=10)
+    page.insert_text((50, 300), "nhan truc trong hinh", fontsize=10)
+    page.insert_text((50, 500), "so trang", fontsize=6)
+    got = [s["text"] for s in _uncovered(page, boxes=[],
+                                         figs=[(40, 280, 400, 320)], body=10.0)]
+    doc.close()
+    joined = " ".join(got)
+    assert "cau van xuoi" in joined
+    assert "nhan truc" not in joined      # nằm trong vùng hình
+    assert "so trang" not in joined       # cỡ chữ khác thân bài
+
+
+# ------------------------- bóc lại mà giữ nguyên bản dịch
+
+def test_boc_lai_giu_ban_dich_theo_NOI_DUNG():
+    """Ghép theo nội dung, KHÔNG theo vị trí. Bản bóc mới chèn thêm khối thì mọi
+    chỉ số phía sau lệch một — dán bản dịch theo vị trí là dán nhầm đoạn, và
+    nhìn vẫn có vẻ đúng nên không ai phát hiện."""
+    from server import pipeline
+    doc = {"blocks": [{"id": "b1", "text": "Đoạn một", "translate": True},
+                      {"id": "b2", "text": "Đoạn hai", "translate": True}],
+           "translations": {"b1": "dịch một", "b2": "dịch hai"},
+           "plain": {}, "notes": {}, "highlights": {"b2": [{"id": "h1"}]},
+           "slides": {}}
+    # bản bóc mới CHÈN một đoạn vào giữa
+    new = [{"id": "x1", "text": "Đoạn một", "translate": True},
+           {"id": "x2", "text": "Đoạn mới nhặt về", "translate": True},
+           {"id": "x3", "text": "Đoạn hai", "translate": True}]
+    st = pipeline.reparse_merge(doc, new)
+    ids = [b["id"] for b in doc["blocks"]]
+    assert ids[0] == "b1" and ids[2] == "b2"          # mã cũ về đúng chỗ nội dung
+    assert ids[1] not in ("b1", "b2")                  # đoạn mới có mã riêng
+    assert doc["translations"] == {"b1": "dịch một", "b2": "dịch hai"}
+    assert doc["highlights"]["b2"]                     # vệt bôi vẫn bám đúng khối
+    assert st == {"blocks": 3, "kept": 2, "new": 1, "dropped": 0, "to_translate": 1}
+
+
+def test_boc_lai_bo_ban_dich_cua_khoi_khong_con():
+    """Khối biến mất thì bản dịch bỏ theo — không mất gì thật, `tm` khoá theo nội
+    dung nên đoạn ấy quay lại là lấy lại miễn phí."""
+    from server import pipeline
+    doc = {"blocks": [{"id": "b1", "text": "còn lại", "translate": True},
+                      {"id": "b2", "text": "biến mất", "translate": True}],
+           "translations": {"b1": "a", "b2": "b"}, "plain": {}, "notes": {},
+           "highlights": {}, "slides": {}}
+    st = pipeline.reparse_merge(doc, [{"id": "z", "text": "còn lại", "translate": True}])
+    assert "b2" not in doc["translations"] and doc["translations"]["b1"] == "a"
+    assert st["dropped"] == 1
+
+
+def test_boc_lai_khong_dung_lai_ma_cu_cho_hai_khoi():
+    """Hai khối mới trùng nội dung nhau thì chỉ khối đầu lấy mã cũ — dùng lại một
+    mã cho hai khối là bản dịch hiện ở hai chỗ và mọi thứ trỏ theo mã hoá nhập nhằng."""
+    from server import pipeline
+    doc = {"blocks": [{"id": "b1", "text": "trùng", "translate": True}],
+           "translations": {"b1": "x"}, "plain": {}, "notes": {},
+           "highlights": {}, "slides": {}}
+    pipeline.reparse_merge(doc, [{"id": "p", "text": "trùng", "translate": True},
+                                 {"id": "q", "text": "trùng", "translate": True}])
+    ids = [b["id"] for b in doc["blocks"]]
+    assert len(set(ids)) == 2 and ids[0] == "b1"
+
+
+def test_nhat_lai_mot_span_giua_trang_khong_tat_tach_cot():
+    """Số trang nằm chính giữa chân trang là chuyện bình thường. Bản đầu dùng
+    `any()` nên đúng một cái `26182` tắt phép tách cột cho cả trang, và chữ hai
+    cột lại cài răng lược."""
+    from server.parser import _loose_paras
+    trai = [_span("paradigms typically adopt a static", 50, 100),
+            _span("evidence representation, failing to", 50, 112)]
+    phai = [_span("summarized as follows:", 320, 100),
+            _span("we propose CIRAG which", 320, 112)]
+    so_trang = [_span("26182", 285, 700)]
+    texts = [t for _b, t in _loose_paras(trai + phai + so_trang, page_width=595)]
+    assert any("paradigms typically" in t and "summarized" not in t for t in texts), texts
+
+
+def test_khung_cat_khong_cat_doi_mot_chu():
+    """Khung công thức dựng từ span của riêng nó, nên khi một mảnh dòng văn bên
+    cạnh lọt vào thì mép trái rơi vào giữa từ — ảnh hiện "ere at step t…" thay
+    vì "where at step t…". Đã ra đúng vậy trên bài CIRAG."""
+    import fitz
+    from server.parser import _widen_to_glyphs
+
+    doc = fitz.open()
+    page = doc.new_page(width=400, height=200)
+    page.insert_text((50, 100), "where at step t the teacher", fontsize=10)
+    hep = fitz.Rect(66, 88, 200, 104)          # cắt vào giữa chữ "where"
+    rong = _widen_to_glyphs(page, hep)
+    doc.close()
+    assert rong.x0 < hep.x0, "phải nới sang trái cho hết chữ"
+    assert rong.y0 == hep.y0 and rong.y1 == hep.y1, "chỉ nới ngang, không nới dọc"
+
+
+def test_khung_cat_khong_no_ra_ca_cot():
+    """Không có trần thì một span dài chạm mép khung kéo khung ra hết cột, và
+    ảnh công thức thành ảnh cả đoạn văn."""
+    import fitz
+    from server.parser import _widen_to_glyphs
+
+    doc = fitz.open()
+    page = doc.new_page(width=800, height=200)
+    page.insert_text((10, 100), "x" * 150, fontsize=10)     # dòng rất dài
+    hep = fitz.Rect(300, 88, 340, 104)
+    rong = _widen_to_glyphs(page, hep)
+    doc.close()
+    assert rong.width <= hep.width * 2.2, f"nở quá tay: {rong.width:.0f} vs {hep.width:.0f}"
+
+
+def test_boc_lai_hai_lan_cho_ket_qua_giong_het():
+    """Khối trùng nội dung phải khớp theo THỨ TỰ XUẤT HIỆN. Khớp một-một thì
+    khối thứ hai luôn phải mint mã mới, và mint lại mỗi lần bóc lại — mã phình
+    ra dù nội dung y hệt. Đo trên bài thật: 12 khối churn mỗi lượt."""
+    from server import pipeline
+    doc = {"blocks": [{"id": "b1", "text": "trùng"}, {"id": "b2", "text": "trùng"},
+                      {"id": "b3", "text": "khác"}],
+           "translations": {"b1": "x", "b2": "y"}, "plain": {}, "notes": {},
+           "highlights": {}, "slides": {}}
+    new = [{"id": "p", "text": "trùng"}, {"id": "q", "text": "trùng"},
+           {"id": "r", "text": "khác"}]
+    pipeline.reparse_merge(doc, [dict(b) for b in new])
+    st = pipeline.reparse_merge(doc, [dict(b) for b in new])
+    assert st["new"] == 0 and st["dropped"] == 0 and st["kept"] == 3
+    assert doc["translations"] == {"b1": "x", "b2": "y"}
+
+
+# --------------------------- rò hệ chữ trong bản dịch
+
+def test_ro_he_chu_bat_ky_tu_la_ngoai_dai_CJK():
+    """`cjk_leak` chỉ biết CJK/Hangul. Đã gặp bản dịch chứa `띠ᥕᥕᥲᥕᥱ` thay cho
+    chữ "bảo toàn" — `ᥕᥲᥱ` là chữ Limbu, ngoài mọi dải nó biết. Liệt kê hệ chữ
+    CẤM là trò đuổi bắt không hồi kết; liệt kê hệ chữ ĐƯỢC PHÉP thì mọi thứ lạ
+    đều bị bắt, kể cả hệ chữ chưa ai gặp."""
+    from server.pipeline import script_leak
+    src = "naturally preserved in passages"
+    assert script_leak("vốn được 띠ᥕᥕᥲᥕᥱ trong đoạn", src)          # Limbu + Hangul
+    assert script_leak("vốn được било trong đoạn", src)             # Cyrillic
+    assert script_leak("vốn được ահնպ trong đoạn", src)             # Armenian
+    assert script_leak("vốn được तथा trong đoạn", src)              # Devanagari
+
+
+def test_ro_he_chu_khong_keu_oan():
+    """Kêu oan là người dùng thôi đọc cảnh báo, lúc đó cảnh báo thật cũng trôi."""
+    from server.pipeline import script_leak
+    src = "naturally preserved in passages"
+    for ok in ("các sắc thái ngôn ngữ vốn được bảo toàn trong đoạn văn",
+               "Với D = {dᵢ}ᴺᵢ₌₁ và α ≤ β thì ∑ x → y ∈ ℝ",     # chỉ số + Hy Lạp
+               "ế ộ ữ ẩ ọ — “trích dẫn” · 62,3% ± 0,4",           # dấu tiếng Việt
+               "dấu mũ TeX ˆa và ligature ﬁ"):
+        assert script_leak(ok, src) == set(), ok
+
+
+def test_ro_he_chu_khong_cam_tuyet_doi():
+    """Bài về NLP đa ngữ trích tiếng Trung là chuyện thường, và bản dịch giữ
+    nguyên nguyên văn là ĐÚNG — so với bản gốc chứ không cấm thẳng."""
+    from server.pipeline import script_leak
+    assert script_leak("mô hình 深度学习 giữ nguyên", "the 深度学习 model") == set()
+    assert script_leak("mô hình 深度学习 giữ nguyên", "the deep learning model")

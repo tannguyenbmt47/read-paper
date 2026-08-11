@@ -1,5 +1,153 @@
 # Changelog
 
+## 1.6.2
+
+**Fix a translation in place, while reading.** Every block gets a ✎ button that
+opens the stored raw text — not the rendered HTML, which already carries
+`<sup>`, `<sub>` and figure-reference anchors; editing that would nest a fresh
+layer of tags on every save and destroy the `^{…}` markers. The correction is
+written to the translation memory too, so it follows the paragraph rather than
+the document: the same text in another paper, or in this one after a re-parse,
+comes back corrected.
+
+**A script-leak guard on the translation pass, which had none.** A translation
+came back reading `띠ᥕᥕᥲᥕᥱ` where it should have said "preserved". `cjk_leak`
+only knows CJK and Hangul; those characters are Limbu. Enumerating forbidden
+scripts is an endless chase, so `script_leak()` enumerates the *permitted* ones
+— Latin, Vietnamese diacritics, Greek, maths, sub/superscripts — and flags
+anything else the source does not contain. The place this must be enforced is
+the **translation memory**, not the document: garbage in the document is visible
+and fixable, garbage in the memory returns forever, silently and for free.
+Scanning real data found 4 poisoned memory entries (Cyrillic, Devanagari,
+Armenian) and 2 affected blocks.
+
+**Re-parse a paper without losing the translation.** `POST …/reparse` re-runs
+the extractor and merges by **content, not position**: a new block whose text
+matches an old one reclaims the old id, so translations, notes, highlights and
+slide sources still point where they should. Matching by position would shift
+every id after an inserted block and paste translations onto the wrong
+paragraph — worse than losing them, because it still looks right. Blocks with
+identical text match by order of appearance; the first version matched one-to-one
+and re-minted 12 ids on every run.
+
+**Adjust a crop while reading.** The ✂ editor was only reachable from the review
+screen, so a badly cropped equation encountered mid-read meant leaving, finding
+the block, fixing it and starting over. It now opens from the reader. Separately,
+crop rectangles are widened so they never cut a glyph in half — an equation box
+built from its own spans was rendering "ere at step t…" instead of "where…".
+
+## 1.6.1
+
+**Text the layout model missed is no longer discarded.** `assign_spans` places
+each span in the smallest box containing its centre; spans outside every box
+were silently dropped. When docling misses a text region — common for a
+paragraph spanning a column break — the whole paragraph vanished from the
+document with no error. Measured on one paper: **20.4% of spans fell outside
+every box**, and a reader saw a paragraph stop mid-sentence at the word
+"Current" and jump to an unrelated point. Leftover spans are now grouped into
+paragraphs and fed back into the normal pipeline, filtered against figure
+regions and body font size. Word retention: **82.5% → 89.7%**.
+
+The fix carried its own trap: columns must be separated *before* lines are
+built. `_rows()` groups by baseline across the whole page, so in a two-column
+paper a left-hand line and a right-hand line at the same height became one line
+and the two columns interleaved — *"…static evidence repre- summarized as
+follows: sentation, failing…"*. That is what the first version produced.
+
+## 1.6.0
+
+**A synthesis view: read the corpus, not just query it.** Question answering
+assumes you already know what to ask, which is exactly what you don't when
+entering a field. The new first tab reads every paper's card and builds the
+shared argument: the problem and the competing ways of framing it, the
+approaches grouped **by mechanism**, what each one *bets on*, who builds on
+whom, what is genuinely new in each paper versus assembled from existing parts,
+and where papers contradict each other. Lineage is computed from the entity
+graph rather than asked of the model, so every link carries the passage it was
+read from.
+
+**A depth guard, applied to synthesis, answers and slides alike.** The existing
+guards catch fabrication; none caught the more common failure — a sentence that
+is true, properly cited, and carries no information. *"CIRAG uses a
+construction-integration mechanism to improve retrieval quality"* is not wrong,
+and replacing the method name with a nonsense word leaves it just as "true".
+`server/depth.py` encodes that test and checks four things mechanically: empty
+stock phrases, "improves/enhances" with no stated mechanism, long sentences with
+neither causality nor numbers, and circular definitions. Calibrated against
+shallow and deep examples: 3/3 caught, 0/4 false positives.
+
+**Slides must now walk one mechanism end to end.** Decks about a method
+routinely tell you the problem and the results while the middle — how it
+actually runs — collapses into a name and a three-box diagram. The outline step
+now requires at least one slide that takes a concrete input from the paper,
+steps through it, and says at each step why that step is needed;
+`check_depth()` flags a deck that has none.
+
+**Two real bugs, both found by running the thing.** Paper ids (`p50d58cb2d3`)
+differ from passage ids (`p50d58cb2d3c14`) only by a suffix, and the model kept
+conflating them and emitting ids that do not exist — six of nine warnings on one
+real synthesis. Papers are now labelled `P1`, `P2` in prompts and mapped back
+afterwards. Separately, the number check flagged *"100 million frames"* as
+fabricated because the source wrote `100M` and the strict number pattern rejects
+digits followed by a letter; source-side extraction is now deliberately more
+permissive than answer-side.
+
+**Model selection in the interface, per corpus**, with the active model shown
+wherever money is spent — including which one, and whether it came from the
+corpus setting or `.env`. Static assets are fingerprinted so a stale stylesheet
+can no longer survive an update.
+
+## 1.5.0
+
+**A second mechanism: the survey corpus.** The reader puts one paper's full text
+into the system prompt, which is what makes close reading work and what makes
+*"how do these approaches differ?"* unanswerable — that needs thirty papers. The
+corpus tool indexes many papers instead of translating them, and answers
+questions with citations down to the passage. It shares `parser.py`, `llm.py` and
+the SQLite file with the reader, and changes not one line of the reader's
+pipeline.
+
+**Retrieval is hybrid, and each stage earns its place.** BM25 (SQLite FTS5) and
+BGE-M3 dense vectors are fused with Reciprocal Rank Fusion, which reads only
+ranks and therefore needs no score normalisation — and lets the dense retriever
+be disabled without branching the code. Embeddings and cross-encoder reranking
+run on your own GPU, so retrieval quality costs nothing per query. Measured on
+three real papers: Vietnamese questions retrieve the right English passages in
+9–71 ms, where BM25 alone returns noise.
+
+**Each paper gets a RAPTOR tree, and queries hit every level at once.** Passages
+are clustered and summarised recursively; leaves and summaries share one index,
+because a question often needs a number from a leaf and framing from a higher
+level in the same breath.
+
+**An entity graph links papers.** Extracted once per paper with no community
+summaries — the part that makes full GraphRAG prohibitive. It expands results
+after retrieval rather than replacing it, since plain vector search wins on
+single-fact lookup and graphs win on multi-hop.
+
+**The deep-dive loop is bounded and says what it could not find.** It plans a
+checklist, searches, reads, and searches again only for the items still missing
+evidence — at most five rounds, budget checked before every model call. Gaps are
+stated as gaps. Fluent prose covering a gap is the failure that makes a research
+tool actively harmful, so there is a check that catches it.
+
+**Answers are verified mechanically.** Every number must appear verbatim in a
+cited passage, every citation must be a passage actually retrieved that run, and
+citations are clickable. An optional entailment pass catches the subtler case
+where the citation is real but does not support the claim.
+
+**Two bugs found and fixed while building it, both worth naming.** The FTS5
+external-content index corrupted the database when a paper's title differed
+between write and delete — fixed by making the indexed content a pure function
+of one table row, so divergence became impossible rather than merely unlikely.
+And bibliographies from papers whose "References" heading went undetected were
+ranking *first* for content questions; they are now filtered per block, before
+grouping, and in the oversized-block path that bypassed the first filter.
+
+**Cost.** Parsing, chunking, indexing and embedding are free. Enrichment is about
+$0.034 per paper, once; a three-round question about $0.03; repeating a question
+on an unchanged corpus is free.
+
 ## 1.4.0
 
 **Slide generation split into two steps.** Previously a single model call had to

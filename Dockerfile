@@ -37,10 +37,10 @@ COPY web/ ./web/
 # Dữ liệu (SQLite, PDF gốc, ảnh cắt ra) nằm ở volume để nâng cấp ảnh không mất bài
 ENV PAPER_DATA_DIR=/data \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8010
 RUN mkdir -p /data
 
-EXPOSE 8000
+EXPOSE 8010
 
 # Chạy bằng user thường: container phục vụ file người dùng tải lên, không có lý
 # do gì để nó chạy bằng root. `docker-compose.yml` ghi đè uid này thành uid của
@@ -50,6 +50,6 @@ USER app
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; \
-sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/config',timeout=4).status==200 else 1)"
+sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8010/api/config',timeout=4).status==200 else 1)"
 
-CMD ["sh", "-c", "uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8010}"]

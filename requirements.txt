@@ -8,5 +8,12 @@ python-multipart>=0.0.9
 python-pptx>=1.0        # xuất bộ slide ra .pptx sửa được
 docling>=2.0   # tuỳ chọn: mô hình phát hiện bố cục, xem README
 
+# Kho survey. `numpy` là bắt buộc (trộn vector); `torch` + `transformers` chỉ cần
+# khi bật tìm kiếm ngữ nghĩa — docling đã kéo cả hai về, nên cài docling là có
+# sẵn. Không có chúng thì đặt EMBED_BACKEND=off, bộ tìm rơi về BM25 và vẫn chạy.
+numpy>=1.26
+# torch>=2.0          # đã có sẵn nếu cài docling
+# transformers>=4.40  # đã có sẵn nếu cài docling
+
 # chạy test: .venv/bin/python -m pytest
 pytest>=8.0
