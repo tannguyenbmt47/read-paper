@@ -1275,7 +1275,7 @@ async function svLecRefs(pid) {
   const rs = d.refs || [];
   $("#svLecRefN").textContent = rs.length
     ? `${rs.length} bài được dẫn (trong ${d.n_refs} tham khảo) · miễn phí`
-    : "không khớp được bài này trên Semantic Scholar";
+    : (d.why || "không khớp được bài này trên Semantic Scholar");
   $("#svLecRefs").innerHTML = rs.map((r) => `
     <div class="sv-ref">
       <b>${r.influential ? "★ " : ""}${esc(r.title)}</b>
@@ -1287,13 +1287,40 @@ async function svLecRefs(pid) {
     </div>`).join("");
 }
 
+/* Gom cảnh báo TRÙNG LOẠI TRONG CÙNG MỘT MỤC lại thành một dòng gập được.
+
+   Ba mươi hai dòng "số X không tìm thấy trong bài", khác nhau đúng con số, đẩy
+   mọi cảnh báo khác ra khỏi tầm mắt — và một danh sách dài như thế thì người
+   dùng thôi đọc, lúc đó cảnh báo THẬT cũng trôi theo. Đã thấy đúng vậy trên
+   một bài thật. Nguyên nhân gốc đã sửa ở `lecture.CLAIM_SECTIONS`; gom ở đây là
+   để lần sau có kêu nhiều thì cũng không nuốt mất phần còn lại. */
+const SV_WARN_GROUP = 3;   // từ ngần này trở lên thì gập lại
+
 function svLecWarns(w) {
-  $("#svLecWarns").innerHTML = (w || []).length
-    ? `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b><ul>`
-      + w.map((x) => `<li><i>${esc(x.kind)}</i> ${esc(x.msg)}`
-        + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "") + "</li>").join("")
-      + "</ul></div>"
-    : "";
+  const box = $("#svLecWarns");
+  if (!(w || []).length) { box.innerHTML = ""; return; }
+
+  const groups = new Map();
+  w.forEach((x) => {
+    const k = `${x.section}|${x.kind}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(x);
+  });
+
+  const one = (x) => `<i>${esc(x.kind)}</i> ${esc(x.msg)}`
+    + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "");
+
+  const rows = [...groups.values()].map((g) => {
+    if (g.length < SV_WARN_GROUP) return g.map((x) => `<li>${one(x)}</li>`).join("");
+    const tieu = SV_LEC_TITLE[g[0].section] || g[0].section;
+    return `<li><details><summary><i>${esc(g[0].kind)}</i> ${tieu} — `
+      + `${g.length} chỗ</summary><ul>`
+      + g.map((x) => `<li>${esc(x.msg)}</li>`).join("")
+      + "</ul></details></li>";
+  }).join("");
+
+  box.innerHTML = `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b>`
+    + `<ul>${rows}</ul></div>`;
 }
 
 /* Mỗi mục có hình dạng riêng nên phải dựng riêng — đổ chung một khuôn thì

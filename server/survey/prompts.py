@@ -662,7 +662,12 @@ SECTIONS: dict[str, dict] = {
             "  `note` — ký hiệu/siêu tham số của bước này đọc thành lời (nếu có).\n"
             "Sáu đến mười bước. Đây là chỗ người nghe thường gật đầu suốt rồi ra "
             "về không kể lại được cho ai — vì phần giữa chỉ còn cái tên và một sơ "
-            "đồ ba hộp. Đừng viết như vậy."),
+            "đồ ba hộp. Đừng viết như vậy.\n"
+            "Ưu tiên đầu vào **có thật trong bài**. Bài không kể ví dụ nào chạy "
+            "hết đường thì được tự dựng một tình huống minh hoạ, nhưng phải **nói "
+            "rõ đó là giả định** ngay ở `input` (\"giả sử…\", \"lấy ví dụ…\") và "
+            "các con số trong đó phải **nhất quán với nhau**. Tuyệt đối không "
+            "trình bày số tự nghĩ ra như thể là kết quả đo được của bài."),
         "shape": ('{"input": "…", "steps": [{"do": "…", "why": "…", "note": "…"}], '
                   '"source": ["…"]}'),
     },

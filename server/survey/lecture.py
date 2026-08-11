@@ -41,6 +41,7 @@ khác trong công cụ này (**cảnh báo chứ không chặn**).
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from .. import db as maindb
@@ -259,6 +260,22 @@ def _texts(name: str, data) -> list[tuple[str, str]]:
     return [(a, b) for a, b in out if (b or "").strip()]
 
 
+# Mốc thời gian và khoảng thời gian. `_NUM` bóc `[00:12:30-00:12:35]` thành SÁU
+# số rời — "00", "12", "30", "00", "12", "35" — mà không con nào là số liệu của
+# bài. Đo thật: một mục sinh 32 cảnh báo, phần lớn từ đúng chỗ này.
+_TIMEISH = re.compile(r"\d{1,3}:\d{2}(?::\d{2})?(?:[.,]\d+)?")
+
+# Mục nào có số là KHẲNG ĐỊNH VỀ BÀI, và mục nào có số là con số giả định để
+# giảng. Ràng buộc số liệu sinh ra để chặn "gán kết quả giả cho tác giả thật";
+# còn `mechanism` và `problem` cố ý kể một **tình huống ví dụ** — "giả sử video
+# dài 10 phút, N = 600 khung hình" không phải kết quả của ai cả.
+#
+# Không phân biệt hai thứ đó thì chốt chặn kêu oan 32 lần cho một bài, và lúc ấy
+# người dùng thôi đọc cảnh báo — cảnh báo THẬT ở `evidence` trôi theo. Cùng bài
+# học với mấy hằng ngân sách của slide: chốt chặn kêu oan vài lần là hỏng.
+CLAIM_SECTIONS = ("evidence", "compare", "limits", "why_hard", "prereq", "check")
+
+
 def _numbers(name: str, data) -> list[str]:
     """Mọi con số xuất hiện trong một mục, để đối chiếu với bài."""
     if name == "evidence" and isinstance(data, dict):
@@ -267,7 +284,8 @@ def _numbers(name: str, data) -> list[str]:
         blob += " " + (data.get("limits_of_evidence") or "")
     else:
         blob = " ".join(t for _, t in _texts(name, data))
-    return [m.group(0) for m in _NUM.finditer(_URLISH.sub(" ", blob))]
+    blob = _TIMEISH.sub(" ", _URLISH.sub(" ", blob))
+    return [m.group(0) for m in _NUM.finditer(blob)]
 
 
 def check(sections: dict, chunk_ids: set[str], paper_id: str = "") -> list[dict]:
@@ -290,12 +308,13 @@ def check(sections: dict, chunk_ids: set[str], paper_id: str = "") -> list[dict]
     if paper_id:
         for row in sdb.conn().execute(
                 "SELECT text FROM chunk WHERE paper_id = ?", (sdb.check_id(paper_id),)):
-            for m in _NUM.finditer(_URLISH.sub(" ", row["text"] or "")):
+            txt = _TIMEISH.sub(" ", _URLISH.sub(" ", row["text"] or ""))
+            for m in _NUM.finditer(txt):
                 have.add(_norm_num(m.group(0)))
 
     for name, data in sections.items():
         title = prompts.SECTIONS.get(name, {}).get("title", name)
-        for num in (_numbers(name, data) if have else []):
+        for num in (_numbers(name, data) if have and name in CLAIM_SECTIONS else []):
             if _norm_num(num) not in have:
                 warns.append({"section": name, "kind": "số_không_có_trong_bài",
                               "msg": f"{title}: số “{num}” không tìm thấy nguyên văn "

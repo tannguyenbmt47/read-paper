@@ -604,3 +604,9 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
 @media (max-width: 720px) {
   #svPaneLec .sv-synbar .sv-inline { min-width: 0; }
 }
+
+/* Nhóm cảnh báo gập lại — xem `svLecWarns`. */
+.sv-warnbox details > summary { cursor: pointer; }
+.sv-warnbox details[open] > summary { margin-bottom: 4px; }
+.sv-warnbox details ul { margin: 2px 0 0; padding-left: 18px; }
+.sv-warnbox details li { color: var(--muted); font-size: .92em; }

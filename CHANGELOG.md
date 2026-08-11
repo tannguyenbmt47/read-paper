@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.7.1
+
+**The number check was crying wolf.** One lecture produced 33 warnings, 32 of
+them from the worked-example section — "suppose the video runs 600 seconds, take
+frames 750 to 755" is not a claim about anyone's results, and a timestamp like
+`[00:12:30-00:12:35]` was being split into six meaningless numbers. The
+verbatim-number constraint now applies only to sections that assert something
+about the paper, timestamps are stripped before extraction, and the interface
+folds repeated warnings of the same kind into one expandable line. On the same
+lecture: 33 warnings → 1, and that one is real. A guard that cries wolf gets
+ignored, and the real warning goes with it.
+
+**"No comparison dossier" now says which of the three reasons it was**: the
+title was too mangled to look up (one paper had been reduced to "Question
+Answering"), nothing matched, or — the common case for a fresh preprint —
+Semantic Scholar has the paper but has not finished extracting its references
+yet, so waiting is the answer rather than editing anything.
+
 ## 1.7.0
 
 **Turn one paper into a lecture you can actually read.** The corpus tool could

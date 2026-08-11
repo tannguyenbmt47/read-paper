@@ -820,9 +820,14 @@ request HTTP, **$0**. Ba chỗ phải cẩn thận:
 - **`intents` không đáng tin.** Nó cần S2 có toàn văn bài dẫn, mà bản tiền ấn
   arXiv thì thường không — đo trên LAPA: 0/63. Xếp hạng phải dựa vào `contexts`,
   `intents` chỉ là gia vị.
-- **Khớp theo tiêu đề là khớp mờ**, nên `resolve()` tự soát lại độ trùng. Dựng
-  bài giảng đối chiếu với NHẦM bài còn tệ hơn hẳn không có phần đối chiếu, vì
-  nhìn vẫn có vẻ đúng.
+- **Khớp theo tiêu đề là khớp mờ**, nên `resolve()` tự soát lại độ trùng, và
+  `usable_title()` chặn hẳn tiêu đề quá ngắn (đã gặp một bài bóc hỏng còn mỗi
+  "Question Answering" — khớp trúng hàng nghìn bài). Dựng bài giảng đối chiếu
+  với NHẦM bài còn tệ hơn hẳn không có phần đối chiếu, vì nhìn vẫn có vẻ đúng.
+- **Ba trường hợp "không có hồ sơ" phải nói khác nhau**, vì cách xử lý khác
+  nhau: tiêu đề hỏng (sửa tiêu đề), không khớp được (chịu), và **khớp được mã
+  nhưng S2 chưa bóc xong tham khảo** — hay gặp với bản tiền ấn vừa đăng, và
+  người dùng chỉ cần chờ. Trường `why` mang lý do lên giao diện.
 - **Câu trích dẫn do máy bóc nên có thể lệch** (đã gặp: một câu nói về GENMO bị
   gán cho AMO). Prompt phải nói rõ điều đó và cấm khẳng định quá thứ câu ấy chứa.
 
@@ -863,6 +868,18 @@ Chê chung chung ("viết sâu hơn") thì model viết *dài* hơn chứ không
 Số bịa và mã đoạn sai **không** vào lời chê (`_shallow` lọc ra): viết lại không
 sửa được kiểu hỏng đó, nhồi vào chỉ làm loãng đúng chỗ cần chê. Chạy thật trên
 LAPA: `limits` bị chấm, viết lại, rồi hết cảnh báo.
+
+**Ràng buộc số liệu chỉ áp cho mục KHẲNG ĐỊNH VỀ BÀI** (`CLAIM_SECTIONS`).
+`mechanism` và `problem` cố ý kể một *tình huống ví dụ* — "giả sử video dài 10
+phút, N = 600 khung hình" không phải kết quả của ai cả. Không phân biệt hai thứ
+đó thì chốt chặn **kêu oan 32 lần cho một bài** (đã đo), và lúc ấy người dùng
+thôi đọc cảnh báo — cảnh báo thật ở `evidence` trôi theo. Cùng bài học với mấy
+hằng ngân sách của slide.
+
+Kèm theo: `_TIMEISH` phải cắt mốc thời gian **trước** khi bóc số, vì `_NUM` biến
+`[00:12:30-00:12:35]` thành sáu số rời không con nào là số liệu. Và giao diện
+**gom cảnh báo trùng loại trong cùng một mục** thành một dòng gập được, để lần
+sau có kêu nhiều thì cũng không nuốt mất phần còn lại.
 
 Ba chỗ khác dễ vấp:
 

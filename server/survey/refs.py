@@ -106,7 +106,7 @@ async def resolve(client: httpx.AsyncClient, paper: dict) -> str:
         return f"arXiv:{aid}"
 
     title = (paper.get("title") or "").strip()
-    if len(title) < 12:
+    if not usable_title(title):
         return ""
     got = await _get(client, "/paper/search/match",
                      {"query": title, "fields": "title,externalIds"})
@@ -120,6 +120,18 @@ async def resolve(client: httpx.AsyncClient, paper: dict) -> str:
     if not (a in b or b in a or _overlap(a, b) >= 0.6):
         return ""
     return hit.get("paperId") or ""
+
+
+# Tiêu đề bóc từ PDF thỉnh thoảng hỏng — đã gặp một bài trong kho chỉ còn hai
+# chữ "Question Answering". Tiêu đề như vậy khớp trúng hàng nghìn bài, nên thà
+# không tra còn hơn tra ra nhầm bài rồi dựng cả phần đối chiếu sai.
+MIN_TITLE_WORDS = 3
+MIN_TITLE_CHARS = 16
+
+
+def usable_title(title: str) -> bool:
+    t = (title or "").strip()
+    return len(t) >= MIN_TITLE_CHARS and len(t.split()) >= MIN_TITLE_WORDS
 
 
 def _overlap(a: str, b: str) -> float:
@@ -166,8 +178,16 @@ async def dossier(paper: dict, corpus_titles: dict[str, str] | None = None,
     kho — bài dẫn nào cũng có trong kho thì đánh dấu `in_corpus`, vì lúc đó bài
     giảng đối chiếu được bằng nội dung thật chứ không chỉ bằng tóm tắt.
     """
-    out: dict = {"s2_id": "", "n_refs": 0, "refs": [], "fetched_at": time.time()}
+    out: dict = {"s2_id": "", "n_refs": 0, "refs": [], "fetched_at": time.time(),
+                 "why": ""}
     corpus_titles = corpus_titles or {}
+    if not arxiv_id(paper) and not usable_title(paper.get("title") or ""):
+        # Nói ra được chỗ sửa. "Không khớp được" thì đúng nhưng người dùng không
+        # biết làm gì tiếp; "tiêu đề bóc hỏng" thì họ sửa được trong một giây.
+        out["why"] = ("tiêu đề của bài quá ngắn để tra (“"
+                      + (paper.get("title") or "").strip()[:40]
+                      + "”) — sửa lại tiêu đề bài rồi thử lại")
+        return out
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         sid = await resolve(client, paper)
@@ -179,6 +199,14 @@ async def dossier(paper: dict, corpus_titles: dict[str, str] | None = None,
                          {"fields": REF_FIELDS, "limit": 100})
         rows = (got or {}).get("data") if isinstance(got, dict) else None
         if not rows:
+            # Phân giải được mã nhưng không có tham khảo là chuyện KHÁC hẳn với
+            # không tra ra bài. Hay gặp nhất ở bản tiền ấn vừa đăng: S2 có mã
+            # ngay nhưng phải vài tuần mới bóc xong danh sách tham khảo. Nói
+            # đúng nguyên nhân thì người dùng biết là chờ, chứ không đi sửa
+            # tiêu đề vô ích.
+            out["why"] = ("Semantic Scholar có bài này (" + sid + ") nhưng chưa "
+                          "bóc xong danh sách tham khảo — thường vì bài mới đăng. "
+                          "Bài giảng vẫn dựng được, chỉ thiếu phần đối chiếu.")
             return out
         out["n_refs"] = len(rows)
 

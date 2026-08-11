@@ -773,3 +773,42 @@ def test_danh_sach_bai_khong_keo_theo_bai_giang(client, sdb, kho):
     truoc = prompts.corpus_digest(sdb.list_papers(kho["sid"]))
     sdb.update_paper(kho["p1"], lecture='{"sections": {"problem": {"body": "ĐÃ ĐỔI"}}}')
     assert prompts.corpus_digest(sdb.list_papers(kho["sid"])) == truoc
+
+
+def test_khong_soat_so_o_muc_von_la_vi_du_gia_dinh(client, sdb, kho):
+    """`mechanism` cố ý kể một TÌNH HUỐNG VÍ DỤ — "giả sử video dài 10 phút,
+    N = 600 khung hình" không phải kết quả của ai cả.
+
+    Đo trên bài thật: không phân biệt thì một bài sinh 32 cảnh báo, và lúc ấy
+    người dùng thôi đọc cảnh báo — cảnh báo THẬT ở `evidence` trôi theo.
+    """
+    from server.survey import lecture
+    ids = {c["id"] for c in sdb.paper_chunks(kho["p1"], level=0)}
+    vi_du = {"mechanism": {"steps": [
+        {"do": "Giả sử video dài 600 giây, lấy khung 750 đến 755",
+         "why": "Vì cửa sổ phải phủ hết sự kiện nên hai đầu mốc mới cần lấy dư."}]}}
+    assert not [w for w in lecture.check(vi_du, ids, kho["p1"])
+                if w["kind"] == "số_không_có_trong_bài"]
+    # nhưng ở mục KHẲNG ĐỊNH về bài thì vẫn phải bắt
+    khang_dinh = {"evidence": {"items": [{"claim": "x", "number": "750", "setting": "y"}]}}
+    assert [w for w in lecture.check(khang_dinh, ids, kho["p1"])
+            if w["kind"] == "số_không_có_trong_bài"]
+
+
+def test_moc_thoi_gian_khong_bi_boc_thanh_so_lieu(client):
+    """`[00:12:30-00:12:35]` từng bị bóc thành SÁU số rời — "00", "12", "30",
+    "00", "12", "35" — mà không con nào là số liệu của bài."""
+    from server.survey import lecture
+    got = lecture._numbers("evidence", {"items": [
+        {"claim": "sự kiện [00:12:30-00:12:35]", "number": "62.3", "setting": ""}]})
+    assert got == ["62.3"]
+
+
+def test_tieu_de_qua_ngan_thi_khong_tra_semantic_scholar(client):
+    """Đã gặp một bài trong kho bóc hỏng tiêu đề, chỉ còn "Question Answering".
+    Tiêu đề như vậy khớp trúng hàng nghìn bài — thà không tra còn hơn dựng cả
+    phần đối chiếu với NHẦM bài."""
+    from server.survey import refs
+    assert not refs.usable_title("Question Answering")
+    assert not refs.usable_title("GCR")
+    assert refs.usable_title("LATENT ACTION PRETRAINING FROM VIDEOS")
