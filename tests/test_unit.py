@@ -573,3 +573,35 @@ def test_ro_he_chu_khong_cam_tuyet_doi():
     from server.pipeline import script_leak
     assert script_leak("mô hình 深度学习 giữ nguyên", "the 深度学习 model") == set()
     assert script_leak("mô hình 深度学习 giữ nguyên", "the deep learning model")
+
+
+# ------------------------------- dựng chữ đậm khi hiển thị
+
+def test_xuat_ban_dung_chu_dam_nhung_giu_nguyen_sao_don():
+    """Bài báo dùng chữ đậm làm tiêu đề chạy đầu đoạn — bỏ đi là mất một tầng
+    cấu trúc, để nguyên `**` là lòi ký tự rác. Nhưng `*` ĐƠN thì không phải chữ
+    nghiêng: quét dữ liệu thật thấy nó là ký hiệu chú thích bảng và phép nhân."""
+    import re
+    def rich(s):
+        out = (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+        out = re.sub(r"\^\{([^{}]*)\}", r"<sup>\1</sup>", out)
+        out = re.sub(r"_\{([^{}]*)\}", r"<sub>\1</sub>", out)
+        return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
+
+    assert rich("**Dataset.** Chúng tôi huấn luyện") == \
+        "<strong>Dataset.</strong> Chúng tôi huấn luyện"
+    # phép nhân và ký hiệu chú thích: giữ nguyên
+    assert rich("learning rate là 2 * 10^{-4}") == "learning rate là 2 * 10<sup>-4</sup>"
+    assert "*" in rich("Dấu * biểu thị uniform frame sampling")
+    # không chèn được HTML qua nội dung bài
+    assert "&lt;script&gt;" in rich("<script>")
+
+
+def test_hai_ben_dung_cung_mot_luat_dam():
+    """`sci()` bên app.js và `rich()` bên main.py phải khớp, nếu không bản xuất
+    ra khác bản đang đọc trên màn hình."""
+    import pathlib, re
+    js = pathlib.Path("web/app.js").read_text()
+    py = pathlib.Path("server/main.py").read_text()
+    assert r'.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")' in js
+    assert r'r"\*\*([^*]+)\*\*", r"<strong>\1</strong>"' in py

@@ -8,10 +8,22 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
 /* Parser ghi chỉ số trên/dưới thành `^{N}` và `_{i}` — dạng đó để cho model đọc,
    không phải để người đọc nhìn. Dựng lại thành chỉ số thật khi hiển thị.
    Escape trước rồi mới chèn thẻ, nên nội dung bài không chèn được HTML.
-   Ngoặc nhọn còn lại là ngoặc thật của bài (ký hiệu tập hợp), giữ nguyên. */
+   Ngoặc nhọn còn lại là ngoặc thật của bài (ký hiệu tập hợp), giữ nguyên.
+
+   Dựng cả `**đậm**`, và CHỈ dạng hai dấu sao. Bài báo dùng chữ đậm làm tiêu đề
+   chạy đầu đoạn ("**Dataset.** Chúng tôi huấn luyện…") nên để nguyên hai dấu sao
+   là vừa mất một tầng cấu trúc vừa lòi ký tự rác ra giữa câu.
+
+   Dấu `*` ĐƠN thì để nguyên. Quét dữ liệu thật: cả hai chỗ dùng nó đều không
+   phải chữ nghiêng — một là ký hiệu chú thích bảng, một là phép nhân
+   `2 * 10^{−4}`. Dựng chúng thành <em> là hỏng cả hai.
+
+   Luật ở đây phải khớp từng cái với `rich()` bên `server/main.py`, nếu không
+   bản xuất ra khác bản đang đọc. */
 const sci = (s) => refs(esc(s)
   .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
-  .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>"));
+  .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
+  .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>"));
 
 /* "Figure 2" trong đoạn văn nhưng hình lại nằm cách đó mấy trang — biến mọi
    tham chiếu thành chỗ bấm được để xem ngay hình đó, khỏi mất chỗ đang đọc. */

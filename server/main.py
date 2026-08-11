@@ -1502,10 +1502,21 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
         Marker là dạng để model đọc, file xuất ra là để người đọc nhìn. Chỉ dùng
         cho phần thân bài — KHÔNG dùng cho mã Mermaid, thuộc tính `alt` hay thẻ
         `<title>`, chèn thẻ vào những chỗ đó là hỏng.
+
+        Dựng cả `**đậm**`, và **chỉ** dạng hai dấu sao. Bài báo dùng chữ đậm làm
+        tiêu đề chạy đầu đoạn (*"**Dataset.** Chúng tôi huấn luyện…"*) nên bỏ nó
+        đi là mất một tầng cấu trúc. Nhưng dấu `*` ĐƠN thì để nguyên: quét dữ
+        liệu thật, cả hai chỗ dùng nó đều không phải chữ nghiêng — một là ký hiệu
+        chú thích bảng (*"Dấu * biểu thị uniform frame sampling"*), một là phép
+        nhân (`2 * 10^{−4}`). Dựng chúng thành `<em>` là hỏng cả hai.
+
+        Phải khớp từng luật với `sci()` bên `web/app.js`, nếu không bản xuất ra
+        khác bản đang đọc trên màn hình.
         """
         out = esc(s)
         out = re.sub(r"\^\{([^{}]*)\}", r"<sup>\1</sup>", out)
-        return re.sub(r"_\{([^{}]*)\}", r"<sub>\1</sub>", out)
+        out = re.sub(r"_\{([^{}]*)\}", r"<sub>\1</sub>", out)
+        return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
 
     def mermaid(code: str, cap: str = "") -> str:
         if not (code or "").strip():
