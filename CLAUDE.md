@@ -793,6 +793,100 @@ mọi con số phải có mặt nguyên văn trong đoạn đã trích (dùng l�
 Cảnh báo neo theo **chỉ số câu** (`split_sentences` giữ `start`/`end`), để giao
 diện tô đúng câu chứ không tô cả bài.
 
+### Bài giảng (`survey/lecture.py`, `survey/refs.py`) — giảng MỘT bài cho hiểu
+
+Tab *Bài giảng* đứng giữa hai tab kia và lấp đúng chỗ trống giữa chúng: *Tổng
+hợp* nói về cả kho mà không đi sâu bài nào, *Hỏi đáp* đi sâu được nhưng **đòi
+người ta biết trước phải hỏi gì** — mà lúc mới mở một bài lạ ra thì đó chính là
+thứ chưa có.
+
+**Câu trích dẫn của chính tác giả là thứ thay thế việc đọc ba mươi bài tham
+khảo.** Đây là toàn bộ thiết kế của phần đối chiếu. Cách hiển nhiên — tải về mọi
+bài được dẫn rồi bắt model đọc — tốn gấp vài chục lần và **vẫn tệ hơn**, vì đọc
+cả bài được dẫn thì model phải tự đoán bài chính đã lấy ý nào từ đó. Trong khi
+tác giả đã viết sẵn câu trả lời ngay tại chỗ trích dẫn.
+
+Semantic Scholar Graph API phát không thứ đó, **không cần key**:
+
+| Trường | Được gì | Thay cho |
+|---|---|---|
+| `contexts` | nguyên văn câu chứa chỗ trích dẫn | đọc cả bài được dẫn |
+| `isInfluential` | bài này có thật sự dựa vào bài kia không | đếm số lần dẫn |
+| `tldr` | tóm tắt một câu, model SciTLDR dựng sẵn | một lượt gọi model mỗi bài |
+
+Đo trên bài LAPA: 63 tham khảo, **58 có câu trích dẫn**, lấy về bằng **hai**
+request HTTP, **$0**. Ba chỗ phải cẩn thận:
+
+- **`intents` không đáng tin.** Nó cần S2 có toàn văn bài dẫn, mà bản tiền ấn
+  arXiv thì thường không — đo trên LAPA: 0/63. Xếp hạng phải dựa vào `contexts`,
+  `intents` chỉ là gia vị.
+- **Khớp theo tiêu đề là khớp mờ**, nên `resolve()` tự soát lại độ trùng. Dựng
+  bài giảng đối chiếu với NHẦM bài còn tệ hơn hẳn không có phần đối chiếu, vì
+  nhìn vẫn có vẻ đúng.
+- **Câu trích dẫn do máy bóc nên có thể lệch** (đã gặp: một câu nói về GENMO bị
+  gán cho AMO). Prompt phải nói rõ điều đó và cấm khẳng định quá thứ câu ấy chứa.
+
+Tám mục, và **thứ tự là kết luận từ nghiên cứu, không phải khẩu vị**: `prereq`
+(kiến thức bài giả định bạn đã có) đứng **đầu** vì thứ chặn người đọc là nền
+không được nói ra chứ không phải câu dài — đó là *curse of knowledge*, tác giả
+bỏ qua phần "ai trong nhánh này cũng biết". Rồi `problem` → `why_hard` →
+`mechanism` (chạy tay một ví dụ, mỗi bước nói **vì sao** bước ấy cần) →
+`compare` → `evidence` → `limits` → `check`. Mục `check` là câu hỏi **vì sao /
+điều gì xảy ra nếu**, không phải câu tra cứu: chính lúc người đọc tự dựng lại
+lời giải thích mới là lúc họ học được. Paper Plain (TOCHI 2023) đo được rằng
+tóm lược tại chỗ + bộ câu hỏi dẫn đường làm người không chuyên đọc dễ hơn hẳn
+**mà không giảm mức hiểu**.
+
+Bốn chỗ đã vấp thật khi chạy trên bài thật, đừng vấp lại:
+
+- **Tắt hẳn nghĩ thầm** (`NO_REASONING`). Để `{"effort":"low"}` thì hai mẻ trên
+  bốn chạy 76 giây rồi trả về **chuỗi rỗng** — token bị phần nghĩ thầm ăn sạch
+  trước khi tới phần viết. Độ sâu đến từ `SECTIONS` + `DEPTH_RULES` + vòng viết
+  lại, không đến từ token nghĩ thầm; ở đây nghĩ thầm còn *tranh chỗ* với phần
+  cần dài.
+- **Mẻ nhỏ, `mechanism` đi một mình.** Vừa cho mục dài nhất trọn cả trần đầu ra,
+  vừa để mọi mẻ về đích trong 300s timeout của `llm`. Chia nhỏ gần như miễn phí
+  vì prefix vẫn ấm: đo thật **93.952/117.704 token đọc vào lấy từ cache**.
+- **Mẻ hỏng phải thử lại, và mục thiếu phải vào `warns`.** Bỏ qua là người dùng
+  trả tiền các mẻ khác rồi nhận bài giảng thiếu ba mục, mà lý do chỉ thoáng qua
+  một dòng tiến trình đã trôi mất từ hôm trước.
+- **In đậm chỉ có tác dụng khi nó ngắn.** Model hay viết `do` và `point` thành cả
+  đoạn 700 ký tự; in đậm hoặc nhuộm màu tiêu đề nguyên đoạn thì mắt không còn
+  chỗ bám. `LEAD_MAX = 90` bên server và `SV_LEAD_MAX` bên `survey.js` là **một
+  quyết định ở hai chỗ** — đổi một bên phải đổi bên kia.
+
+Chi phí đo thật trên LAPA (101 đoạn): **175 giây, $0,0099** cho 5.750 từ.
+
+Vòng **đào sâu** là chỗ trả lời cho yêu cầu "tự đào sâu": `depth.check_text()`
+chấm xong thì mục nào bị bắt được viết lại **kèm đúng câu bị chê**, một lượt.
+Chê chung chung ("viết sâu hơn") thì model viết *dài* hơn chứ không *sâu* hơn.
+Số bịa và mã đoạn sai **không** vào lời chê (`_shallow` lọc ra): viết lại không
+sửa được kiểu hỏng đó, nhồi vào chỉ làm loãng đúng chỗ cần chê. Chạy thật trên
+LAPA: `limits` bị chấm, viết lại, rồi hết cảnh báo.
+
+Ba chỗ khác dễ vấp:
+
+- **`_texts()` phải bóc chữ theo hình dạng riêng của từng mục** — `mechanism`
+  giấu chữ trong `steps[].why`, `check` trong `items[].a`. Soát trên
+  `json.dumps` thì tên khoá và dấu ngoặc lọt vào phép đếm và mọi phép kiểm lệch.
+  Mục `check` cố ý **không** soát độ sâu: câu hỏi tự kiểm vốn ngắn.
+- **Hai cột `refs` và `lecture` phải nằm NGOÀI `list_papers()`** (xem `_HEAVY`).
+  Không phải vì nặng, mà vì `corpus_digest` dựng từ danh sách đó và phải
+  byte-identical giữa mọi câu hỏi — cột đổi theo từng lần dựng bài giảng mà lọt
+  vào là hỏng cache của cả kho.
+- **Ô chọn bài giãn theo option dài nhất**, mà option ở đây là *tiêu đề bài* —
+  dài nhất trong cả app. Cộng `min-width: auto` mặc định của flex item là thanh
+  công cụ rộng 450px trong khung 369px. Cần `min-width: 0`.
+
+Và một bẫy của chính việc soát bằng trình duyệt: **`Page.navigate` tới URL chỉ
+khác phần `#hash` thì KHÔNG tải lại trang**, nên CSS/JS cũ còn nguyên và mọi
+phép đo nói dối. Phải `Page.reload(ignoreCache=True)`.
+
+**Font mono không dựng nổi dấu tiếng Việt chồng tầng** — đã nhìn thấy "số" ra
+"sô´", "chuỗi" ra "chuôĩ", "biểu" ra "biêủ". Nên `.sv-note` (văn xuôi giải thích
+ký hiệu) dùng font thường; chỉ ký hiệu lẻ trong `<code>` mới để mono. Cùng họ
+với cái bẫy `line-height` ở slide.
+
 ### Các quy ước nhỏ dễ vấp
 
 - `store.py` chỉ là mặt tiền mỏng của `db.py`, giữ tên hàm cũ thời còn lưu JSON.

@@ -24,7 +24,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from . import store
 from .survey import agent, embed
 from .survey import db as sdb
-from .survey import ingest, search, sources, synth
+from .survey import ingest, lecture, refs, search, sources, synth
 
 router = APIRouter(prefix="/api/survey", tags=["survey"])
 
@@ -292,6 +292,69 @@ async def build_synth(sid: str):
     async def gen():
         try:
             async for kind, payload in synth.build(sid):
+                yield _sse(kind, payload)
+        except Exception as e:               # noqa: BLE001
+            yield _sse("error", {"msg": f"{type(e).__name__}: {e}"[:300]})
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ------------------------------------------------------------- bài giảng
+#
+# Ba route, và ranh giới giữa chúng là ranh giới TIỀN — cùng lối với luồng
+# đọc-hiểu (soát miễn phí trước, dịch tốn tiền sau):
+#   GET  …/lecture        đọc bản đã dựng          — $0
+#   GET  …/lecture/refs   hồ sơ đối chiếu          — $0, chỉ đi mạng
+#   GET  …/lecture/build  dựng bài giảng           — TỐN TIỀN, SSE
+
+
+@router.get("/{sid}/paper/{pid}/lecture")
+async def get_lecture(sid: str, pid: str, fmt: str = "json"):
+    """Đọc bài giảng đã dựng. **Không gọi model, miễn phí.**"""
+    _need(sid)
+    p = sdb.load_paper(pid)
+    if p["survey_id"] != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+    lec = sdb._loads(p.get("lecture"), {})
+    if fmt == "md":
+        if not lec:
+            raise HTTPException(404, "Bài này chưa có bài giảng")
+        return PlainTextResponse(lecture.as_markdown(p, lec),
+                                 media_type="text/markdown")
+    return {"lecture": lec, "stale": lecture.stale(p),
+            "title": p.get("title"), "has_text": bool(sdb.paper_chunks(pid, level=0))}
+
+
+@router.get("/{sid}/paper/{pid}/lecture/refs")
+async def get_refs(sid: str, pid: str, force: bool = False):
+    """Hồ sơ đối chiếu. **Miễn phí** — Semantic Scholar không cần key.
+
+    Xem được trước khi bấm dựng, nên người dùng biết phần đối chiếu sẽ dày hay
+    mỏng trước lúc tiêu tiền.
+    """
+    _need(sid)
+    p = sdb.load_paper(pid)
+    if p["survey_id"] != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+    titles = refs.corpus_titles(sid, skip=pid)
+    dos = (await refs.dossier(p, titles)) if force else (await refs.ensure(p, titles))
+    if force and (dos.get("refs") or dos.get("s2_id")):
+        refs.save(pid, dos)
+    return dos
+
+
+@router.get("/{sid}/paper/{pid}/lecture/build")
+async def build_lecture(sid: str, pid: str, deepen: bool = True):
+    """Dựng bài giảng, phát SSE. **Tốn tiền** — 2 lượt, cộng 1 lượt nếu đào sâu."""
+    _need(sid)
+    p = sdb.load_paper(pid)
+    if p["survey_id"] != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+
+    async def gen():
+        try:
+            async for kind, payload in lecture.build(pid, deepen=deepen):
                 yield _sse(kind, payload)
         except Exception as e:               # noqa: BLE001
             yield _sse("error", {"msg": f"{type(e).__name__}: {e}"[:300]})

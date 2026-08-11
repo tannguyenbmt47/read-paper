@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.7.0
+
+**Turn one paper into a lecture you can actually read.** The corpus tool could
+summarise everything and answer questions, but both assume you already know
+what to ask — which is exactly what you don't when you open an unfamiliar paper.
+The new tab writes the paper out in eight sections: what the paper *assumes you
+already know* (first, because unstated background is what stops readers, not
+long sentences), the problem through a concrete instance, why the obvious
+approach fails, **the mechanism walked through one real input step by step with
+why each step is needed**, how it sits against the papers it cites, what the
+numbers do and don't show, what to doubt, and questions to test yourself on.
+Measured on one paper: 5,750 words, 175 seconds, **$0.0099**.
+
+**Comparing against cited work costs nothing, because the authors already wrote
+the comparison.** The obvious approach — fetch thirty referenced papers and have
+the model read them — costs dozens of times more and is *worse*: reading the
+cited paper leaves the model guessing which idea was borrowed. The sentence
+around a citation says exactly that, in the author's own words. Semantic
+Scholar serves those sentences free and without a key, along with a
+ready-made one-line summary of each cited paper. On one paper: 63 references, 58
+with citation sentences, retrieved in two HTTP calls for **$0**.
+
+**The depth guard now drives a rewrite, not just a warning.** Sections flagged as
+shallow are rewritten once with the specific sentence that failed attached —
+telling a model to "go deeper" makes it write *longer*, naming the failing
+sentence makes it write *deeper*. Fabricated numbers and bad passage ids are
+deliberately excluded from that feedback: rewriting cannot fix them, and
+including them only dilutes the complaint.
+
+**Three failures found by running it rather than testing it.** Leaving reasoning
+on made two batches out of four burn 76 seconds and return an *empty string* —
+the token budget went to thinking before any writing happened. A whole paragraph
+set in bold or in the heading colour leaves the eye nowhere to land, so emphasis
+is now applied only to short leads. And the monospace font cannot compose
+Vietnamese stacked diacritics — "số" rendered as "sô´" — so symbol notes are set
+in the normal face.
+
 ## 1.6.3
 
 **The label protocol no longer breaks when the model types a label slightly

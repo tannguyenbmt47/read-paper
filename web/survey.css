@@ -482,3 +482,125 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
   .sv-inline { flex: 1 1 100%; }
   .sv-inline .input { flex: 1; max-width: none; }
 }
+
+/* ---------------------------------------------------------- bài giảng
+
+   Bài giảng là thứ ĐỌC DÀI, khác mọi màn khác của kho survey vốn để liếc và so
+   sánh. Nên nó theo lối của cột đọc bên luồng dịch: chữ serif, dòng thưa, bề
+   ngang hẹp lại. Bề ngang là thứ quyết định: dòng dài quá 90 ký tự thì mắt trượt
+   dòng, và đây là chỗ duy nhất trong app người ta đọc liên tục vài nghìn chữ. */
+#svPaneLec .sv-col { max-width: 760px; }
+
+.sv-lecsec { margin: 0 0 34px; }
+.sv-lecsec > h3 {
+  font-family: var(--sans); font-size: 12px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); margin: 0 0 10px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+}
+
+/* Cần biết trước — thuật ngữ nổi lên, lời giải thích thụt vào. Đây là mục người
+   ta quay lại tra nhiều nhất, nên phải quét mắt tìm được thuật ngữ. */
+.sv-prereq { margin: 0; }
+.sv-prereq dt {
+  font-family: var(--sans); font-weight: 650; color: var(--head);
+  font-size: 15px; margin: 14px 0 2px;
+}
+.sv-prereq dd { margin: 0 0 0 2px; color: var(--ink-2); }
+
+.sv-lecin { color: var(--ink-2); }
+
+/* Cơ chế: cặp "làm gì / vì sao cần" là toàn bộ giá trị của mục này. Cho `why`
+   một vạch riêng bên trái để nó không chìm vào bước — người đọc lướt qua phần
+   "làm gì" thì vẫn dừng lại ở phần "vì sao". */
+.sv-steps-l { margin: 0; padding-left: 22px; }
+.sv-steps-l > li { margin: 0 0 18px; padding-left: 4px; }
+/* Đậm và màu nhấn đều do `svLead()` quyết theo ĐỘ DÀI, không đặt cứng ở đây:
+   model hay viết `do` thành cả một đoạn 700 ký tự, mà nhuộm nguyên đoạn bằng
+   màu tiêu đề thì vừa nặng mắt vừa mất hết tác dụng của việc nhấn. Đã nhìn thấy
+   đúng vậy trên bài LAPA. */
+.sv-do b { font-weight: 650; color: var(--head); }
+.sv-steps-l .sv-why {
+  margin-top: 5px; padding-left: 12px; border-left: 2px solid var(--accent);
+  color: var(--ink-2);
+}
+/* KHÔNG dùng font mono ở đây. `note` là văn xuôi tiếng Việt giải thích ký hiệu,
+   không phải mã — mà font mono không dựng nổi dấu tiếng Việt chồng tầng: đã
+   nhìn thấy "số" ra "sô´", "chuỗi" ra "chuôĩ", "biểu" ra "biêủ". Cùng họ với
+   cái bẫy line-height ở slide. Ký hiệu lẻ nào cần mono thì `<code>` lo. */
+.sv-note {
+  margin-top: 4px; font-size: .88em; color: var(--muted);
+}
+.sv-note code, .sv-lecsec code {
+  font-family: var(--mono); font-size: .92em;
+}
+
+/* Đối chiếu: hai dòng "lấy" / "khác" phải phân biệt được ngay bằng mắt, vì cái
+   người đọc cần lấy ra khỏi mục này là ranh giới giữa chúng. */
+.sv-cmp { margin: 0 0 18px; padding-left: 14px; border-left: 2px solid var(--line); }
+.sv-cmp > b { font-family: var(--sans); font-size: 14.5px; color: var(--head); }
+.sv-cmp p { margin: 4px 0; }
+/* Nhãn đứng THÀNH DÒNG RIÊNG, không nằm cùng dòng với nội dung: `svMd()` trả về
+   `<p>` nên nội dung vốn đã là khối, và đọc ra thì nhãn trên đầu lại rõ hơn —
+   mắt bắt được ranh giới "lấy gì / khác gì" mà không phải dò đầu dòng. Đừng
+   "sửa" thành inline. */
+.sv-tag {
+  display: block; margin-bottom: 2px;
+  font-family: var(--sans); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted);
+}
+.sv-cmp .sv-tag + p, .sv-cmp p > p { margin-top: 0; }
+.sv-tag.alt { color: var(--accent); }
+.sv-place {
+  margin-top: 14px; padding: 10px 14px; background: var(--surface-2);
+  border-radius: var(--radius); color: var(--ink-2);
+}
+
+.sv-ev { margin: 0; padding-left: 20px; }
+.sv-ev li { margin: 7px 0; }
+
+/* Đáp án gập lại — hiện sẵn thì mắt đọc luôn và câu hỏi mất tác dụng. */
+.sv-quiz { margin: 0; padding-left: 22px; }
+.sv-quiz > li { margin: 0 0 14px; }
+.sv-quiz summary {
+  font-family: var(--sans); font-size: 12px; color: var(--muted);
+  cursor: pointer; margin-top: 4px;
+}
+.sv-quiz details[open] summary { color: var(--accent); }
+.sv-quiz details > div {
+  margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--line);
+  color: var(--ink-2);
+}
+
+/* Hồ sơ đối chiếu: câu trích dẫn là nguyên văn của tác giả, nên để nghiêng và
+   lùi vào — người đọc phải phân biệt được nó với phần tóm tắt do máy dựng. */
+.sv-ref { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.sv-ref:last-child { border-bottom: 0; }
+.sv-ref > b { font-size: 13.5px; }
+.sv-ref p { margin: 3px 0; }
+.sv-ref .sv-why {
+  padding-left: 10px; border-left: 2px solid var(--line);
+  font-style: italic; color: var(--ink-2);
+}
+
+.sv-stale {
+  padding: 8px 12px; margin-bottom: 16px; border-radius: var(--radius);
+  background: var(--warn-bg, var(--surface-2)); color: var(--ink-2); font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .sv-steps-l, .sv-quiz { padding-left: 18px; }
+}
+
+/* Ô chọn bài giãn theo option DÀI NHẤT, và option ở đây là tiêu đề bài — dài
+   nhất trong cả app. Cộng với `min-width: auto` mặc định của flex item (nó
+   không cho co xuống dưới cỡ nội dung), thanh công cụ rộng 450px trong khung
+   369px và tràn ngang. Đo thật ở 420px trước khi sửa.
+
+   `min-width: 0` là chỗ sửa; `text-overflow` để tiêu đề bị cắt thì vẫn còn dấu. */
+#svLecPick {
+  min-width: 0; max-width: 100%;
+  text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+}
+@media (max-width: 720px) {
+  #svPaneLec .sv-synbar .sv-inline { min-width: 0; }
+}

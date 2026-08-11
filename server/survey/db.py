@@ -197,7 +197,10 @@ _ADDED_COLS = (("chunk", "level", "INTEGER DEFAULT 0"),
                ("survey", "synth", "TEXT"),
                ("survey", "synth_fp", "TEXT"),
                ("survey", "model", "TEXT"),
-               ("survey", "fast_model", "TEXT"))
+               ("survey", "fast_model", "TEXT"),
+               ("paper", "refs", "TEXT"),        # hồ sơ đối chiếu, xem refs.py
+               ("paper", "lecture", "TEXT"),     # bài giảng, xem lecture.py
+               ("paper", "lecture_fp", "TEXT"))
 
 
 def conn():
@@ -370,7 +373,8 @@ def add_paper(survey_id: str, **f) -> str:
 
 def update_paper(pid: str, **fields) -> None:
     allowed = {"sha256", "title", "authors", "year", "venue", "doi", "url", "source",
-               "n_pages", "cites", "status", "err", "card", "loupe_doc_id"}
+               "n_pages", "cites", "status", "err", "card", "loupe_doc_id",
+               "refs", "lecture", "lecture_fp"}
     sets, vals = [], []
     for k, v in fields.items():
         if k not in allowed:
@@ -396,24 +400,35 @@ def update_paper(pid: str, **fields) -> None:
         reindex()
 
 
-def _row_to_paper(row) -> dict:
+# Hai cột nặng, chỉ dùng ở màn bài giảng. Danh sách bài trả về cho mọi màn hình
+# nên phải bỏ chúng ra: một bài giảng cỡ 20KB × 50 bài là 1MB gửi đi mỗi lần mở
+# kho, cho thứ không ai đọc ở đó. Quan trọng hơn: `corpus_digest` dựng từ danh
+# sách này và phải byte-identical giữa mọi câu hỏi — cột đổi theo từng lần dựng
+# bài giảng mà lọt vào là hỏng cache của cả kho.
+_HEAVY = ("refs", "lecture")
+
+
+def _row_to_paper(row, full: bool = False) -> dict:
     p = dict(row)
     p["card"] = _loads(p["card"], None)
+    if not full:
+        for k in _HEAVY:
+            p.pop(k, None)
     return p
 
 
-def load_paper(pid: str) -> dict:
+def load_paper(pid: str, full: bool = True) -> dict:
     row = conn().execute("SELECT * FROM paper WHERE id = ?", (check_id(pid),)).fetchone()
     if row is None:
         raise KeyError(pid)
-    return _row_to_paper(row)
+    return _row_to_paper(row, full)
 
 
-def list_papers(survey_id: str) -> list[dict]:
+def list_papers(survey_id: str, full: bool = False) -> list[dict]:
     rows = conn().execute(
         "SELECT * FROM paper WHERE survey_id = ? ORDER BY created_at",
         (check_id(survey_id),)).fetchall()
-    return [_row_to_paper(r) for r in rows]
+    return [_row_to_paper(r, full) for r in rows]
 
 
 def paper_by_sha(survey_id: str, sha256: str) -> dict | None:

@@ -544,3 +544,249 @@ def synth_user(digest: str, edges_text: str, n_papers: int) -> str:
     if digest:
         parts.append(digest)
     return "\n\n".join(parts)
+
+
+# ====================================================================== bài giảng
+#
+# Pass thứ bảy, và là pass duy nhất có mục tiêu KHÁC hẳn sáu pass trên: sáu pass
+# kia trả lời câu hỏi, pass này làm cho một người **đọc hiểu được cả bài**.
+#
+# Ba kết quả nghiên cứu quyết định cấu trúc dưới đây, không phải khẩu vị:
+#
+# 1. **Thứ chặn người đọc là kiến thức nền không được nói ra**, không phải câu
+#    dài hay từ khó. Tác giả viết cho đồng nghiệp cùng ngành nên cố ý bỏ qua
+#    phần "ai cũng biết" — mà người đọc mới thì không biết. Đây là *curse of
+#    knowledge*, và nó là lý do mục `prereq` đứng ĐẦU chứ không phải cuối.
+# 2. **Paper Plain (TOCHI 2023)** đo được: tóm lược tại chỗ + bộ câu hỏi dẫn
+#    đường + định nghĩa thuật ngữ làm người không chuyên đọc bài y khoa dễ hơn
+#    hẳn **mà không giảm mức hiểu**. Ba thứ đó thành `prereq`, `check`, `terms`.
+# 3. **Hỏi "vì sao" bắt người học phải dựng lời giải thích** thay vì đọc lướt
+#    (elaborative interrogation / self-explanation). Nên `mechanism` bắt buộc
+#    mỗi bước phải nói vì sao bước ấy cần, và `check` là câu hỏi tự kiểm chứ
+#    không phải bản tóm tắt thứ hai.
+#
+# Mục `compare` là chỗ tiết kiệm lớn nhất của cả cơ chế: nó KHÔNG đọc bài được
+# dẫn, mà đọc **câu văn trong chính bài này ở chỗ trích dẫn** (xem `refs.py`).
+# Tác giả đã tự nói ra họ lấy gì từ bài kia; ta chỉ việc dùng lại.
+
+LECTURE_SYSTEM = LANGUAGE_RULE + """\
+Bạn đang viết **bài giảng** về một bài báo khoa học: một người đọc từ đầu đến
+cuối là hiểu được bài đó, không cần ai giảng thêm.
+
+Bạn KHÔNG viết tóm tắt. Tóm tắt trả lời "bài này nói gì"; bài giảng trả lời
+"**vì sao nó phải làm như vậy, và nó chạy ra sao**".
+
+## Người đọc của bạn
+
+Một người học cùng lĩnh vực rộng nhưng **chưa làm đúng nhánh hẹp này**: đọc được
+ký hiệu toán, biết các khái niệm nền phổ thông của ngành, nhưng chưa từng đọc
+những bài mà bài này giả định là ai cũng đã đọc.
+
+Sai lầm phải tránh bằng mọi giá là **viết như tác giả viết**. Tác giả bỏ qua
+phần "ai trong nhánh này cũng biết" — mà đó chính là chỗ người đọc của bạn gãy.
+Chỗ nào bài báo nói vắn tắt vì cho là hiển nhiên, bạn phải dừng lại và nói rõ.
+
+## Luật viết
+
+- **Ký hiệu phải được đọc thành lời.** Gặp `z_t ~ q(·|x_t)` thì viết ra: đây là
+  gì, chỉ số chạy trên cái gì, tại sao cần chỉ số đó.
+- **Mỗi khái niệm mới xuất hiện lần đầu phải kèm một câu nói nó LÀM GÌ**, không
+  phải nó tên gì.
+- **Thuật ngữ tiếng Anh giữ nguyên**, kèm giải thích tiếng Việt lần đầu:
+  "latent action (hành động ẩn — vector mã hoá phần thay đổi giữa hai khung
+  hình)". Đừng dịch thuật ngữ ra tiếng Việt tự chế.
+- **Câu văn học thuật hoàn chỉnh**, không viết kiểu tít báo, không gạch đầu dòng
+  cụt. Đủ hư từ ("của", "trong", "so với", "khi") để câu đúng ngữ pháp.
+- Không mở bài bằng "Trong bài báo này, các tác giả…" — vào thẳng nội dung.
+
+""" + DEPTH_RULES + """
+
+## Ràng buộc về sự thật
+
+- **Mọi con số phải có mặt nguyên văn trong bài.** Không suy ra, không làm tròn
+  khác đi, không ghép hai số thành một tỉ lệ mới.
+- **Mỗi mục phải khai `source` — danh sách mã đoạn** (dạng `p50d58cb2d3c14`) mà
+  nội dung mục đó dựa vào. Mã phải có thật trong phần TOÀN VĂN bên trên.
+- Bài không nói thì **viết là bài không nói**. Đừng lấp bằng kiến thức chung của
+  bạn; người đọc không phân biệt được đâu là bài, đâu là bạn.
+- Phần đối chiếu chỉ được dùng **HỒ SƠ ĐỐI CHIẾU** đưa kèm. Câu trích dẫn trong
+  hồ sơ là do máy bóc tự động nên **có thể lệch**: chỉ khẳng định điều mà câu
+  trích dẫn thật sự chứa. Không chắc thì nói về bài được dẫn ở mức tóm tắt.
+"""
+
+# Từng mục một, và bản mô tả này chính là thứ model đọc. Viết rõ "mục này hỏng
+# như thế nào" hiệu quả hơn hẳn viết "mục này nên có gì" — model đã biết cách
+# viết hay, cái nó không biết là cái bẫy nào đang chờ.
+SECTIONS: dict[str, dict] = {
+    "prereq": {
+        "title": "Cần biết trước",
+        "spec": (
+            "Ba đến năm thứ mà **bài báo giả định người đọc đã biết** và vì thế "
+            "không giải thích. Mỗi thứ: tên (giữ thuật ngữ tiếng Anh) + 2–4 câu "
+            "nói nó LÀM GÌ và vì sao bài này cần đến nó.\n"
+            "Đây là mục quan trọng nhất của cả bài giảng: thiếu kiến thức nền "
+            "mới là thứ làm người ta đọc không vào, chứ không phải câu dài.\n"
+            "Chọn đúng thứ bài này THẬT SỰ dựa vào, không phải thứ phổ thông của "
+            "ngành. 'Mạng nơ-ron là gì' thì không ai cần; "
+            "'vì sao pretraining không nhãn lại thay được dữ liệu có nhãn' thì cần."),
+        "shape": '{"items": [{"term": "…", "why": "…"}], "source": ["…"]}',
+    },
+    "problem": {
+        "title": "Bài toán",
+        "spec": (
+            "Bài toán bài này giải, **kể bằng một tình huống cụ thể có thật trong "
+            "bài** — một đầu vào thật, một thất bại thật. Không phát biểu trừu "
+            "tượng kiểu 'vấn đề X còn nhiều thách thức'.\n"
+            "Sau đó nói rõ **cái giá của việc không giải được**: thiếu nó thì "
+            "người ta phải làm gì thay thế, và tốn kém ở đâu."),
+        "shape": '{"body": "…", "source": ["…"]}',
+    },
+    "why_hard": {
+        "title": "Vì sao cách hiển nhiên không xong",
+        "spec": (
+            "Cách mà một người thông minh sẽ nghĩ ra đầu tiên, và **chính xác nó "
+            "vỡ ở đâu**. Đây là mục làm cho đóng góp của bài trở nên có nghĩa: "
+            "không có nó thì phương pháp của bài chỉ là một cách làm trong vô số "
+            "cách, và người đọc không thấy vì sao phải phức tạp đến thế.\n"
+            "Nếu bài có nói về các hướng trước đó thì dùng đúng chỗ đó."),
+        "shape": '{"body": "…", "source": ["…"]}',
+    },
+    "mechanism": {
+        "title": "Cơ chế, chạy tay một ví dụ",
+        "spec": (
+            "**Mục dài nhất và quan trọng nhất.** Lấy MỘT đầu vào cụ thể có thật "
+            "trong bài rồi đi hết đường của nó qua phương pháp, theo từng bước.\n"
+            "Mỗi bước gồm ba phần, thiếu phần nào là hỏng cả mục:\n"
+            "  `do` — bước này làm gì, với đại lượng nào, ra cái gì;\n"
+            "  `why` — **vì sao bước này cần thiết**; bỏ nó đi thì hỏng chỗ nào;\n"
+            "  `note` — ký hiệu/siêu tham số của bước này đọc thành lời (nếu có).\n"
+            "Sáu đến mười bước. Đây là chỗ người nghe thường gật đầu suốt rồi ra "
+            "về không kể lại được cho ai — vì phần giữa chỉ còn cái tên và một sơ "
+            "đồ ba hộp. Đừng viết như vậy."),
+        "shape": ('{"input": "…", "steps": [{"do": "…", "why": "…", "note": "…"}], '
+                  '"source": ["…"]}'),
+    },
+    "compare": {
+        "title": "Đặt cạnh những bài nó dẫn",
+        "spec": (
+            "Dùng **HỒ SƠ ĐỐI CHIẾU** kèm bên dưới. Với mỗi bài đáng nói (4–7 "
+            "bài), viết:\n"
+            "  `paper` — tên bài được dẫn;\n"
+            "  `took` — bài này **lấy gì** từ đó (ý tưởng, thành phần, tập dữ liệu);\n"
+            "  `differs` — và **khác ở chỗ nào**, cụ thể, không phải 'cải tiến hơn'.\n"
+            "Câu trích dẫn trong hồ sơ là lời của chính tác giả bài này nói về "
+            "bài kia — đó là bằng chứng tốt nhất bạn có, hãy bám vào nó.\n"
+            "Cuối mục, `placement`: 2–4 câu đặt bài này vào mạch nghiên cứu — nó "
+            "nối tiếp nhánh nào, và nó cãi lại giả định nào của nhánh đó."),
+        "shape": ('{"items": [{"paper": "…", "took": "…", "differs": "…"}], '
+                  '"placement": "…", "source": ["…"]}'),
+    },
+    "evidence": {
+        "title": "Số liệu nói gì, và không nói gì",
+        "spec": (
+            "Hai đến bốn kết quả chính, **kèm con số nguyên văn** và điều kiện đo "
+            "(tập dữ liệu nào, so với cái gì, đo bằng chỉ số nào).\n"
+            "Rồi phần quan trọng hơn: `limits_of_evidence` — những gì các số này "
+            "**không** chứng minh. Thí nghiệm chỉ chạy trên một tập? Baseline có "
+            "được chỉnh ngang mức không? Chênh lệch có nằm trong dao động không?\n"
+            "Đây là chỗ phân biệt người đọc hiểu bài với người đọc xong tin bài."),
+        "shape": ('{"items": [{"claim": "…", "number": "…", "setting": "…"}], '
+                  '"limits_of_evidence": "…", "source": ["…"]}'),
+    },
+    "limits": {
+        "title": "Chỗ đáng ngờ",
+        "spec": (
+            "Ba đến năm điểm yếu thật. Ưu tiên **điều bài tự thừa nhận**, rồi mới "
+            "đến điều bạn thấy được từ chính nội dung bài (giả định chưa kiểm, "
+            "phạm vi thí nghiệm hẹp, chi phí không báo cáo).\n"
+            "Mỗi điểm phải nói **hệ quả**: điểm yếu này làm kết luận nào yếu đi.\n"
+            "Không viết những câu vô thưởng vô phạt kiểu 'cần thêm nghiên cứu'."),
+        "shape": '{"items": [{"point": "…", "so_what": "…"}], "source": ["…"]}',
+    },
+    "check": {
+        "title": "Tự kiểm tra",
+        "spec": (
+            "Bốn đến sáu câu hỏi để người đọc tự soát xem mình đã hiểu chưa, kèm "
+            "đáp án ngắn.\n"
+            "Phải là câu hỏi **vì sao / điều gì xảy ra nếu**, không phải câu hỏi "
+            "tra cứu. 'Phương pháp tên gì' thì vô dụng; 'bỏ bước lượng tử hoá đi "
+            "thì hỏng chỗ nào' mới buộc người đọc phải dựng lại lời giải thích — "
+            "và chính việc dựng lại đó mới là lúc người ta học được.\n"
+            "Ít nhất một câu phải hỏi vào chỗ dễ hiểu nhầm nhất của bài."),
+        "shape": '{"items": [{"q": "…", "a": "…"}], "source": ["…"]}',
+    },
+}
+
+# Mẻ nhỏ, và `mechanism` đi MỘT MÌNH. Hai lý do cùng chiều nhau:
+#
+# 1. **Mỗi mục được nhiều budget hơn, không phải ít.** Cùng bài học với
+#    `RENDER_BATCH` bên pipeline: dựng cả tám mục một lượt thì mỗi mục được chia
+#    chưa tới một nghìn token đầu ra và model tự cắt cho vừa. `mechanism` là mục
+#    dài nhất và đáng đọc nhất — nhét nó cạnh ba mục khác là bóp đúng chỗ không
+#    được bóp.
+# 2. **Một request phải xong trong 300s** (`llm` timeout). Đã vấp: bốn mục với
+#    9000 token đầu ra trong một lượt chạy quá 5 phút rồi bị cắt, và mẻ đó mất
+#    trắng. Bốn mẻ nhỏ thì mẻ nào cũng về đích, mà prefix vẫn ấm nên phần đọc vào
+#    gần như không tốn thêm — chia nhỏ ở đây gần như miễn phí.
+LECTURE_BATCHES = (("prereq", "problem", "why_hard"),
+                   ("mechanism",),
+                   ("compare", "evidence"),
+                   ("limits", "check"))
+
+
+def dossier_text(dos: dict) -> str:
+    """Hồ sơ đối chiếu dựng thành text cho prompt. Xem `refs.py` — $0 để lấy về."""
+    refs = (dos or {}).get("refs") or []
+    if not refs:
+        return ""
+    out = ["=== HỒ SƠ ĐỐI CHIẾU — các bài mà bài này dẫn ===",
+           "Mỗi mục gồm: bài được dẫn là gì, và NGUYÊN VĂN câu trong bài này ở chỗ "
+           "trích dẫn nó. Câu đó do máy bóc tự động, có thể lệch — chỉ khẳng định "
+           "điều nó thật sự chứa."]
+    for i, r in enumerate(refs, 1):
+        head = f"[R{i}] {r['title']}"
+        if r.get("year"):
+            head += f" ({r['year']})"
+        if r.get("influential"):
+            head += "  ★ bài này dựa nhiều vào nó"
+        if r.get("paper_id"):
+            head += "  · cũng có trong kho"
+        out.append(head)
+        if r.get("gist"):
+            out.append(f"    là gì: {r['gist']}")
+        for w in (r.get("why") or []):
+            out.append(f"    chỗ dẫn: “{w}”")
+    return "\n".join(out)
+
+
+def lecture_user(title: str, card: dict | None, names: tuple[str, ...],
+                 dossier: str = "", redo: dict | None = None) -> str:
+    """Phần thay đổi theo mẻ. Toàn văn bài nằm ở prefix, KHÔNG lặp lại ở đây."""
+    parts = [f"Bài: {title}"]
+    if card:
+        keep = {k: card[k] for k in ("task", "problem", "idea", "method", "novelty")
+                if card.get(k)}
+        if keep:
+            parts.append("Phiếu tóm tắt đã bóc trước đó (dùng làm định hướng, "
+                         "nội dung thật vẫn lấy từ toàn văn):\n" + compact(keep))
+
+    want = []
+    for n in names:
+        s = SECTIONS[n]
+        want.append(f"### `{n}` — {s['title']}\n{s['spec']}\nDạng: {s['shape']}")
+    parts.append("Viết " + str(len(names)) + " mục sau, mỗi mục một khoá trong "
+                 "JSON trả về:\n\n" + "\n\n".join(want))
+
+    if dossier and "compare" in names:
+        parts.append(dossier)
+
+    if redo:
+        parts.append(
+            "=== LẦN TRƯỚC BỊ CHẤM LÀ NÔNG, VIẾT LẠI ĐÚNG NHỮNG CHỖ NÀY ===\n"
+            + "\n".join(f"- [{k}] {m}" for k, m in redo.items())
+            + "\n\nGiữ nguyên phần đã đạt. Chỗ bị chấm thì viết lại cho tới cơ "
+              "chế: nói bằng cách nào, chứ không nói rằng có.")
+
+    parts.append(JSON_RULE + 'Trả về đúng dạng {"' + names[0] + '": …, …} '
+                 "và không gì khác.")
+    return "\n\n".join(parts)

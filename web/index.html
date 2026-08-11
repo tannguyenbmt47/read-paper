@@ -623,6 +623,7 @@
     <main class="sv-main">
       <nav class="sv-tabs">
         <button id="svTabSyn"  class="sv-tab is-on">Tổng hợp</button>
+        <button id="svTabLec"  class="sv-tab">Bài giảng</button>
         <button id="svTabAsk"  class="sv-tab">Hỏi đáp</button>
         <button id="svTabGrid" class="sv-tab">Bảng so sánh</button>
         <button id="svTabMap"  class="sv-tab">Tra đoạn &amp; bản đồ</button>
@@ -653,7 +654,46 @@
         </div>
       </section>
 
-      <!-- ---- tab 1: hỏi đáp ---- -->
+      <!-- ---- tab 1: bài giảng — MỘT bài, viết ra cho đọc hiểu được ----
+           Đứng giữa tổng hợp (cả kho, không đi sâu bài nào) và hỏi đáp (đi sâu
+           nhưng đòi người ta đã biết phải hỏi gì). Đây là chỗ dành cho lúc mới
+           mở một bài ra và chưa biết gì cả. -->
+      <section id="svPaneLec" class="sv-pane hidden">
+        <div class="sv-col">
+          <div class="sv-synbar">
+            <div>
+              <b>Giảng một bài cho hiểu</b>
+              <p class="small muted">Viết ra thứ đọc từ đầu đến cuối là hiểu được bài:
+                kiến thức bài giả định bạn đã có, bài toán qua một ví dụ thật, vì sao
+                cách hiển nhiên không xong, <em>cơ chế chạy tay từng bước</em>, rồi đặt
+                cạnh những bài nó dẫn.</p>
+            </div>
+            <span class="grow"></span>
+            <label class="sv-inline">Bài
+              <select id="svLecPick" class="input"></select>
+            </label>
+            <label class="sv-inline">Model
+              <select id="svLecModel" class="input"></select>
+            </label>
+            <a id="svLecMd" class="btn xs hidden" target="_blank" rel="noopener">Markdown</a>
+            <button id="svLecGo" class="btn btn-primary">Dựng · ~$0,08</button>
+          </div>
+          <p class="sv-modelnote sv-cost"></p>
+
+          <!-- Hồ sơ đối chiếu hiện TRƯỚC khi dựng, vì nó miễn phí: người dùng
+               thấy phần đối chiếu sẽ dày hay mỏng trước lúc tiêu tiền. -->
+          <details id="svLecRefBox" class="sv-opts hidden">
+            <summary>Hồ sơ đối chiếu <i id="svLecRefN"></i></summary>
+            <div id="svLecRefs" class="sv-optbox"></div>
+          </details>
+
+          <p id="svLecProg" class="sv-cost"></p>
+          <div id="svLecWarns" class="sv-warns"></div>
+          <article id="svLec" class="sv-syn"></article>
+        </div>
+      </section>
+
+      <!-- ---- tab 2: hỏi đáp ---- -->
       <section id="svPaneAsk" class="sv-pane hidden">
         <div class="sv-col">
           <div class="sv-askbar">

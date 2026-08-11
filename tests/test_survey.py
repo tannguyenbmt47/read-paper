@@ -660,3 +660,116 @@ def test_bang_cua_kho_khong_dung_bang_cua_luong_cu(client, sdb):
         "SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"documents", "parse_cache", "tm"} <= have      # bảng cũ còn nguyên
     assert {"survey", "paper", "chunk", "emb", "entity", "edge", "run"} <= have
+
+
+# ------------------------------------------------- bài giảng và hồ sơ đối chiếu
+#
+# Không test nào ở đây gọi model hay đi ra mạng: `refs.py` được nạp bằng dữ liệu
+# giả đúng hình dạng Semantic Scholar trả về, còn `lecture.check` vốn là hàm
+# thuần. Phần đi mạng thật đã đo tay trên bài LAPA (63 tham khảo, 58 có câu
+# trích dẫn) — không đưa vào bộ test vì nó phụ thuộc mạng và phụ thuộc S2.
+
+
+def test_bo_soat_bai_giang_bat_so_bia(client, sdb, kho):
+    """Chốt chặn đáng giá nhất: số trên bài giảng phải có thật trong bài.
+
+    Bằng mắt thì không ai bắt được, mà một con số bịa là gán kết quả giả cho tác
+    giả thật.
+    """
+    from server.survey import lecture
+    ids = {c["id"] for c in sdb.paper_chunks(kho["p1"], level=0)}
+    that = {"evidence": {"items": [{"claim": "CIRAG hơn DPR", "number": "62.3",
+                                    "setting": "HotpotQA"}], "source": []}}
+    bia = {"evidence": {"items": [{"claim": "CIRAG hơn DPR", "number": "71.9",
+                                   "setting": "HotpotQA"}], "source": []}}
+    assert not [w for w in lecture.check(that, ids, kho["p1"])
+                if w["kind"] == "số_không_có_trong_bài"]
+    assert [w for w in lecture.check(bia, ids, kho["p1"])
+            if w["kind"] == "số_không_có_trong_bài"]
+
+
+def test_bo_soat_bai_giang_bat_ma_doan_khong_co(client, sdb, kho):
+    from server.survey import lecture
+    ids = {c["id"] for c in sdb.paper_chunks(kho["p1"], level=0)}
+    d = {"problem": {"body": "Một câu.", "source": ["pKHONGCOc99"]}}
+    assert [w for w in lecture.check(d, ids, kho["p1"]) if w["kind"] == "mã_đoạn_không_có"]
+
+
+def test_bo_soat_bai_giang_bat_cau_nong(client, sdb, kho):
+    """Kiểu hỏng khó thấy nhất: câu đúng sự thật mà không mang tin nào."""
+    from server.survey import lecture
+    nong = {"mechanism": {"steps": [
+        {"do": "Chạy bộ mã hoá", "why": "Bước này đóng vai trò quan trọng, "
+                                        "góp phần nâng cao chất lượng của hệ thống."}]}}
+    sau = {"mechanism": {"steps": [
+        {"do": "Chạy bộ mã hoá trên hai khung hình liền nhau",
+         "why": "Vì một khung hình đơn lẻ không phân biệt được tay đang nâng cốc "
+                "với tay đang hạ cốc, nên nhãn hành động sinh ra sẽ bị đảo chiều."}]}}
+    assert [w for w in lecture.check(nong, set()) if w["kind"] in
+            ("câu_độn", "nói_chung_chung", "thiếu_cơ_chế")]
+    assert not [w for w in lecture.check(sau, set()) if w["kind"] in
+                ("câu_độn", "nói_chung_chung", "thiếu_cơ_chế")]
+
+
+def test_vong_dao_sau_chi_lay_canh_bao_ve_do_sau(client, sdb, kho):
+    """Số bịa và mã đoạn sai KHÔNG được vào lời chê: viết lại không sửa nổi kiểu
+    hỏng đó, mà nhồi vào chỉ làm loãng đúng chỗ cần chê."""
+    from server.survey import lecture
+    warns = [{"section": "evidence", "kind": "số_không_có_trong_bài", "msg": "x"},
+             {"section": "mechanism", "kind": "thiếu_cơ_chế", "msg": "y", "text": "z"}]
+    got = lecture._shallow(warns)
+    assert "evidence" not in got
+    assert "mechanism" in got
+
+
+def test_boc_chu_theo_dung_hinh_dang_tung_muc(client):
+    """`mechanism` giấu chữ trong `steps[].why`. Soát trên `json.dumps` thì tên
+    khoá và dấu ngoặc lọt vào phép đếm, và mọi phép kiểm độ sâu đều lệch."""
+    from server.survey import lecture
+    got = dict(lecture._texts("mechanism", {"steps": [
+        {"do": "Làm A", "why": "Vì B"}, {"do": "Làm C", "why": "Vì D"}]}))
+    assert "Vì B" in got["bước 1"] and "Làm A" in got["bước 1"]
+    assert "Vì D" in got["bước 2"]
+    # câu hỏi tự kiểm cố ý ngắn — soát độ sâu ở đó là kêu oan
+    assert lecture._texts("check", {"items": [{"q": "Vì sao?", "a": "Vì thế."}]}) == []
+
+
+def test_xep_hang_bai_dan_uu_tien_cho_dan_nhieu_lan(client):
+    """Số câu trích dẫn nặng hơn số trích dẫn toàn cầu: một bài nền tảng được
+    dẫn qua loa không giúp gì cho việc hiểu bài chính."""
+    from server.survey import refs
+    kinh_dien_dan_qua_loa = {"citedPaper": {"citationCount": 90000}, "contexts": []}
+    it_tieng_nhung_dan_ky = {"citedPaper": {"citationCount": 30},
+                             "contexts": ["a" * 60, "b" * 60, "c" * 60],
+                             "isInfluential": True}
+    assert refs._score(it_tieng_nhung_dan_ky, False) > refs._score(kinh_dien_dan_qua_loa, False)
+
+
+def test_khop_nham_bai_thi_tha_khong_co_ho_so(client):
+    """Khớp theo tiêu đề là khớp mờ. Dựng bài giảng đối chiếu với NHẦM bài còn
+    tệ hơn hẳn không có phần đối chiếu, vì nhìn vẫn có vẻ đúng."""
+    from server.survey import refs
+    a = refs._norm_title("Latent Action Pretraining from Videos")
+    assert refs._overlap(a, refs._norm_title("Latent Action Pretraining From Videos")) >= 0.6
+    assert refs._overlap(a, refs._norm_title("Attention Is All You Need")) < 0.6
+
+
+def test_mã_bai_phai_isalnum_o_route_bai_giang(client, kho):
+    """Cùng hàng rào chống path traversal như mọi chỗ khác."""
+    r = client.get(f"/api/survey/{kho['sid']}/paper/..%2F..%2Fetc/lecture")
+    assert r.status_code >= 400
+
+
+def test_danh_sach_bai_khong_keo_theo_bai_giang(client, sdb, kho):
+    """Hai cột nặng phải nằm ngoài danh sách bài: `corpus_digest` dựng từ danh
+    sách này và phải byte-identical giữa mọi câu hỏi — cột đổi theo từng lần dựng
+    bài giảng mà lọt vào là hỏng cache của cả kho."""
+    sdb.update_paper(kho["p1"], lecture='{"sections": {"problem": {"body": "x"}}}')
+    nhe = sdb.list_papers(kho["sid"])
+    assert all("lecture" not in p and "refs" not in p for p in nhe)
+    assert "lecture" in sdb.load_paper(kho["p1"])
+
+    from server.survey import prompts
+    truoc = prompts.corpus_digest(sdb.list_papers(kho["sid"]))
+    sdb.update_paper(kho["p1"], lecture='{"sections": {"problem": {"body": "ĐÃ ĐỔI"}}}')
+    assert prompts.corpus_digest(sdb.list_papers(kho["sid"])) == truoc

@@ -206,7 +206,7 @@ function svFillModels(d) {
       + `${m.id === cur ? " selected" : ""}>${esc(shortLabel(m))}</option>`).join("");
   // Cùng một thiết lập, hiện ở hai chỗ: người dùng đang ở tab Tổng hợp thì
   // không nên phải đi sang tab khác mới đổi được model dựng bản tổng hợp.
-  ["#svModel", "#svSynModel"].forEach((sel) => {
+  ["#svModel", "#svSynModel", "#svLecModel"].forEach((sel) => {
     const el = $(sel);
     if (el) { el.innerHTML = opt(d.model || ""); el.value = d.model || ""; }
   });
@@ -1121,7 +1121,7 @@ function svWire() {
 
   // tab — nội dung của tab nào chỉ dựng khi mở tab đó
   const tabs = {
-    svTabSyn: "svPaneSyn", svTabAsk: "svPaneAsk",
+    svTabSyn: "svPaneSyn", svTabLec: "svPaneLec", svTabAsk: "svPaneAsk",
     svTabGrid: "svPaneGrid", svTabMap: "svPaneMap",
   };
   Object.entries(tabs).forEach(([tab, pane]) => {
@@ -1131,11 +1131,17 @@ function svWire() {
         $("#" + p).classList.toggle("hidden", p !== pane);
       });
       if (pane === "svPaneSyn") svLoadSynth().catch(() => {});
+      if (pane === "svPaneLec") svLoadLec().catch(() => {});
       if (pane === "svPaneGrid") svGrid().catch(() => {});
       if (pane === "svPaneMap") svGraph().catch(() => {});
     };
   });
   $("#svSynGo").onclick = svBuildSynth;
+  $("#svLecGo").onclick = svBuildLec;
+  $("#svLecPick").onchange = (e) => {
+    SV.lecPid = e.target.value;
+    svLoadLec().catch(() => {});
+  };
 
   // hỏi đáp
   $("#svAsk").onclick = svAsk;
@@ -1160,6 +1166,7 @@ function svWire() {
   };
   $("#svModel").onchange = setStrong;
   $("#svSynModel").onchange = setStrong;
+  $("#svLecModel").onchange = setStrong;
   $("#svFastModel").onchange = (e) => patch({ fast_model: e.target.value });
 
   $("#svSearchGo").onclick = svSearch;
@@ -1192,6 +1199,225 @@ function svWire() {
         + r.warns.map((x) => `<li><i>${esc(x.kind)}</i> ${esc(x.msg)}</li>`).join("") + "</ul></div>"
       : "";
   };
+}
+
+/* ------------------------------------------------------------ bài giảng
+
+   Một bài, viết ra cho ĐỌC HIỂU ĐƯỢC. Khác hai tab kia ở chỗ nó không giả định
+   người đọc đã biết gì: tab Tổng hợp nói về cả kho mà không đi sâu bài nào, tab
+   Hỏi đáp đi sâu được nhưng đòi người ta biết trước phải hỏi gì.
+
+   Ba thứ hiện ra TRƯỚC khi tiêu tiền, cố ý: hồ sơ đối chiếu (miễn phí, cho biết
+   phần so sánh sẽ dày hay mỏng), model đang chạy, và giá ước tính trên nút. */
+
+/* In đậm chỉ có tác dụng khi nó NGẮN — model hay viết `do`/`point` thành cả một
+   đoạn, và in đậm nguyên đoạn thì mắt không còn chỗ bám. Cùng ngưỡng với
+   `lecture.LEAD_MAX` bên server; đổi một bên phải đổi bên kia, không thì bản xem
+   trong app và file Markdown xuất ra trông khác nhau. */
+const SV_LEAD_MAX = 90;
+
+function svLead(t) {
+  t = String(t || "").trim();
+  return t && t.length <= SV_LEAD_MAX ? `<b>${esc(t)}</b>` : svMd(t);
+}
+
+function svLecFillPick() {
+  const el = $("#svLecPick");
+  if (!el) return;
+  const ok = (SV.papers || []).filter((p) => p.status === "carded" || p.status === "indexed");
+  el.innerHTML = ok.length
+    ? ok.map((p) => `<option value="${esc(p.id)}"${p.id === SV.lecPid ? " selected" : ""}>`
+        + esc(svClip(p.title || "(không tiêu đề)").slice(0, 70)) + "</option>").join("")
+    : '<option value="">— chưa bài nào có nội dung —</option>';
+  if (!SV.lecPid && ok.length) SV.lecPid = ok[0].id;
+  if (SV.lecPid) el.value = SV.lecPid;
+}
+
+async function svLoadLec() {
+  if (!await svNeedId()) return;
+  svLecFillPick();
+  const pid = SV.lecPid;
+  const go = $("#svLecGo");
+  if (!pid) {
+    $("#svLec").innerHTML = "";
+    $("#svLecProg").textContent = "Kho chưa có bài nào đã bóc nội dung.";
+    go.disabled = true;
+    return;
+  }
+  go.disabled = false;
+  go.title = `Chạy bằng ${(SV.models || {}).strong || "?"}`;
+
+  const d = await svFetch(`/api/survey/${SV.id}/paper/${pid}/lecture`);
+  svRenderLec(d.lecture, d.stale);
+  svLecWarns(d.lecture?.warns);
+  $("#svLecMd").href = `/api/survey/${SV.id}/paper/${pid}/lecture?fmt=md`;
+  $("#svLecMd").classList.toggle("hidden", !d.lecture?.sections);
+  go.textContent = d.lecture?.sections ? "Dựng lại · ~$0,08" : "Dựng · ~$0,08";
+  $("#svLecProg").textContent = d.has_text
+    ? "" : "Bài này chưa có nội dung đã bóc — nạp lại PDF trước.";
+  svLecRefs(pid).catch(() => {});
+}
+
+/* Hồ sơ đối chiếu: nạp riêng và KHÔNG chặn phần còn lại, vì nó đi ra mạng ngoài
+   (Semantic Scholar) nên có thể chậm hoặc hỏng — mà bài giảng vẫn dựng được nếu
+   thiếu nó. Miễn phí, nên nạp luôn chứ không đợi người dùng bấm. */
+async function svLecRefs(pid) {
+  const box = $("#svLecRefBox");
+  $("#svLecRefN").textContent = "đang tra…";
+  box.classList.remove("hidden");
+  let d;
+  try {
+    d = await svFetch(`/api/survey/${SV.id}/paper/${pid}/lecture/refs`);
+  } catch (_) {
+    $("#svLecRefN").textContent = "không tra được";
+    return;
+  }
+  const rs = d.refs || [];
+  $("#svLecRefN").textContent = rs.length
+    ? `${rs.length} bài được dẫn (trong ${d.n_refs} tham khảo) · miễn phí`
+    : "không khớp được bài này trên Semantic Scholar";
+  $("#svLecRefs").innerHTML = rs.map((r) => `
+    <div class="sv-ref">
+      <b>${r.influential ? "★ " : ""}${esc(r.title)}</b>
+      ${r.year ? `<span class="muted"> (${r.year})</span>` : ""}
+      ${r.paper_id ? '<i class="chip ok">có trong kho</i>' : ""}
+      ${r.gist ? `<p class="small muted">${esc(svClip(r.gist).slice(0, 260))}</p>` : ""}
+      ${(r.why || []).map((w) =>
+        `<p class="small sv-why">chỗ dẫn: “${esc(svClip(w).slice(0, 300))}”</p>`).join("")}
+    </div>`).join("");
+}
+
+function svLecWarns(w) {
+  $("#svLecWarns").innerHTML = (w || []).length
+    ? `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b><ul>`
+      + w.map((x) => `<li><i>${esc(x.kind)}</i> ${esc(x.msg)}`
+        + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "") + "</li>").join("")
+      + "</ul></div>"
+    : "";
+}
+
+/* Mỗi mục có hình dạng riêng nên phải dựng riêng — đổ chung một khuôn thì
+   `mechanism` (thứ đáng đọc nhất) tụt xuống thành một danh sách phẳng, mà chính
+   cặp "làm gì / vì sao cần" mới là chỗ người đọc hiểu ra cơ chế. */
+const SV_LEC_ORDER = ["prereq", "problem", "why_hard", "mechanism",
+                      "compare", "evidence", "limits", "check"];
+const SV_LEC_TITLE = {
+  prereq: "Cần biết trước", problem: "Bài toán",
+  why_hard: "Vì sao cách hiển nhiên không xong",
+  mechanism: "Cơ chế, chạy tay một ví dụ",
+  compare: "Đặt cạnh những bài nó dẫn",
+  evidence: "Số liệu nói gì, và không nói gì",
+  limits: "Chỗ đáng ngờ", check: "Tự kiểm tra",
+};
+
+function svRenderLec(lec, stale) {
+  const el = $("#svLec");
+  if (!lec || !lec.sections) {
+    el.innerHTML = '<p class="muted">Chưa dựng. Chọn bài rồi bấm <b>Dựng</b> — '
+      + 'phần đối chiếu với các bài được dẫn lấy miễn phí từ Semantic Scholar, '
+      + 'chỉ phần viết là tốn tiền.</p>';
+    return;
+  }
+  const s = lec.sections;
+  const out = [];
+  if (stale) {
+    out.push('<div class="sv-stale">Nội dung bài đã đổi sau khi dựng bài giảng này '
+      + '— dựng lại để khớp.</div>');
+  }
+  const head = (k) => `<h3>${esc(SV_LEC_TITLE[k] || k)}</h3>`;
+
+  for (const k of SV_LEC_ORDER) {
+    const d = s[k];
+    if (!d) continue;
+    out.push(`<section class="sv-lecsec" data-sec="${k}">`, head(k));
+    if (k === "prereq") {
+      out.push("<dl class='sv-prereq'>" + (d.items || []).map((i) =>
+        `<dt>${esc(i.term || "")}</dt><dd>${svMd(i.why || "")}</dd>`).join("") + "</dl>");
+    } else if (k === "mechanism") {
+      if (d.input) out.push(`<p class="sv-lecin"><b>Đầu vào lấy làm ví dụ:</b> ${svMd(d.input)}</p>`);
+      out.push("<ol class='sv-steps-l'>" + (d.steps || []).map((st) =>
+        `<li><div class="sv-do">${svLead(st.do)}</div>`
+        + (st.why ? `<div class="sv-why"><b>Vì sao cần:</b> ${svMd(st.why)}</div>` : "")
+        + (st.note ? `<div class="sv-note">${svMd(st.note)}</div>` : "")
+        + "</li>").join("") + "</ol>");
+    } else if (k === "compare") {
+      out.push((d.items || []).map((i) =>
+        `<div class="sv-cmp"><b>${esc(i.paper || "")}</b>`
+        + `<p><span class="sv-tag">lấy</span> ${svMd(i.took || "")}</p>`
+        + `<p><span class="sv-tag alt">khác</span> ${svMd(i.differs || "")}</p></div>`).join(""));
+      if (d.placement) out.push(`<p class="sv-place">${svMd(d.placement)}</p>`);
+    } else if (k === "evidence") {
+      out.push("<ul class='sv-ev'>" + (d.items || []).map((i) =>
+        `<li><b>${esc(i.number || "")}</b> — ${svMd(i.claim || "")}`
+        + (i.setting ? ` <span class="muted">(${esc(i.setting)})</span>` : "")
+        + "</li>").join("") + "</ul>");
+      if (d.limits_of_evidence) {
+        out.push(`<p class="sv-place"><b>Các số này không chứng minh:</b> `
+          + `${svMd(d.limits_of_evidence)}</p>`);
+      }
+    } else if (k === "limits") {
+      out.push("<ul class='sv-ev'>" + (d.items || []).map((i) =>
+        `<li>${svLead(i.point)} — ${svMd(i.so_what || "")}</li>`).join("") + "</ul>");
+    } else if (k === "check") {
+      // Đáp án gập lại: hiện sẵn thì mắt đọc luôn và câu hỏi mất tác dụng — cái
+      // giúp người ta nhớ là lúc TỰ dựng lại lời giải thích, không phải lúc đọc.
+      out.push("<ol class='sv-quiz'>" + (d.items || []).map((i) =>
+        `<li><div>${svMd(i.q || "")}</div>`
+        + `<details><summary>đáp án</summary><div>${svMd(i.a || "")}</div></details></li>`
+        ).join("") + "</ol>");
+    } else {
+      out.push(svMd(d.body || ""));
+    }
+    out.push("</section>");
+  }
+  out.push(`<p class="sv-cost">Dựng bằng ${esc(lec.model || "?")} · ${money(lec.cost)}`
+    + (lec.n_refs_total ? ` · đối chiếu từ ${lec.n_refs_total} tham khảo (miễn phí)` : "")
+    + "</p>");
+  el.innerHTML = out.join("");
+}
+
+function svBuildLec() {
+  if (!SV.id || !SV.lecPid) return;
+  const pid = SV.lecPid;
+  const btn = $("#svLecGo");
+  btn.disabled = true;
+  $("#svLecWarns").innerHTML = "";
+  $("#svLecProg").textContent = "đang bắt đầu…";
+  // Dựng dần: mục nào xong hiện ngay, nên mất kết nối giữa chừng vẫn đọc được
+  // phần đã có — cùng lối với dựng slide theo mẻ.
+  const acc = { sections: {}, warns: [], model: (SV.models || {}).strong, cost: 0 };
+
+  const es = new EventSource(
+    `/api/survey/${SV.id}/paper/${pid}/lecture/build`);
+  es.addEventListener("stage", (e) => {
+    const d = JSON.parse(e.data);
+    $("#svLecProg").textContent = `${d.msg}… (${svShort((SV.models || {}).strong)})`;
+  });
+  es.addEventListener("section", (e) => {
+    const d = JSON.parse(e.data);
+    acc.sections[d.name] = d.data;
+    acc.cost = d.cost;
+    svRenderLec(acc, false);
+    $("#svLecProg").textContent =
+      `${SV_LEC_TITLE[d.name] || d.name}${d.redone ? " (viết lại cho sâu hơn)" : ""} · ${money(d.cost)}`;
+  });
+  es.addEventListener("done", (e) => {
+    const d = JSON.parse(e.data);
+    svRenderLec(d.lecture, false);
+    svLecWarns(d.lecture.warns);
+    $("#svLecProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
+    $("#svLecMd").classList.remove("hidden");
+    btn.textContent = "Dựng lại · ~$0,08";
+    btn.disabled = false;
+    es.close();
+  });
+  es.addEventListener("error", (e) => {
+    let msg = "mất kết nối";
+    try { msg = JSON.parse(e.data).msg; } catch (_) { /* lỗi mạng, không có body */ }
+    $("#svLecProg").textContent = "Lỗi: " + msg;
+    btn.disabled = false;
+    es.close();
+  });
 }
 
 if (document.readyState === "loading") {
