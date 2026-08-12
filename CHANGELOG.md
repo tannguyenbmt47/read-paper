@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.7.2
+
+**Move a paper to another corpus.** Loading a PDF into the wrong corpus is easy,
+and the obvious remedy — delete it and load it again — throws away the expensive
+part: the extracted card, the per-passage context sentences, the summary tree,
+the vectors, the lecture. Re-enriching costs about $0.034 and several minutes;
+moving keeps all of it and costs nothing.
+
+Passages, vectors and the full-text index follow the paper on their own, because
+they are keyed by paper id rather than by corpus. The entity graph does not:
+`entity.id` is a hash of *(corpus, normalised name)*, so the same entity in two
+corpora is two different ids. Skipping that would leave the paper in its new
+corpus while its entities stayed behind — the new corpus's graph missing the
+paper, the old one full of orphan nodes pointing at a paper no longer there. The
+move re-keys entities, mentions and edges, and recounts both corpora. It refuses
+when the destination already holds the same file, which caught a real duplicate
+during testing.
+
 ## 1.7.1
 
 **The number check was crying wolf.** One lecture produced 33 warnings, 32 of

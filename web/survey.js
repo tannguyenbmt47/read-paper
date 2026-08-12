@@ -28,6 +28,7 @@ const SV = {
   hits: [],         // kết quả tra đoạn, đã lấy về nhưng chưa vẽ hết
   shownPapers: 0,   // số bài đã vẽ — xem `svPage`
   shownHits: 0,
+  surveys: [],      // danh sách kho, dùng cho ô "chuyển bài sang kho khác"
 };
 
 /* Vẽ dần thay vì vẽ hết.
@@ -142,6 +143,7 @@ async function svLoadList() {
      — nên người dùng mở lên thấy đúng một dòng và tưởng công cụ chỉ có một kho.
      Nhét luôn "＋ Tạo kho mới" vào cuối danh sách: chỗ người ta nhìn khi muốn
      đổi kho cũng chính là chỗ người ta nhìn khi muốn thêm kho. */
+  SV.surveys = d.surveys;
   const pick = $("#svPick");
   pick.innerHTML = d.surveys.map((s) =>
     `<option value="${esc(s.id)}">${esc(s.name)} · ${s.papers} bài</option>`).join("")
@@ -302,6 +304,8 @@ function svRenderPapers(more = false) {
         ${p.status === "indexed"
           ? '<button class="btn xs" data-act="enrich">Bơm nội dung · ~$0,034</button>' : ""}
         ${p.card ? '<button class="btn xs" data-act="recard">Bóc lại phiếu · ~$0,01</button>' : ""}
+        ${SV.surveys.length > 1
+          ? '<button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>' : ""}
         <button class="btn xs is-danger" data-act="drop">Bỏ</button>
       </div>
     </li>`).join("");
@@ -322,6 +326,55 @@ function svRenderPapers(more = false) {
    phần tử vào khung nhìn, nên không có hàm nào chạy liên tục trong lúc cuộn.
    Ngắt quan sát ngay sau khi nạp, rồi lần vẽ sau gắn lại — nếu không thì một
    phần tử bị quan sát nhiều lần và nạp nhảy cóc mấy trang một lúc. */
+/* Chuyển bài sang kho khác — mở ngay tại chỗ, không mở hộp thoại.
+
+   Nạp nhầm kho là chuyện thường, và cách chữa hiển nhiên (bỏ đi, nạp lại) ném
+   mất phần đắt nhất: phiếu, câu ngữ cảnh từng đoạn, cây tóm lược, vector, bài
+   giảng. Nút này giữ nguyên tất cả và **không tốn đồng nào**, nên nó phải nói
+   ra điều đó — người dùng không có cách nào tự biết. */
+function svMoveBox(li, pid) {
+  if (li.querySelector(".sv-move")) return;      // đã mở rồi
+  const others = SV.surveys.filter((s) => s.id !== SV.id);
+  if (!others.length) return;
+
+  const box = document.createElement("div");
+  box.className = "sv-move";
+  box.innerHTML = `<label>Chuyển sang
+      <select class="input">${others.map((s) =>
+        `<option value="${esc(s.id)}">${esc(s.name)} · ${s.papers} bài</option>`).join("")}</select>
+    </label>
+    <div class="sv-moveact">
+      <button class="btn xs" data-go="1">Chuyển · miễn phí</button>
+      <button class="btn xs" data-cancel="1">Thôi</button>
+    </div>
+    <p class="small muted">Giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược, vector và
+      bài giảng — không bóc lại, không gọi model.</p>`;
+  li.appendChild(box);
+  box.querySelector("select").focus();
+
+  box.onclick = async (e) => {
+    if (e.target.dataset.cancel) { box.remove(); return; }
+    if (!e.target.dataset.go) return;
+    const to = box.querySelector("select").value;
+    e.target.disabled = true;
+    try {
+      const d = await svFetch(`/api/survey/${SV.id}/paper/${pid}/move`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ to }),
+      });
+      const ten = (SV.surveys.find((s) => s.id === to) || {}).name || "kho kia";
+      svProg(`đã chuyển sang “${ten}” · miễn phí`
+        + (d.entities ? ` · ${d.entities} thực thể đi theo` : ""), true);
+      await svLoadList();          // số bài của CẢ HAI kho đều đổi
+    } catch (err) {
+      // 409 = kho đích đã có đúng bài này. Nói thẳng ra thay vì "lỗi".
+      box.querySelector("p").textContent = err.message;
+      box.querySelector("p").classList.add("sv-moveerr");
+      e.target.disabled = false;
+    }
+  };
+}
+
 function svWatchTail(el, load) {
   if (el._io) { el._io.disconnect(); el._io = null; }
   if (el.classList.contains("hidden")) return;
@@ -354,8 +407,11 @@ function svRenderAllRuns(runs) {
 
 /* ------------------------------------------------------------- nạp bài */
 
-function svProg(msg) {
-  const m = (SV.models || {}).fast;
+/* `free = true` cho những việc KHÔNG gọi model. Gắn tên model vào một dòng ghi
+   "miễn phí" thì tự mâu thuẫn, và người dùng có lý do để tưởng là vừa bị tính
+   tiền. Tên model chỉ nên hiện ở đúng chỗ tiền đi ra. */
+function svProg(msg, free = false) {
+  const m = free ? "" : (SV.models || {}).fast;
   $("#svProg").textContent = msg ? (m ? `${msg} · ${svShort(m)}` : msg) : "";
 }
 
@@ -1107,6 +1163,9 @@ function svWire() {
     if (act === "drop") {
       if (!confirm("Bỏ bài này khỏi kho?")) return;
       await svFetch(`/api/survey/${SV.id}/paper/${pid}`, { method: "DELETE" });
+    } else if (act === "move") {
+      svMoveBox(btn.closest("[data-pid]"), pid);
+      return;                       // ô chọn tự lo phần còn lại
     } else {
       btn.disabled = true;
       svProg("đang chạy…");

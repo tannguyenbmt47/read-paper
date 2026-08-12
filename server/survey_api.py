@@ -223,6 +223,27 @@ async def recard(sid: str, pid: str):
         raise HTTPException(502, f"Lỗi khi bóc lại phiếu: {e}") from e
 
 
+@router.post("/{sid}/paper/{pid}/move")
+async def move_paper(sid: str, pid: str, to: str = Body(..., embed=True)):
+    """Chuyển bài sang kho khác. **Không bóc lại, không gọi model, miễn phí.**
+
+    Cách chữa hiển nhiên cho việc nạp nhầm kho — xoá đi nạp lại — ném mất phần
+    đắt nhất (phiếu, câu ngữ cảnh, cây tóm lược, vector, bài giảng) và tốn lại
+    ~$0,034 mỗi bài.
+    """
+    _need(sid)
+    p = sdb.load_paper(pid)
+    if p["survey_id"] != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+    try:
+        got = sdb.move_paper(pid, to)
+    except KeyError:
+        raise HTTPException(404, "Không có kho đích") from None
+    if not got.get("moved"):
+        raise HTTPException(409, got.get("msg") or "Không chuyển được")
+    return got
+
+
 @router.delete("/{sid}/paper/{pid}")
 async def drop_paper(sid: str, pid: str):
     _need(sid)

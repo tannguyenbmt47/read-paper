@@ -610,3 +610,22 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
 .sv-warnbox details[open] > summary { margin-bottom: 4px; }
 .sv-warnbox details ul { margin: 2px 0 0; padding-left: 18px; }
 .sv-warnbox details li { color: var(--muted); font-size: .92em; }
+
+/* Chuyển bài sang kho khác — mở ngay trong thẻ bài, xem `svMoveBox`. */
+.sv-move {
+  margin-top: 8px; padding: 8px 10px;
+  background: var(--surface-2); border-radius: var(--radius);
+}
+.sv-move label {
+  display: block; font-size: 11px; color: var(--muted); margin-bottom: 6px;
+}
+/* Tên kho là chuỗi dài tuỳ ý, mà thẻ bài nằm trong cột hẹp — thiếu
+   `min-width: 0` thì `<select>` giãn theo option dài nhất và đẩy tràn cả cột.
+   Cùng cái bẫy flexbox đã vấp ở ô chọn bài của tab Bài giảng. */
+.sv-move select {
+  display: block; width: 100%; min-width: 0; margin-top: 3px;
+  text-overflow: ellipsis;
+}
+.sv-moveact { display: flex; gap: 6px; margin: 8px 0 6px; }
+.sv-move p { margin: 0; line-height: 1.4; }
+.sv-moveerr { color: var(--warn, var(--muted)); }

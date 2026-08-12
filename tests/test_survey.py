@@ -812,3 +812,73 @@ def test_tieu_de_qua_ngan_thi_khong_tra_semantic_scholar(client):
     assert not refs.usable_title("Question Answering")
     assert not refs.usable_title("GCR")
     assert refs.usable_title("LATENT ACTION PRETRAINING FROM VIDEOS")
+
+
+# ------------------------------------------------------- chuyển bài sang kho khác
+
+
+def test_chuyen_bai_thi_doan_va_chi_muc_di_theo(client, sdb, kho):
+    """Nạp nhầm kho là chuyện thường. Chữa bằng cách xoá đi nạp lại thì ném mất
+    phiếu, câu ngữ cảnh, cây tóm lược và bài giảng — nên phải chuyển được."""
+    import asyncio
+    from server.survey import search
+    sid2 = client.post("/api/survey", json={"name": "kho hai"}).json()["id"]
+
+    r = client.post(f"/api/survey/{kho['sid']}/paper/{kho['p1']}/move",
+                    json={"to": sid2})
+    assert r.status_code == 200 and r.json()["moved"]
+
+    assert sdb.load_paper(kho["p1"])["survey_id"] == sid2
+    assert len(sdb.paper_chunks(kho["p1"], level=0)) == 2   # đoạn không mất
+    # và tìm được ở kho mới, không còn ở kho cũ
+    assert asyncio.run(search.plain(sid2, "CIRAG", 5))
+    assert not asyncio.run(search.plain(kho["sid"], "CIRAG", 5))
+
+
+def test_chuyen_bai_khong_de_lai_thuc_the_mo_coi(client, sdb, kho):
+    """`entity.id` là sha của (survey_id, tên chuẩn hoá) — cùng một thực thể ở
+    hai kho là hai mã khác nhau. Bỏ qua chỗ này thì bài sang kho mới mà thực thể
+    của nó vẫn nằm ở kho cũ: đồ thị kho mới thiếu bài, kho cũ đầy node mồ côi."""
+    sid2 = client.post("/api/survey", json={"name": "kho ba"}).json()["id"]
+    # Khai cả hai đầu mút, đúng như `graph.py` làm — nó lọc bỏ cạnh nào có đầu
+    # mút chưa khai (graph.py:161), nên trạng thái khác không xảy ra thật.
+    sdb.put_graph(kho["sid"], kho["p1"],
+                  [{"name": "CIRAG", "norm": "cirag", "kind": "method",
+                    "chunks": [kho["p1"] + "c1"]},
+                   {"name": "HotpotQA", "norm": "hotpotqa", "kind": "dataset",
+                    "chunks": [kho["p1"] + "c2"]}],
+                  [{"src": "cirag", "dst": "hotpotqa", "rel": "đánh giá trên",
+                    "chunk": kho["p1"] + "c2"}])
+    sdb.move_paper(kho["p1"], sid2)
+
+    c = sdb.conn()
+    assert c.execute(
+        "SELECT COUNT(*) FROM mention m LEFT JOIN entity e ON e.id = m.entity_id"
+        " WHERE e.id IS NULL").fetchone()[0] == 0
+    assert c.execute(
+        "SELECT COUNT(*) FROM edge g LEFT JOIN entity a ON a.id = g.src"
+        " LEFT JOIN entity b ON b.id = g.dst"
+        " WHERE a.id IS NULL OR b.id IS NULL").fetchone()[0] == 0
+    # thực thể đã sang kho mới, và kho cũ không giữ lại bản mồ côi
+    assert c.execute("SELECT COUNT(*) FROM entity WHERE survey_id = ?",
+                     (sid2,)).fetchone()[0] > 0
+    assert c.execute("SELECT COUNT(*) FROM edge WHERE survey_id = ? AND paper_id = ?",
+                     (sid2, kho["p1"])).fetchone()[0] == 1
+
+
+def test_chuyen_vao_kho_da_co_dung_bai_do_thi_tu_choi(client, sdb, kho):
+    """Hai bản cùng một bài trong một kho làm mọi câu trả lời trích dẫn hai lần
+    cùng một đoạn, mà người dùng không hiểu vì sao."""
+    sid2 = client.post("/api/survey", json={"name": "kho bốn"}).json()["id"]
+    sdb.add_paper(sid2, title="CIRAG bản sao", status="indexed", sha256="s1")
+    r = client.post(f"/api/survey/{kho['sid']}/paper/{kho['p1']}/move",
+                    json={"to": sid2})
+    assert r.status_code == 409
+    assert sdb.load_paper(kho["p1"])["survey_id"] == kho["sid"]   # không đụng gì
+
+
+def test_chuyen_bai_khong_thuoc_kho_thi_tu_choi(client, sdb, kho):
+    """Cùng hàng rào như mọi route khác: bài phải thuộc kho đang thao tác."""
+    sid2 = client.post("/api/survey", json={"name": "kho năm"}).json()["id"]
+    assert client.post(f"/api/survey/{sid2}/paper/{kho['p2']}/move",
+                       json={"to": sid2}).status_code == 404

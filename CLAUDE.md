@@ -793,6 +793,44 @@ mọi con số phải có mặt nguyên văn trong đoạn đã trích (dùng l�
 Cảnh báo neo theo **chỉ số câu** (`split_sentences` giữ `start`/`end`), để giao
 diện tô đúng câu chứ không tô cả bài.
 
+### Chuyển bài sang kho khác — và vì sao đồ thị là chỗ dễ quên
+
+Nạp nhầm kho là chuyện thường, mà cách chữa hiển nhiên — bỏ đi rồi nạp lại — ném
+mất đúng phần đắt: phiếu, câu ngữ cảnh của từng đoạn, cây tóm lược, vector, bài
+giảng. Bơm lại một bài tốn ~$0,034 và vài phút; `db.move_paper()` giữ nguyên tất
+cả và **$0**.
+
+Đoạn, vector và chỉ mục toàn văn **tự theo** vì chúng khoá theo `paper_id`, không
+theo kho — `chunk` không có cột `survey_id` nên `chunk_fts` không phải đụng tới.
+
+**Đồ thị thực thể thì không.** `entity.id` là sha của *(survey_id, tên đã chuẩn
+hoá)*, nên cùng một thực thể ở hai kho là hai mã khác nhau. Bỏ qua chỗ này thì
+bài sang kho mới mà thực thể của nó còn nằm ở kho cũ: đồ thị kho mới thiếu bài
+đó, kho cũ đầy node mồ côi trỏ tới một bài không còn ở đấy. `move_paper` khoá
+lại `entity` / `mention` / `edge`, rồi đếm lại `papers` cho **cả hai** kho theo
+đúng luật của `put_graph` — hai chỗ lệch luật thì xoá nhầm thực thể đang còn
+cạnh, và cạnh đó biến mất theo.
+
+Ba chi tiết:
+
+- **Trùng `sha256` ở kho đích thì từ chối** (409). Hai bản cùng một bài trong một
+  kho làm mọi câu trả lời trích dẫn hai lần cùng một đoạn mà không ai hiểu vì
+  sao. Đã bắt được một ca thật lúc thử.
+- **Cạnh không khoá lại được thì bỏ.** `edge` lưu *mã* chứ không lưu tên, nên
+  đầu mút thiếu dòng `entity` là không suy ra được tên để dựng mã ở kho đích.
+  `graph.py:161` đã lọc sẵn nên chuyện này không xảy ra với dữ liệu thật; nếu có
+  thì cạnh ấy vốn đã chết (`graph_overview` lọc theo `entity.papers`), chở sang
+  kho mới với một mã thuộc kho cũ chỉ tệ thêm.
+- **`synth_stale` của cả hai kho tự bật**, vì nó so với `corpus_fingerprint` mà
+  vân tay tính từ danh sách bài. Không phải làm gì thêm.
+
+Kiểm bằng vòng tròn trên dữ liệu thật: chuyển đi rồi chuyển về phải cho **trạng
+thái khớp từng con số** — số thực thể, số cạnh, số đoạn, và không mention mồ côi
+nào, không cạnh treo nào.
+
+Và `svProg(msg, free = true)` cho mọi việc không gọi model: gắn tên model vào một
+dòng ghi "miễn phí" thì tự mâu thuẫn, người dùng có lý do tưởng vừa bị tính tiền.
+
 ### Bài giảng (`survey/lecture.py`, `survey/refs.py`) — giảng MỘT bài cho hiểu
 
 Tab *Bài giảng* đứng giữa hai tab kia và lấp đúng chỗ trống giữa chúng: *Tổng

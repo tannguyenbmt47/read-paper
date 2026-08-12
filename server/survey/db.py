@@ -438,6 +438,111 @@ def paper_by_sha(survey_id: str, sha256: str) -> dict | None:
     return _row_to_paper(row) if row else None
 
 
+def move_paper(pid: str, to_sid: str) -> dict:
+    """Chuyển một bài sang kho khác. **Không bóc lại, không gọi model, $0.**
+
+    Nạp nhầm kho là chuyện thường, và cách chữa hiển nhiên — xoá đi nạp lại —
+    ném mất phần đắt nhất: `card`, `ctx` của từng đoạn, cây tóm lược, vector,
+    bài giảng. Bơm lại một bài tốn ~$0,034 cộng vài phút; chuyển thì miễn phí.
+
+    Đoạn, vector và chỉ mục toàn văn **tự theo** vì chúng khoá theo `paper_id`,
+    không theo kho. Riêng **đồ thị thực thể thì không**: `entity.id` là sha của
+    *(survey_id, tên đã chuẩn hoá)*, nên cùng một thực thể ở hai kho là hai mã
+    khác nhau. Bỏ qua chỗ này thì bài sang kho mới mà thực thể của nó vẫn nằm ở
+    kho cũ — đồ thị kho mới thiếu bài đó, còn kho cũ đầy thực thể mồ côi trỏ tới
+    một bài không còn ở đấy.
+    """
+    check_id(pid)
+    check_id(to_sid)
+    c = conn()
+    row = c.execute("SELECT survey_id, sha256, title FROM paper WHERE id = ?",
+                    (pid,)).fetchone()
+    if row is None:
+        raise KeyError(pid)
+    from_sid = row["survey_id"]
+    if from_sid == to_sid:
+        return {"moved": False, "msg": "Bài đã nằm sẵn trong kho này."}
+    if c.execute("SELECT 1 FROM survey WHERE id = ?", (to_sid,)).fetchone() is None:
+        raise KeyError(to_sid)
+
+    # Trùng nội dung thì dừng lại chứ không chuyển: hai bản cùng một bài trong
+    # một kho làm mọi câu trả lời trích dẫn hai lần cùng một đoạn, và người dùng
+    # không hiểu vì sao.
+    if row["sha256"]:
+        dup = c.execute("SELECT id, title FROM paper WHERE survey_id = ? AND sha256 = ?",
+                        (to_sid, row["sha256"])).fetchone()
+        if dup:
+            return {"moved": False,
+                    "msg": f"Kho đích đã có đúng bài này (“{(dup['title'] or '')[:60]}”)."}
+
+    # Thực thể mà bài này chạm tới, ở kho cũ. Lấy từ CẢ `mention` lẫn `edge` —
+    # model hay khai một thực thể trong quan hệ mà quên gắn mã đoạn cho nó, cùng
+    # lý do đã ghi ở `put_graph`.
+    ents = {r["id"]: r for r in c.execute(
+        "SELECT * FROM entity WHERE id IN ("
+        "  SELECT entity_id FROM mention WHERE paper_id = ?"
+        "  UNION SELECT src FROM edge WHERE paper_id = ? AND survey_id = ?"
+        "  UNION SELECT dst FROM edge WHERE paper_id = ? AND survey_id = ?)",
+        (pid, pid, from_sid, pid, from_sid))}
+    edges = c.execute("SELECT * FROM edge WHERE paper_id = ? AND survey_id = ?",
+                      (pid, from_sid)).fetchall()
+
+    def remap(old_eid: str) -> str | None:
+        """Mã thực thể ở kho mới, hoặc None nếu không khoá lại được.
+
+        `edge` lưu **mã** thực thể chứ không lưu tên, nên đầu mút nào không có
+        dòng `entity` thì không suy ra được tên chuẩn hoá, tức không dựng được
+        mã tương ứng ở kho đích. `graph.py` đã lọc sẵn nên chuyện này không xảy
+        ra với dữ liệu thật; nhưng nếu có thì cạnh ấy vốn đã chết —
+        `graph_overview` lọc theo `entity.papers` nên không bao giờ hiện nó ra.
+        Chở nó sang kho mới với một mã thuộc kho cũ thì chỉ tệ thêm.
+        """
+        e = ents.get(old_eid)
+        return ent_id(to_sid, e["norm"]) if e else None
+
+    with c:
+        c.execute("UPDATE paper SET survey_id = ?, updated_at = ? WHERE id = ?",
+                  (to_sid, _now(), pid))
+
+        for e in ents.values():
+            c.execute(
+                "INSERT INTO entity (id, survey_id, name, norm, kind, papers)"
+                " VALUES (?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET"
+                "   kind = COALESCE(NULLIF(entity.kind,''), excluded.kind)",
+                (ent_id(to_sid, e["norm"]), to_sid, e["name"], e["norm"], e["kind"]))
+            c.execute("UPDATE mention SET entity_id = ? WHERE paper_id = ? AND entity_id = ?",
+                      (ent_id(to_sid, e["norm"]), pid, e["id"]))
+
+        c.execute("DELETE FROM edge WHERE paper_id = ? AND survey_id = ?", (pid, from_sid))
+        kept = 0
+        for g in edges:
+            src, dst = remap(g["src"]), remap(g["dst"])
+            if not src or not dst:
+                continue
+            kept += 1
+            c.execute(
+                "INSERT OR REPLACE INTO edge (survey_id, src, dst, rel, paper_id,"
+                " chunk_id, note) VALUES (?,?,?,?,?,?,?)",
+                (to_sid, src, dst, g["rel"], pid, g["chunk_id"], g["note"]))
+
+        # Đếm lại cho CẢ HAI kho, đúng luật của `put_graph` — hai chỗ lệch luật
+        # thì xoá nhầm thực thể đang còn cạnh, và cạnh đó biến mất theo.
+        c.execute(
+            "UPDATE entity SET papers = ("
+            "  SELECT COUNT(DISTINCT p) FROM ("
+            "    SELECT paper_id AS p FROM mention WHERE mention.entity_id = entity.id"
+            "    UNION SELECT paper_id FROM edge WHERE edge.src = entity.id"
+            "    UNION SELECT paper_id FROM edge WHERE edge.dst = entity.id))"
+            " WHERE survey_id IN (?, ?)", (from_sid, to_sid))
+        c.execute("DELETE FROM entity WHERE papers = 0 AND survey_id IN (?, ?)",
+                  (from_sid, to_sid))
+
+    # Bản tổng hợp của cả hai kho tự thành lỗi thời: `synth_stale` so với
+    # `corpus_fingerprint`, mà vân tay đổi theo danh sách bài. Không phải làm gì.
+    return {"moved": True, "from": from_sid, "to": to_sid,
+            "entities": len(ents), "edges": kept}
+
+
 def drop_paper(pid: str) -> None:
     """Xoá bài kèm mọi đoạn của nó — và kèm cả chỉ mục của những đoạn đó."""
     check_id(pid)
