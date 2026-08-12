@@ -87,8 +87,9 @@ async def get_survey(sid: str):
 @router.patch("/{sid}")
 async def patch_survey(sid: str, body: dict = Body(...)):
     _need(sid)
-    fields = {k: v for k, v in body.items()
-              if k in ("name", "topic", "facets", "budget_usd")}
+    # Lọc theo ĐÚNG danh sách của `update_survey`, không chép lại — bản chép cũ
+    # thiếu `model`/`fast_model` nên ô chọn model không lưu được gì.
+    fields = {k: v for k, v in body.items() if k in sdb.SURVEY_FIELDS}
     return sdb.update_survey(sid, **fields)
 
 
@@ -223,6 +224,14 @@ async def recard(sid: str, pid: str):
         raise HTTPException(502, f"Lỗi khi bóc lại phiếu: {e}") from e
 
 
+# Metadata của bài mà NGƯỜI DÙNG nhập. Cố ý **hẹp hơn** `db.update_paper` —
+# hàm đó còn nhận `card`, `status`, `lecture`, `refs` cho các pass nội bộ ghi
+# vào. Đây là hai danh sách khác nhau vì chúng phục vụ hai việc khác nhau, không
+# phải một bản chép bị lệch: sửa tay được `card` thì ràng buộc số liệu và
+# `check_depth` thành vô nghĩa.
+PAPER_USER_FIELDS = ("title", "authors", "venue", "doi", "url")
+
+
 @router.patch("/{sid}/paper/{pid}")
 async def patch_paper(sid: str, pid: str, body: dict = Body(...)):
     """Sửa metadata của bài. **Không gọi model, miễn phí.**
@@ -245,7 +254,7 @@ async def patch_paper(sid: str, pid: str, body: dict = Body(...)):
         raise HTTPException(404, "Bài không thuộc kho này")
 
     fields: dict = {}
-    for k in ("title", "authors", "venue", "doi", "url"):
+    for k in PAPER_USER_FIELDS:
         if k in body:
             fields[k] = str(body[k] or "").strip()
     if "year" in body:

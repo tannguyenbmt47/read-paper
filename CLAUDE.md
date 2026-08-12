@@ -980,6 +980,30 @@ truy một lỗi 405 "Method Not Allowed" của route vừa thêm, hoá ra serve
 chạy là bản khởi động từ nửa tiếng trước. Cùng họ với container Docker giữ cổng
 8010. Soát bằng `ps` trước khi tin kết quả.
 
+### Một danh sách trường, không hai bản chép
+
+`PATCH /api/survey/{sid}` từng giữ **bản chép riêng** của danh sách trường sửa
+được, và bản chép đó thiếu `model` / `fast_model`. Hậu quả: chọn model xong thì
+lựa chọn bị vứt **lặng lẽ** — không lỗi, không cảnh báo, `update_survey` không
+bao giờ thấy nó — rồi `svLoad()` đọc lại giá trị cũ và ô chọn nhảy về "Theo
+.env". Người dùng thấy đúng một thứ: **bấm vào rồi mà không chọn được gì**, y
+hệt triệu chứng dropdown tự đóng, nên rất dễ đi truy nhầm hướng.
+
+Nên `db.SURVEY_FIELDS` là **nguồn duy nhất**, route lọc theo đúng nó.
+`test_route_khong_giu_ban_chep_rieng_cua_danh_sach_truong` canh chỗ này.
+
+Ngược lại, `PAPER_USER_FIELDS` ở `survey_api.py` **cố ý hẹp hơn**
+`db.update_paper`: hàm đó còn nhận `card` / `status` / `lecture` cho các pass
+nội bộ ghi vào, còn route thì không được cho sửa tay — sửa được thì ràng buộc số
+liệu và `check_depth` thành vô nghĩa. Hai danh sách khác nhau vì phục vụ hai
+việc khác nhau, không phải một bản chép bị lệch; đặt tên cho nó để lần sau không
+ai "sửa" bằng cách nới ra.
+
+**Bài học chẩn đoán:** triệu chứng người dùng kể ("mở ra là đóng lại") và
+nguyên nhân thật (giá trị không lưu được) có thể trông giống hệt nhau. Hỏi thêm
+một câu — *"nó có hiện cái vừa chọn không"* — rẻ hơn nhiều so với soát cả cây
+sự kiện DOM.
+
 ### `<select>` không được lồng trong `<label>`
 
 Click vào một ô chọn nằm trong `<label>` thì cú click nổi lên label, label

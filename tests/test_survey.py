@@ -968,3 +968,46 @@ def test_sua_cot_bang_so_sanh(client, sdb, kho):
     assert sdb.load_survey(kho["sid"])["facets"] == [{"key": "idea", "label": "Ý tưởng"}]
     m = client.get(f"/api/survey/{kho['sid']}/matrix").json()
     assert [f["label"] for f in m["facets"]] == ["Ý tưởng"]
+
+
+def test_chon_model_thi_luu_that(client, sdb, kho):
+    """Route từng giữ một BẢN CHÉP RIÊNG của danh sách trường sửa được, và bản
+    chép đó thiếu `model`/`fast_model` — nên chọn model xong thì lựa chọn bị vứt
+    **lặng lẽ**: không lỗi, không cảnh báo, `svLoad()` đọc lại giá trị cũ và ô
+    chọn nhảy về "Theo .env". Nhìn ra ngoài y hệt như dropdown tự đóng.
+    """
+    r = client.patch(f"/api/survey/{kho['sid']}",
+                     json={"model": "anthropic/claude-opus-4.1",
+                           "fast_model": "deepseek/deepseek-v4-pro"})
+    assert r.status_code == 200
+    assert r.json()["model"] == "anthropic/claude-opus-4.1"
+
+    d = client.get(f"/api/survey/{kho['sid']}").json()
+    assert d["models"]["strong"] == "anthropic/claude-opus-4.1"
+    assert d["models"]["fast"] == "deepseek/deepseek-v4-pro"
+    assert d["models"]["strong_src"] == "kho"
+
+    # trả về mặc định cũng phải ăn
+    client.patch(f"/api/survey/{kho['sid']}", json={"model": "", "fast_model": ""})
+    assert sdb.load_survey(kho["sid"])["model"] == ""
+
+
+def test_route_khong_giu_ban_chep_rieng_cua_danh_sach_truong(client):
+    """Hai danh sách thì sớm muộn cũng lệch; một danh sách thì không lệch được.
+
+    Đây chính là cách lỗi trên lọt qua: `update_survey` cho phép `model`, route
+    thì không, và không chỗ nào báo gì cả.
+    """
+    from pathlib import Path
+    import re
+    src = Path(__file__).resolve().parents[1].joinpath("server/survey_api.py").read_text()
+    assert "sdb.SURVEY_FIELDS" in src
+
+    # bộ lọc của route phải trỏ tới danh sách chung, không phải một tuple gõ tay
+    loc = re.search(r"if k in ([^\n]+)", src)
+    assert loc and "SURVEY_FIELDS" in loc.group(1), \
+        f"route lại chép tay danh sách trường: {loc.group(1) if loc else '?'}"
+
+    # và danh sách chung phải phủ đúng những cột kho mà người dùng sửa được
+    from server.survey import db as sdb
+    assert set(sdb.SURVEY_FIELDS) >= {"model", "fast_model", "name", "budget_usd"}

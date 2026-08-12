@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.2
+
+**Choosing a model did nothing.** The corpus PATCH route kept its own copy of
+the editable-field list, and that copy was missing `model` and `fast_model`, so
+the choice was dropped silently — no error, no warning, the update function
+never saw it. The screen then reloaded, read back the old value, and the picker
+snapped to "Theo .env (mặc định)". From the outside this is indistinguishable
+from a dropdown that closes before you can pick, which is where the first
+attempt at this bug went looking. There is now one field list, used by both, and
+a test that fails if the route ever hand-copies it again.
+
 ## 1.8.1
 
 **Model dropdowns opened and closed again before you could pick anything.** A

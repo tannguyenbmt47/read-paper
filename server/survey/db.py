@@ -308,8 +308,19 @@ def list_surveys() -> list[dict]:
     return out
 
 
+# Các trường của kho mà người dùng sửa được. **Một danh sách duy nhất**, dùng
+# chung cho cả `update_survey` lẫn route `PATCH /api/survey/{sid}`.
+#
+# Trước đây route giữ một bản chép riêng và bản chép đó thiếu `model` /
+# `fast_model` — nên chọn model xong thì lựa chọn bị vứt LẶNG LẼ (không lỗi,
+# không cảnh báo), `svLoad()` đọc lại giá trị cũ và ô chọn nhảy về "Theo .env".
+# Nhìn ra ngoài thì y hệt như dropdown tự đóng. Hai danh sách thì sớm muộn cũng
+# lệch; một danh sách thì không lệch được.
+SURVEY_FIELDS = ("name", "topic", "facets", "budget_usd", "model", "fast_model")
+
+
 def update_survey(sid: str, **fields) -> dict:
-    allowed = {"name", "topic", "facets", "budget_usd", "model", "fast_model"}
+    allowed = set(SURVEY_FIELDS)
     sets, vals = [], []
     for k, v in fields.items():
         if k not in allowed:
