@@ -91,10 +91,10 @@
       <label class="check" id="layoutWrap" title="Dùng mô hình phát hiện bố cục (Docling) để xác định khung hình và bảng. Chính xác hơn nhiều ở trang có nhiều bảng/hình xếp sát nhau. Chậm hơn vài giây mỗi bài.">
         <input type="checkbox" id="useLayout" checked> Mô hình bố cục
       </label>
-      <label class="field">
-        <span>Model dịch</span>
+      <div class="field">
+        <label for="modelSelect">Model dịch</label>
         <select id="modelSelect" class="input"></select>
-      </label>
+      </div>
       <button id="importBtn" class="btn btn-primary">Nạp bài báo</button>
     </div>
     <div id="impProg" class="imp hidden">
@@ -139,7 +139,7 @@
       <strong>Bước 1 · Kiểm tra cấu trúc</strong>
       <span id="revTitle"></span>
     </div>
-    <select id="revModel" class="model-pick"
+    <select id="revModel" class="model-pick" aria-label="Model dịch"
             title="Model dùng để dịch. Đổi ở đây thì giá ước tính bên dưới tính lại theo model mới."></select>
     <button id="revGo" class="btn btn-primary">Bước 2: Dịch →</button>
   </header>
@@ -204,7 +204,7 @@
           <input type="checkbox" id="colGl" checked> Giải thích
         </label>
       </div>
-      <select id="docModel" class="model-pick"
+      <select id="docModel" class="model-pick" aria-label="Model đang dùng"
               title="Model dùng cho các lượt dịch, giải thích và hỏi đáp sau. Đổi model không dịch lại phần đã xong."></select>
       <label class="check" title="Thêm một lượt soát lại: đối chiếu bản dịch với bản gốc để bắt lỗi mất liên từ, lệch mức khẳng định, sai số liệu. Chậm và tốn hơn ~1.7 lần.">
         <input type="checkbox" id="refineChk"> Dịch kỹ
@@ -435,9 +435,10 @@
         <label class="sl-f">Gạch đầu dòng — mỗi dòng một mục, tối đa 4
           <textarea id="slBullets" class="input textarea" rows="4"></textarea>
         </label>
-        <label class="sl-f">Hình
+        <div class="sl-f">
+          <label for="slFig">Hình</label>
           <select id="slFig" class="input"></select>
-        </label>
+        </div>
         <div class="sl-f" id="slArtWrap">
           <span>Prompt vẽ ảnh minh hoạ — chép sang công cụ vẽ bạn tin dùng, rồi tải ảnh về đây</span>
           <textarea id="slArtPrompt" class="input textarea" rows="4" readonly></textarea>
@@ -543,9 +544,10 @@
     </header>
 
     <div class="crop-bar">
-      <label class="check">Trang
+      <div class="check">
+        <label for="cropPage">Trang</label>
         <select id="cropPage" class="input input-sm" style="width:auto"></select>
-      </label>
+      </div>
       <span class="hint">Kéo bên trong khung để di chuyển · kéo 8 nút ở viền để co giãn</span>
       <span class="spacer"></span>
       <button id="cropReset" class="btn">Về khung tự động</button>
@@ -641,9 +643,10 @@
                 tính mới thật của từng bài, và chỗ các bài nói ngược nhau.</p>
             </div>
             <span class="grow"></span>
-            <label class="sv-inline">Model
+            <div class="sv-inline">
+              <label for="svSynModel">Model</label>
               <select id="svSynModel" class="input"></select>
-            </label>
+            </div>
             <a id="svSynMd" class="btn xs" target="_blank" rel="noopener">Markdown</a>
             <button id="svSynDrop" class="btn xs hidden" title="Bỏ bản tổng hợp này. Dựng lại tốn ~$0,09">Bỏ</button>
             <button id="svSynGo" class="btn btn-primary">Dựng · ~$0,09</button>
@@ -670,12 +673,14 @@
                 cạnh những bài nó dẫn.</p>
             </div>
             <span class="grow"></span>
-            <label class="sv-inline">Bài
+            <div class="sv-inline">
+              <label for="svLecPick">Bài</label>
               <select id="svLecPick" class="input"></select>
-            </label>
-            <label class="sv-inline">Model
+            </div>
+            <div class="sv-inline">
+              <label for="svLecModel">Model</label>
               <select id="svLecModel" class="input"></select>
-            </label>
+            </div>
             <a id="svLecMd" class="btn xs hidden" target="_blank" rel="noopener">Markdown</a>
             <button id="svLecDrop" class="btn xs hidden" title="Bỏ bài giảng này. Dựng lại tốn ~$0,08">Bỏ</button>
             <button id="svLecGo" class="btn btn-primary">Dựng · ~$0,08</button>
@@ -705,16 +710,18 @@
               <details class="sv-opts">
                 <summary>Tuỳ chọn &amp; model</summary>
                 <div class="sv-optbox">
-                  <label>Model tổng hợp câu trả lời
+                  <div class="fld">
+                    <label for="svModel">Model tổng hợp câu trả lời</label>
                     <select id="svModel" class="input"></select>
                     <i>Chỉ chạy MỘT lần mỗi câu hỏi, nhưng hỏng khâu tổng hợp là
                       phần lớn số câu sai — nên chọn model khá ở đây.</i>
-                  </label>
-                  <label>Model cho các bước còn lại
+                  </div>
+                  <div class="fld">
+                    <label for="svFastModel">Model cho các bước còn lại</label>
                     <select id="svFastModel" class="input"></select>
                     <i>Lập kế hoạch, chấm lại kết quả, đọc đoạn, và cả lúc nạp bài.
                       Số lượt gọi nhiều gấp bội — đây mới là chỗ quyết định hoá đơn.</i>
-                  </label>
+                  </div>
                   <label>Trần chi phí mỗi câu hỏi
                     <input id="svBudget" class="input inp-xs" type="number" step="0.05" min="0" value="0.5">
                     <i>USD. Kiểm trước mỗi lần gọi model, hết thì dừng và nói rõ.</i>

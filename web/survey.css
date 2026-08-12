@@ -643,3 +643,16 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
   color: var(--muted); border-radius: var(--radius); line-height: 1;
 }
 .sv-runx:hover { background: var(--surface-2); color: var(--ink); }
+
+/* Ô chọn KHÔNG được lồng trong <label>.
+
+   Click vào một `<select>` nằm trong `<label>` thì cú click nổi lên label, label
+   chuyển tiếp thành một cú kích hoạt nữa xuống chính cái select — dropdown mở ra
+   rồi đóng lại ngay, không kịp chọn. Lỗi Chromium đã biết từ lâu, và nó chỉ lộ
+   ra khi bấm bằng chuột thật: dispatch sự kiện tổng hợp lên select trong máy soát
+   thì KHÔNG tái hiện được, vì cú click không đi qua label.
+
+   Nên nhãn đứng riêng bằng `for=`, khối bọc là `<div>`. Vừa hết lỗi vừa đúng
+   chuẩn trợ năng. `.fld` thay chỗ `<label>` trong hộp tuỳ chọn. */
+.sv-optbox .fld { display: block; }
+.sv-inline > label { white-space: nowrap; }

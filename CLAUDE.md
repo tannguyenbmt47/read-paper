@@ -980,6 +980,23 @@ truy một lỗi 405 "Method Not Allowed" của route vừa thêm, hoá ra serve
 chạy là bản khởi động từ nửa tiếng trước. Cùng họ với container Docker giữ cổng
 8010. Soát bằng `ps` trước khi tin kết quả.
 
+### `<select>` không được lồng trong `<label>`
+
+Click vào một ô chọn nằm trong `<label>` thì cú click nổi lên label, label
+chuyển tiếp thành **một cú kích hoạt nữa** xuống chính cái select — dropdown mở
+ra rồi đóng lại ngay, không kịp chọn. Lỗi Chromium đã biết từ lâu, và nó ảnh
+hưởng **cả tám** ô chọn của app trước bản này.
+
+Cái bẫy nằm ở chỗ **soát bằng máy không bắt được**: dispatch `mousedown`/`click`
+tổng hợp lên chính cái select thì cú click không đi qua label, MutationObserver
+không thấy gì, focus vẫn giữ — mọi phép đo báo "bình thường". Chỉ bấm bằng
+chuột thật mới lộ.
+
+Nên: nhãn đứng riêng, nối bằng `for=`, khối bọc là `<div>` (`.fld` thay chỗ
+`<label>` trong `.sv-optbox`). Vừa hết lỗi vừa đúng chuẩn trợ năng.
+`test_khong_o_chon_nao_bi_long_trong_label` canh cấu trúc này, vì đây đúng là
+loại lỗi mà chỉ phép kiểm cấu trúc mới giữ được.
+
 ### Các quy ước nhỏ dễ vấp
 
 - `store.py` chỉ là mặt tiền mỏng của `db.py`, giữ tên hàm cũ thời còn lưu JSON.

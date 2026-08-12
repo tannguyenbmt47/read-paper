@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.8.1
+
+**Model dropdowns opened and closed again before you could pick anything.** A
+`<select>` nested inside a `<label>` gets the click twice: once directly, and
+once forwarded by the label to its labelled control. Chromium opens the popup on
+the first and closes it on the second. All eight selects in the app were built
+that way.
+
+What makes this one worth naming is that automated checking could not see it.
+Dispatching synthetic `mousedown`/`click` at the select never travels through
+the label, so a MutationObserver saw no rebuild, focus stayed put, and every
+measurement said the control was fine. Only a real mouse press reproduces it.
+Labels are now siblings linked by `for=`, which also gives every select a proper
+accessible name, and a structural test keeps them unnested.
+
 ## 1.8.0
 
 **Everything you create can now be edited and deleted, not just created and

@@ -392,3 +392,32 @@ def test_doi_ten_bai(app_client, doc):
                             json={"title": "  "}).status_code == 400
     assert app_client.patch("/api/doc/khongcobai/title",
                             json={"title": "x"}).status_code == 404
+
+
+def test_khong_o_chon_nao_bi_long_trong_label(app_client):
+    """`<select>` nằm trong `<label>` thì click nổi lên label, label chuyển tiếp
+    thành một cú kích hoạt nữa xuống chính cái select — dropdown mở ra rồi đóng
+    ngay, không kịp chọn. Lỗi Chromium đã biết, và nó **không** tái hiện được
+    bằng sự kiện tổng hợp, nên chỉ có phép kiểm cấu trúc này canh được.
+
+    Nhãn phải đứng riêng và nối bằng `for=`.
+    """
+    import re
+    from pathlib import Path
+    html = Path(__file__).resolve().parents[1].joinpath("web/index.html").read_text()
+
+    long_nhau = []
+    for m in re.finditer(r"<label[^>]*>((?:(?!</label>).)*?)</label>", html, re.S):
+        if "<select" in m.group(1):
+            got = re.search(r'id="([^"]+)"', m.group(1))
+            long_nhau.append(got.group(1) if got else "?")
+    assert not long_nhau, f"select bị lồng trong label: {long_nhau}"
+
+    # và mọi select phải có tên gọi được: label[for], aria-label, hoặc title
+    for m in re.finditer(r"<select\b([^>]*)>", html):
+        attrs = m.group(1)
+        sid = re.search(r'id="([^"]+)"', attrs)
+        assert sid, f"select không có id: {attrs[:60]}"
+        co_ten = (f'for="{sid.group(1)}"' in html
+                  or "aria-label=" in attrs or "title=" in attrs)
+        assert co_ten, f"select {sid.group(1)} không có nhãn nào"
