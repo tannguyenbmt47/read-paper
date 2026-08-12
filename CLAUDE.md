@@ -942,6 +942,44 @@ phép đo nói dối. Phải `Page.reload(ignoreCache=True)`.
 ký hiệu) dùng font thường; chỉ ký hiệu lẻ trong `<code>` mới để mono. Cùng họ
 với cái bẫy `line-height` ở slide.
 
+### Đủ bộ CRUD — mỗi thứ người dùng tạo ra phải sửa và xoá được
+
+Phần lớn màn hình ban đầu chỉ có **tạo** và **đọc**. Kiểu thiếu này không lộ ra
+lúc thử, vì lúc thử thì cái gì cũng vừa mới tạo và vừa đúng; nó lộ ra lúc dùng
+thật, khi một thứ vào sai và **không có đường nào sửa ngoài xoá đi làm lại** —
+mà làm lại thì tốn tiền.
+
+Chỗ đau nhất đã gặp: một bài bóc hỏng tiêu đề, còn mỗi *"Question Answering"*.
+Tiêu đề không chỉ là nhãn — nó nằm trong **chỉ mục toàn văn** (`chunk.title`),
+trong **phiếu toàn kho** gửi cho model, và là thứ dùng để **tra Semantic
+Scholar** cho phần đối chiếu. Sai tiêu đề là hỏng cả ba, và trước bản này không
+sửa được ở đâu cả.
+
+Ranh giới phải giữ: **cho sửa thứ người nhập, không cho sửa thứ pass sinh ra.**
+`PATCH …/paper/{pid}` nhận `title` / `year` / `venue` / `authors` / `url`, và
+lặng lẽ bỏ qua `card` / `status` / `lecture`. Sửa tay được mấy cột đó thì
+`check_answer`, ràng buộc số liệu và `check_depth` thành vô nghĩa — cùng lý do
+`PATCH …/slides` cấm sửa `source_block_ids`.
+
+Ba chỗ dễ quên khi thêm đường xoá:
+
+- **Xoá phải kéo theo thứ trỏ tới nó.** `drop_run` phải xoá cả `qcache`: bỏ sót
+  thì hỏi lại đúng câu đó trúng cache, tra ra một `run_id` không còn tồn tại, và
+  người dùng nhận màn hình trống mà không hiểu vì sao.
+- **Đổi tiêu đề phải đồng bộ xuống `chunk.title` rồi reindex** — `update_paper`
+  đã lo, đừng ghi thẳng vào bảng (xem bẫy external content).
+- **Hỏi trước khi xoá thứ dựng lại tốn tiền, và nói rõ bao nhiêu.** "Bạn có chắc
+  không" mà không kèm giá thì người dùng không có cơ sở nào để chắc.
+
+Đổi tên bài ở luồng đọc-hiểu thì an toàn tuyệt đối: `title` **không** nằm trong
+`cached_prefix`, nên không bản dịch nào phải bỏ đi.
+
+Và một bẫy của chính việc soát: **uvicorn không bind được cổng thì im lặng bỏ
+qua**, tiến trình cũ vẫn phục vụ mã cũ và mọi phép thử nói dối — đã mất công
+truy một lỗi 405 "Method Not Allowed" của route vừa thêm, hoá ra server đang
+chạy là bản khởi động từ nửa tiếng trước. Cùng họ với container Docker giữ cổng
+8010. Soát bằng `ps` trước khi tin kết quả.
+
 ### Các quy ước nhỏ dễ vấp
 
 - `store.py` chỉ là mặt tiền mỏng của `db.py`, giữ tên hàm cũ thời còn lưu JSON.

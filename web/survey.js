@@ -304,6 +304,7 @@ function svRenderPapers(more = false) {
         ${p.status === "indexed"
           ? '<button class="btn xs" data-act="enrich">Bơm nội dung · ~$0,034</button>' : ""}
         ${p.card ? '<button class="btn xs" data-act="recard">Bóc lại phiếu · ~$0,01</button>' : ""}
+        <button class="btn xs" data-act="edit" title="Sửa tiêu đề, năm, nơi đăng — miễn phí">Sửa</button>
         ${SV.surveys.length > 1
           ? '<button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>' : ""}
         <button class="btn xs is-danger" data-act="drop">Bỏ</button>
@@ -326,6 +327,64 @@ function svRenderPapers(more = false) {
    phần tử vào khung nhìn, nên không có hàm nào chạy liên tục trong lúc cuộn.
    Ngắt quan sát ngay sau khi nạp, rồi lần vẽ sau gắn lại — nếu không thì một
    phần tử bị quan sát nhiều lần và nạp nhảy cóc mấy trang một lúc. */
+/* Sửa metadata của bài — mở ngay trong thẻ, cùng lối với hộp chuyển kho.
+
+   Tiêu đề bóc từ PDF sai là chuyện thường, và nó KHÔNG chỉ xấu: tiêu đề nằm
+   trong chỉ mục toàn văn, trong phiếu toàn kho gửi cho model, và là thứ dùng để
+   tra Semantic Scholar cho phần đối chiếu. Đã gặp một bài bóc còn mỗi "Question
+   Answering" — hỏng cả ba chỗ cùng lúc, mà trước bản này không có cách nào sửa. */
+const SV_META = [
+  ["title", "Tiêu đề", "text"],
+  ["year", "Năm", "number"],
+  ["venue", "Nơi đăng", "text"],
+  ["authors", "Tác giả", "text"],
+  ["url", "Liên kết", "text"],
+];
+
+function svEditBox(li, pid) {
+  if (li.querySelector(".sv-edit")) return;
+  const p = SV.papers.find((x) => x.id === pid) || {};
+  const box = document.createElement("div");
+  box.className = "sv-move sv-edit";
+  box.innerHTML = SV_META.map(([k, nhan, kieu]) =>
+      `<label>${nhan}<input class="input" data-k="${k}" type="${kieu}"
+        value="${esc(p[k] == null ? "" : String(p[k]))}"></label>`).join("")
+    + `<div class="sv-moveact">
+         <button class="btn xs" data-go="1">Lưu · miễn phí</button>
+         <button class="btn xs" data-cancel="1">Thôi</button>
+       </div>
+       <p class="small muted">Tiêu đề cũng là thứ dùng để đánh chỉ mục và để tra
+         bài trên Semantic Scholar, nên sửa đúng thì phần đối chiếu ở tab Bài
+         giảng cũng tra lại được.</p>`;
+  li.appendChild(box);
+  box.querySelector("input").focus();
+  box.querySelector("input").select();
+
+  box.onkeydown = (e) => {
+    if (e.key === "Enter") box.querySelector("[data-go]").click();
+    if (e.key === "Escape") box.remove();
+  };
+  box.onclick = async (e) => {
+    if (e.target.dataset.cancel) { box.remove(); return; }
+    if (!e.target.dataset.go) return;
+    const body = {};
+    box.querySelectorAll("input[data-k]").forEach((i) => { body[i.dataset.k] = i.value; });
+    e.target.disabled = true;
+    try {
+      await svFetch(`/api/survey/${SV.id}/paper/${pid}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      svProg("đã lưu · miễn phí", true);
+      await svLoad();
+    } catch (err) {
+      box.querySelector("p").textContent = err.message;
+      box.querySelector("p").classList.add("sv-moveerr");
+      e.target.disabled = false;
+    }
+  };
+}
+
 /* Chuyển bài sang kho khác — mở ngay tại chỗ, không mở hộp thoại.
 
    Nạp nhầm kho là chuyện thường, và cách chữa hiển nhiên (bỏ đi, nạp lại) ném
@@ -390,13 +449,25 @@ function svRenderHistory(runs) {
   const show = runs.slice(0, 8);
   $("#svHistory").innerHTML = show.length
     ? '<h3 class="sv-h3">Đã hỏi</h3>' + show.map((r) =>
-      `<button class="sv-runitem" data-run="${esc(r.id)}">
-         <span>${esc(r.question)}</span><i>${money(r.cost)}</i></button>`).join("")
+      `<div class="sv-runrow">
+         <button class="sv-runitem" data-run="${esc(r.id)}">
+           <span>${esc(r.question)}</span><i>${money(r.cost)}</i></button>
+         <button class="sv-runx" data-dropRun="${esc(r.id)}" title="Xoá lượt hỏi này">×</button>
+       </div>`).join("")
       + (runs.length > show.length
         ? `<button class="sv-link" id="svAllRuns">Xem cả ${runs.length} lượt…</button>` : "")
     : "";
   const all = $("#svAllRuns");
   if (all) all.onclick = () => svRenderAllRuns(runs);
+
+  $("#svHistory").onclick = async (e) => {
+    const x = e.target.closest("[data-dropRun]");
+    if (!x) return;
+    e.stopPropagation();            // đừng mở lượt hỏi mà mình vừa xoá
+    if (!confirm("Xoá lượt hỏi này khỏi lịch sử?")) return;
+    await svFetch(`/api/survey/${SV.id}/run/${x.dataset.dropRun}`, { method: "DELETE" });
+    await svLoad();
+  };
 }
 
 function svRenderAllRuns(runs) {
@@ -725,6 +796,7 @@ async function svLoadSynth() {
   svSynWarns(d.synth?.warns);
   $("#svSynMd").href = `/api/survey/${SV.id}/synthesis?fmt=md`;
   $("#svSynMd").classList.toggle("hidden", !d.synth);
+  $("#svSynDrop").classList.toggle("hidden", !d.synth);
   $("#svSynGo").textContent = d.synth ? "Dựng lại · ~$0,09" : "Dựng · ~$0,09";
   $("#svSynGo").title = `Chạy bằng ${(SV.models || {}).strong || "?"}`;
   $("#svSynProg").textContent = d.carded
@@ -749,6 +821,7 @@ function svBuildSynth() {
     svSynWarns(d.synth.warns);
     $("#svSynProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
     $("#svSynMd").classList.remove("hidden");
+    $("#svSynDrop").classList.remove("hidden");
     btn.textContent = "Dựng lại · ~$0,09";
     btn.disabled = false;
     es.close();
@@ -764,6 +837,44 @@ function svBuildSynth() {
 }
 
 /* ------------------------------------------------------ bảng trích xuất */
+
+/* Sửa cột của bảng so sánh.
+
+   Cột dựng thẳng từ `card` nên **thêm/bớt cột không gọi model**: ô nào phiếu đã
+   có thì hiện ngay, ô nào chưa có thì trống cho tới lần bóc lại phiếu. Vì thế
+   thao tác này miễn phí và nói ra được điều đó.
+
+   Mỗi dòng là `khoá | Nhãn`: khoá phải khớp tên trường trong phiếu (`task`,
+   `method`, `datasets`…), nhãn là thứ hiện trên đầu cột. Dạng một dòng một cột
+   dễ sửa hơn hẳn một cái bảng có nút thêm/xoá từng hàng, mà lại sắp xếp lại
+   được bằng cách kéo dòng. */
+async function svEditFacets() {
+  if (!await svNeedId()) return;
+  const cur = (SV.facets || []).map((f) => `${f.key} | ${f.label}`).join("\n");
+  const got = prompt(
+    "Mỗi dòng một cột, dạng:  khoá | Nhãn hiện trên bảng\n"
+    + "Khoá phải trùng tên trường trong phiếu (task, problem, idea, method,\n"
+    + "datasets, metrics, baselines, novelty, limitations…).\n\n"
+    + "Miễn phí — bảng dựng thẳng từ phiếu đã bóc, không gọi model.",
+    cur);
+  if (got === null) return;
+
+  const facets = got.split("\n").map((line) => {
+    const [k, ...rest] = line.split("|");
+    const key = (k || "").trim();
+    return key ? { key, label: (rest.join("|") || key).trim() || key } : null;
+  }).filter(Boolean);
+  if (!facets.length) {
+    alert("Cần ít nhất một cột.");
+    return;
+  }
+  await svFetch(`/api/survey/${SV.id}`, {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ facets }),
+  });
+  await svLoad();
+  await svGrid();
+}
 
 /* Cắt chữ Ở ĐÂY, không cắt bằng CSS.
 
@@ -1166,6 +1277,9 @@ function svWire() {
     } else if (act === "move") {
       svMoveBox(btn.closest("[data-pid]"), pid);
       return;                       // ô chọn tự lo phần còn lại
+    } else if (act === "edit") {
+      svEditBox(btn.closest("[data-pid]"), pid);
+      return;
     } else {
       btn.disabled = true;
       svProg("đang chạy…");
@@ -1196,6 +1310,22 @@ function svWire() {
     };
   });
   $("#svSynGo").onclick = svBuildSynth;
+
+  /* Bỏ bản đã dựng. Dựng lại tốn tiền nên phải hỏi trước và nói rõ bao nhiêu —
+     "bạn có chắc không" mà không kèm giá thì người dùng không có cơ sở để chắc. */
+  $("#svSynDrop").onclick = async () => {
+    if (!SV.id) return;
+    if (!confirm("Bỏ bản tổng hợp này?\n\nDựng lại tốn khoảng $0,09.")) return;
+    await svFetch(`/api/survey/${SV.id}/synthesis`, { method: "DELETE" });
+    await svLoadSynth();
+  };
+  $("#svLecDrop").onclick = async () => {
+    if (!SV.id || !SV.lecPid) return;
+    if (!confirm("Bỏ bài giảng của bài này?\n\nDựng lại tốn khoảng $0,08.")) return;
+    await svFetch(`/api/survey/${SV.id}/paper/${SV.lecPid}/lecture`, { method: "DELETE" });
+    await svLoadLec();
+  };
+  $("#svFacets").onclick = svEditFacets;
   $("#svLecGo").onclick = svBuildLec;
   $("#svLecPick").onchange = (e) => {
     SV.lecPid = e.target.value;
@@ -1311,6 +1441,7 @@ async function svLoadLec() {
   svLecWarns(d.lecture?.warns);
   $("#svLecMd").href = `/api/survey/${SV.id}/paper/${pid}/lecture?fmt=md`;
   $("#svLecMd").classList.toggle("hidden", !d.lecture?.sections);
+  $("#svLecDrop").classList.toggle("hidden", !d.lecture?.sections);
   go.textContent = d.lecture?.sections ? "Dựng lại · ~$0,08" : "Dựng · ~$0,08";
   $("#svLecProg").textContent = d.has_text
     ? "" : "Bài này chưa có nội dung đã bóc — nạp lại PDF trước.";
@@ -1493,6 +1624,7 @@ function svBuildLec() {
     svLecWarns(d.lecture.warns);
     $("#svLecProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
     $("#svLecMd").classList.remove("hidden");
+    $("#svLecDrop").classList.remove("hidden");
     btn.textContent = "Dựng lại · ~$0,08";
     btn.disabled = false;
     es.close();

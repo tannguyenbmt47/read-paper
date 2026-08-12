@@ -223,11 +223,28 @@ async function loadRecent() {
           <b>${esc(d.title_vi || d.title)}</b>
           <span>${d.blocks} khối · đã dịch ${pct}% · ${esc(d.model || "")}</span>
         </span>
+        <button class="icon-btn" data-ren="${esc(d.id)}" title="Đổi tên bài">✎</button>
         <button class="icon-btn" data-del="${esc(d.id)}" title="Xoá">🗑</button>
       </li>`;
     })
     .join("");
   $$("#recentList .rt").forEach((el) => (el.onclick = () => openDoc(el.dataset.id)));
+  /* Tiêu đề đoán từ khối đầu trang nên hay sai — dính tên hội nghị, dính số
+     trang, hoặc cụt còn vài chữ. Nó hiện ở danh sách này, ở đầu bản xuất ra và
+     ở slide tiêu đề, nên sai một chỗ là sai khắp nơi. Đổi tên không đụng nội
+     dung: `title` không nằm trong `cached_prefix` nên không có bản dịch nào
+     phải bỏ đi. */
+  $$("#recentList [data-ren]").forEach((el) => (el.onclick = async () => {
+    const id = el.dataset.ren;
+    const cur = docs.find((d) => d.id === id) || {};
+    const title = prompt("Tên bài:", cur.title_vi || cur.title || "");
+    if (!title || !title.trim()) return;
+    await fetch(`/api/doc/${id}/title`, {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: title.trim() }),
+    });
+    loadRecent();
+  }));
   $$("#recentList [data-del]").forEach((el) => (el.onclick = async () => {
     if (!confirm("Xoá bài này khỏi máy?")) return;
     await fetch(`/api/doc/${el.dataset.del}`, { method: "DELETE" });

@@ -223,6 +223,45 @@ async def recard(sid: str, pid: str):
         raise HTTPException(502, f"Lỗi khi bóc lại phiếu: {e}") from e
 
 
+@router.patch("/{sid}/paper/{pid}")
+async def patch_paper(sid: str, pid: str, body: dict = Body(...)):
+    """Sửa metadata của bài. **Không gọi model, miễn phí.**
+
+    Tiêu đề bóc từ PDF sai là chuyện thường (đã gặp một bài chỉ còn hai chữ
+    "Question Answering"), và nó không chỉ xấu: tiêu đề nằm trong **chỉ mục toàn
+    văn**, trong phiếu toàn kho gửi cho model, và là thứ dùng để tra Semantic
+    Scholar. Sai tiêu đề là hỏng cả ba, nên phải sửa được.
+
+    `update_paper` tự đồng bộ `chunk.title` rồi reindex khi tiêu đề đổi — đừng
+    ghi thẳng vào bảng, xem phần bẫy external content ở `survey/db.py`.
+
+    Chỉ cho sửa metadata do người nhập. `card`, `lecture`, `status` là kết quả
+    của các pass có chốt chặn; sửa tay được thì chốt chặn thành vô nghĩa — cùng
+    lý do `PATCH …/slides` không cho sửa `source_block_ids`.
+    """
+    _need(sid)
+    p = sdb.load_paper(pid)
+    if p["survey_id"] != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+
+    fields: dict = {}
+    for k in ("title", "authors", "venue", "doi", "url"):
+        if k in body:
+            fields[k] = str(body[k] or "").strip()
+    if "year" in body:
+        try:
+            fields["year"] = int(body["year"]) if str(body["year"]).strip() else None
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Năm phải là số") from None
+    if not fields:
+        raise HTTPException(400, "Không có gì để sửa")
+    if "title" in fields and not fields["title"]:
+        raise HTTPException(400, "Tiêu đề không được để trống")
+
+    sdb.update_paper(pid, **fields)
+    return sdb.load_paper(pid, full=False)
+
+
 @router.post("/{sid}/paper/{pid}/move")
 async def move_paper(sid: str, pid: str, to: str = Body(..., embed=True)):
     """Chuyển bài sang kho khác. **Không bóc lại, không gọi model, miễn phí.**
@@ -305,6 +344,14 @@ async def get_synth(sid: str, fmt: str = "json"):
             "carded": sdb.stats(sid)["carded"]}
 
 
+@router.delete("/{sid}/synthesis")
+async def drop_synth(sid: str):
+    """Bỏ bản tổng hợp. Miễn phí, nhưng dựng lại thì tốn ~$0,09."""
+    _need(sid)
+    sdb.drop_synth(sid)
+    return {"ok": True}
+
+
 @router.get("/{sid}/synthesis/build")
 async def build_synth(sid: str):
     """Dựng lại bản tổng hợp, phát SSE. **Tốn tiền** — một lượt model mạnh."""
@@ -345,6 +392,17 @@ async def get_lecture(sid: str, pid: str, fmt: str = "json"):
                                  media_type="text/markdown")
     return {"lecture": lec, "stale": lecture.stale(p),
             "title": p.get("title"), "has_text": bool(sdb.paper_chunks(pid, level=0))}
+
+
+@router.delete("/{sid}/paper/{pid}/lecture")
+async def drop_lecture(sid: str, pid: str):
+    """Bỏ bài giảng đã dựng. Miễn phí, nhưng dựng lại thì tốn ~$0,08."""
+    _need(sid)
+    p = sdb.load_paper(pid)
+    if p["survey_id"] != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+    sdb.drop_lecture(pid)
+    return {"ok": True}
 
 
 @router.get("/{sid}/paper/{pid}/lecture/refs")
@@ -436,6 +494,17 @@ def _cell(card: dict, key: str) -> str:
                 for x in v[:3])
         return ", ".join(str(x) for x in v[:8])
     return str(v)
+
+
+@router.delete("/{sid}/run/{rid}")
+async def drop_run(sid: str, rid: str):
+    """Xoá một lượt hỏi khỏi lịch sử, kèm mục cache trỏ tới nó."""
+    _need(sid)
+    r = sdb.load_run(rid)
+    if not r or r.get("survey_id") != sid:
+        raise HTTPException(404, "Không tìm thấy lượt hỏi này trong kho")
+    sdb.drop_run(rid)
+    return {"ok": True}
 
 
 @router.get("/{sid}/matrix")

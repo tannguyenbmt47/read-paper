@@ -629,3 +629,17 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
 .sv-moveact { display: flex; gap: 6px; margin: 8px 0 6px; }
 .sv-move p { margin: 0; line-height: 1.4; }
 .sv-moveerr { color: var(--warn, var(--muted)); }
+
+/* Sửa metadata bài — dùng lại khung của hộp chuyển kho, xem `svEditBox`. */
+.sv-edit label { margin-bottom: 7px; }
+.sv-edit .input { width: 100%; min-width: 0; margin-top: 2px; }
+
+/* Nút xoá trên từng lượt hỏi. Nằm cạnh chứ không nằm TRONG nút mở lượt hỏi:
+   nút lồng trong nút là HTML không hợp lệ, và bấm nhầm thì mất lượt hỏi. */
+.sv-runrow { display: flex; align-items: stretch; gap: 2px; }
+.sv-runrow .sv-runitem { flex: 1; min-width: 0; }
+.sv-runx {
+  flex: none; width: 22px; border: 0; background: none; cursor: pointer;
+  color: var(--muted); border-radius: var(--radius); line-height: 1;
+}
+.sv-runx:hover { background: var(--surface-2); color: var(--ink); }

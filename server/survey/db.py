@@ -1006,6 +1006,34 @@ def list_runs(survey_id: str, limit: int = 40) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def drop_run(rid: str) -> bool:
+    """Xoá một lượt hỏi khỏi lịch sử, kèm mục cache trỏ tới nó.
+
+    Phải xoá cả `qcache`: bỏ sót thì hỏi lại đúng câu đó sẽ trúng cache, tra ra
+    một `run_id` không còn tồn tại, và người dùng nhận về màn hình trống mà
+    không hiểu vì sao.
+    """
+    check_id(rid)
+    with conn() as c:
+        c.execute("DELETE FROM qcache WHERE run_id = ?", (rid,))
+        return c.execute("DELETE FROM run WHERE id = ?", (rid,)).rowcount > 0
+
+
+def drop_synth(sid: str) -> None:
+    """Bỏ bản tổng hợp của kho. Dựng lại tốn ~$0,09 nên phải hỏi trước."""
+    with conn() as c:
+        c.execute("UPDATE survey SET synth = NULL, synth_fp = NULL, updated_at = ?"
+                  " WHERE id = ?", (_now(), check_id(sid)))
+
+
+def drop_lecture(pid: str) -> None:
+    """Bỏ bài giảng của một bài. Hồ sơ đối chiếu (`refs`) giữ lại — nó miễn phí
+    lấy về nhưng đi ra mạng ngoài, và không phải thứ người ta muốn bỏ."""
+    with conn() as c:
+        c.execute("UPDATE paper SET lecture = NULL, lecture_fp = NULL, updated_at = ?"
+                  " WHERE id = ?", (_now(), check_id(pid)))
+
+
 def corpus_fingerprint(survey_id: str) -> str:
     """Vân tay của kho: đổi khi thêm/bớt bài hoặc bóc lại phiếu.
 

@@ -375,3 +375,20 @@ def test_sua_dan_y_bai_khong_co(app_client, doc):
     store.save(d)
     r = app_client.patch(f"/api/doc/{doc['id']}/outline", json={"drop": "o1"})
     assert r.status_code == 404
+
+
+def test_doi_ten_bai(app_client, doc):
+    """Tiêu đề đoán từ khối đầu trang nên hay sai, mà nó hiện ở danh sách bài, ở
+    đầu bản xuất ra và ở slide tiêu đề — sai một chỗ là sai khắp nơi.
+
+    Đổi tên KHÔNG đụng nội dung: `title` không nằm trong `cached_prefix` nên
+    không có bản dịch nào phải bỏ đi.
+    """
+    did = doc["id"]
+    r = app_client.patch(f"/api/doc/{did}/title", json={"title": "Tên mới của bài"})
+    assert r.status_code == 200 and r.json()["title"] == "Tên mới của bài"
+    assert app_client.get(f"/api/doc/{did}").json()["title"] == "Tên mới của bài"
+    assert app_client.patch(f"/api/doc/{did}/title",
+                            json={"title": "  "}).status_code == 400
+    assert app_client.patch("/api/doc/khongcobai/title",
+                            json={"title": "x"}).status_code == 404

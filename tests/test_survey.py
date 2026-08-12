@@ -882,3 +882,89 @@ def test_chuyen_bai_khong_thuoc_kho_thi_tu_choi(client, sdb, kho):
     sid2 = client.post("/api/survey", json={"name": "kho năm"}).json()["id"]
     assert client.post(f"/api/survey/{sid2}/paper/{kho['p2']}/move",
                        json={"to": sid2}).status_code == 404
+
+
+# ------------------------------------------------------------- đủ bộ CRUD
+#
+# Mỗi thực thể người dùng tạo ra phải sửa được và xoá được từ giao diện, không
+# chỉ tạo rồi đọc. Chỗ đau nhất đã gặp thật: tiêu đề bóc hỏng thành "Question
+# Answering" — nó nằm trong chỉ mục toàn văn, trong phiếu gửi cho model, và là
+# thứ dùng để tra Semantic Scholar, mà không có cách nào sửa.
+
+
+def test_sua_tieu_de_bai_thi_chi_muc_va_doan_theo(client, sdb, kho):
+    r = client.patch(f"/api/survey/{kho['sid']}/paper/{kho['p1']}",
+                     json={"title": "CIRAG đã sửa tên", "year": 2026, "venue": "NeurIPS"})
+    assert r.status_code == 200
+    p = sdb.load_paper(kho["p1"])
+    assert p["title"] == "CIRAG đã sửa tên" and p["year"] == 2026
+
+    # `chunk.title` là bản chép dùng cho chỉ mục — lệch là chỉ mục hỏng câm
+    c = sdb.conn()
+    assert {r["title"] for r in c.execute(
+        "SELECT title FROM chunk WHERE paper_id = ?", (kho["p1"],))} == {"CIRAG đã sửa tên"}
+    assert sdb.integrity() == ""
+
+
+def test_khong_cho_sua_thu_do_pass_co_chot_chan_sinh_ra(client, sdb, kho):
+    """`card` và `status` là kết quả của pass có chốt chặn. Sửa tay được thì
+    chốt chặn thành vô nghĩa — cùng lý do `PATCH …/slides` cấm sửa
+    `source_block_ids`."""
+    truoc = sdb.load_paper(kho["p1"])
+    client.patch(f"/api/survey/{kho['sid']}/paper/{kho['p1']}",
+                 json={"title": "vẫn đổi được", "card": {"task": "bịa"},
+                       "status": "carded"})
+    sau = sdb.load_paper(kho["p1"])
+    assert sau["title"] == "vẫn đổi được"
+    assert sau["card"] == truoc["card"] and sau["status"] == truoc["status"]
+
+
+def test_tieu_de_rong_bi_tu_choi(client, kho):
+    assert client.patch(f"/api/survey/{kho['sid']}/paper/{kho['p1']}",
+                        json={"title": "   "}).status_code == 400
+
+
+def test_xoa_luot_hoi_thi_cache_tro_toi_no_cung_di(client, sdb, kho):
+    """Bỏ sót `qcache` thì hỏi lại đúng câu đó trúng cache, tra ra một `run_id`
+    không còn tồn tại, và người dùng nhận màn hình trống không hiểu vì sao."""
+    rid = sdb.save_run(kho["sid"], "câu hỏi thử", "trả lời", [], [], [], {}, 0.01)
+    sdb.qcache_put(sdb.qcache_key(kho["sid"], "câu hỏi thử"), rid)
+    c = sdb.conn()
+    assert c.execute("SELECT COUNT(*) FROM qcache WHERE run_id = ?", (rid,)).fetchone()[0] == 1
+
+    assert client.delete(f"/api/survey/{kho['sid']}/run/{rid}").status_code == 200
+    assert sdb.load_run(rid) is None
+    assert c.execute("SELECT COUNT(*) FROM qcache WHERE run_id = ?", (rid,)).fetchone()[0] == 0
+
+
+def test_xoa_luot_hoi_cua_kho_khac_thi_tu_choi(client, sdb, kho):
+    sid2 = client.post("/api/survey", json={"name": "kho sáu"}).json()["id"]
+    rid = sdb.save_run(sid2, "của kho khác", "x", [], [], [], {}, 0.0)
+    assert client.delete(f"/api/survey/{kho['sid']}/run/{rid}").status_code == 404
+    assert sdb.load_run(rid) is not None
+
+
+def test_xoa_ban_tong_hop_va_bai_giang(client, sdb, kho):
+    sdb.save_synth(kho["sid"], {"scope": "thử"})
+    assert sdb.load_survey(kho["sid"])["synth"]
+    assert client.delete(f"/api/survey/{kho['sid']}/synthesis").status_code == 200
+    assert not sdb.load_survey(kho["sid"])["synth"]
+
+    sdb.update_paper(kho["p1"], lecture='{"sections": {}}', lecture_fp="x")
+    assert client.delete(
+        f"/api/survey/{kho['sid']}/paper/{kho['p1']}/lecture").status_code == 200
+    assert not sdb.load_paper(kho["p1"]).get("lecture")
+    # hồ sơ đối chiếu giữ lại: nó miễn phí nhưng đi ra mạng ngoài
+    sdb.update_paper(kho["p1"], refs='{"refs": []}')
+    client.delete(f"/api/survey/{kho['sid']}/paper/{kho['p1']}/lecture")
+    assert sdb.load_paper(kho["p1"]).get("refs")
+
+
+def test_sua_cot_bang_so_sanh(client, sdb, kho):
+    """Cột dựng thẳng từ phiếu nên thêm/bớt cột KHÔNG gọi model."""
+    r = client.patch(f"/api/survey/{kho['sid']}",
+                     json={"facets": [{"key": "idea", "label": "Ý tưởng"}]})
+    assert r.status_code == 200
+    assert sdb.load_survey(kho["sid"])["facets"] == [{"key": "idea", "label": "Ý tưởng"}]
+    m = client.get(f"/api/survey/{kho['sid']}/matrix").json()
+    assert [f["label"] for f in m["facets"]] == ["Ý tưởng"]

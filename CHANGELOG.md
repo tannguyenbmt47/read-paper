@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.8.0
+
+**Everything you create can now be edited and deleted, not just created and
+read.** Most screens had only the first two: fine while testing, where
+everything is new and correct, and a wall the moment something goes in wrong
+and the only remedy is delete-and-redo — which costs money.
+
+The worst case was a paper whose title had been extracted as just *"Question
+Answering"*. A title is not only a label here: it goes into the full-text
+index, into the corpus digest sent to the model, and it is what Semantic
+Scholar is queried with. A wrong title broke all three, and nothing in the
+interface could fix it. Papers now have an inline editor for title, year,
+venue, authors and link; documents in the reader can be renamed.
+
+Also added: delete a question from the history (which also drops the cache
+entry pointing at it — otherwise asking again hits the cache, resolves a run
+id that no longer exists, and shows a blank screen), discard a lecture or a
+synthesis, and edit the comparison table's columns. Deletions that cost money
+to rebuild state the price in the confirmation, because "are you sure?"
+without a number gives you nothing to be sure with.
+
+The line held throughout: **what you typed is editable, what a guarded pass
+produced is not.** The paper editor silently ignores `card`, `status` and
+`lecture` — hand-editing those would make the number binding and the depth
+checks meaningless, the same reason `PATCH …/slides` refuses
+`source_block_ids`.
+
 ## 1.7.2
 
 **Move a paper to another corpus.** Loading a PDF into the wrong corpus is easy,

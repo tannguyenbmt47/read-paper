@@ -504,6 +504,27 @@ async def confirm(doc_id: str):
 _MODEL_ID = re.compile(r"^~?[\w.\-]+/[\w.\-:]+$")
 
 
+@app.patch("/api/doc/{doc_id}/title")
+async def set_title(doc_id: str, body: dict = Body(...)):
+    """Đổi tên bài. **Không gọi model, miễn phí.**
+
+    Tiêu đề đoán từ khối đầu trang nên hay sai — dính tên hội nghị, dính số
+    trang, hoặc cụt còn vài chữ. Nó hiện ở danh sách bài, ở đầu bản xuất ra và ở
+    tiêu đề slide, nên sai một chỗ là sai khắp nơi.
+
+    Chỉ đổi nhãn, không đụng nội dung: `doc["title"]` không nằm trong
+    `cached_prefix` nên không hỏng cache dịch, và không có bản dịch nào phải bỏ.
+    """
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Tên bài không được để trống")
+    try:
+        doc = store.update(doc_id, title=title[:300])
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    return {"ok": True, "title": doc["title"]}
+
+
 @app.patch("/api/doc/{doc_id}/model")
 async def set_model(doc_id: str, body: dict = Body(...)):
     """Đổi model cho những lượt gọi sau.
