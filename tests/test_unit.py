@@ -687,3 +687,73 @@ def test_luot_vet_khong_doi_phep_gan_dung_san():
     nho = (90.0, 295.0, 210.0, 315.0)
     got = assign_spans(_TrangGia([span]), [to, nho])
     assert got[0] == [] and [s["text"] for s in got[1]] == ["trong công thức"]
+
+
+# ------------- phễu lọc: gom mảnh bị cắt giữa từ, tắt cờ dịch cho khối rác
+
+
+def _B(bid, kind, text):
+    from server.parser import Block
+    return Block(bid, kind, text)
+
+
+def test_noi_lai_doan_bi_hinh_chen_vao_giua_tu():
+    """Ở bài hai cột, hình và bảng được xếp lên đầu cột nên chúng chen vào GIỮA
+    CÂU. Đo trên bài CIRAG: 6 đoạn kết thúc bằng `differ-`, `compo-`, `sen-`…
+    Mỗi mảnh thành một khối riêng, được dịch riêng, và model tự ghi vào phần
+    giải thích rằng "câu gốc bị cắt nên chưa cho biết cụ thể" — vừa tốn hai lượt
+    gọi vừa cho ra bản dịch không thể đúng.
+    """
+    from server.parser import stitch_hyphenated
+    bs = [_B("b90", "para", "Table 3 compares differ-"),
+          _B("b91", "caption", "Figure 5: Effect of Trajectory Distillation"),
+          _B("b92", "caption", "Table 3: Ablation Study on Cascaded"),
+          _B("b93", "para", "ent evidence granularities and cascade variants.")]
+    assert stitch_hyphenated(bs) == 1
+    assert bs[0].text.startswith("Table 3 compares different evidence granularities")
+    assert len(bs) == 3            # mảnh sau đã dời hết chữ, không còn khối rỗng
+
+
+def test_khong_noi_khi_doan_sau_mo_dau_bang_chu_hoa():
+    """Chữ hoa là câu mới. Chỉ có gạch nối thì `w/o Triple + Sentence-` cũng
+    khớp — phải đòi CẢ HAI dấu hiệu."""
+    from server.parser import stitch_hyphenated
+    bs = [_B("b1", "para", "and Suf(a) = 1 oth-"),
+          _B("b2", "equation", "g = min ..."),
+          _B("b3", "para", "The final output is the answer.")]
+    assert stitch_hyphenated(bs) == 0
+    assert bs[0].text.endswith("oth-")
+
+
+def test_khong_noi_vat_qua_muc_khac():
+    """Gặp heading thì dừng — đoạn cuối mục này không phải là đầu mục sau."""
+    from server.parser import stitch_hyphenated
+    bs = [_B("b1", "para", "expands context from triples to sen-"),
+          _B("b2", "heading", "5.3 Kết quả"),
+          _B("b3", "para", "tences and passages as needed.")]
+    assert stitch_hyphenated(bs) == 0
+
+
+def test_tat_co_dich_cho_khoi_rac():
+    """Mỗi khối là MỘT lượt dịch cộng MỘT lượt giải thích, nên `57.3%` lạc ra từ
+    bảng tốn đúng hai lượt gọi model cho thứ không ai đọc."""
+    from server.parser import mark_noise
+    bs = [_B("b1", "para", "57.3%"),
+          _B("b2", "para", "(4) ..."),
+          _B("b3", "meta", "^{1}Our code can be found via https://github.com/x/y."),
+          _B("b4", "para", "weizl2@mails.neu.edu.cn"),
+          _B("b5", "meta", "^{1}School of Computer Science and Engineering, "
+                           "Northeastern University, Shenyang 110819, China"),
+          _B("b6", "para", "Chúng tôi đề xuất CIRAG, một khung truy hồi kiến tạo "
+                           "tích hợp cho hỏi đáp bắc cầu nhiều chặng.")]
+    assert mark_noise(bs) == 5
+    assert [b.translate for b in bs] == [False] * 5 + [True]
+
+
+def test_khoi_ngan_toan_so_nhung_la_ket_qua_that_thi_van_giu():
+    """Ranh giới "rác" không bao giờ chắc chắn, nên chỉ TẮT CỜ chứ không xoá —
+    người đọc bật lại được. Và câu văn có số thì không phải là rác."""
+    from server.parser import mark_noise
+    bs = [_B("b1", "para", "CIRAG đạt 62,3 EM trên HotpotQA, cao hơn DPR 4,1 điểm.")]
+    assert mark_noise(bs) == 0
+    assert bs[0].translate is True

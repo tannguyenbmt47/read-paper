@@ -1216,6 +1216,12 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
             b.figure = ""
             if b.type == "caption":
                 b.figure_page = b.page
+
+    # Hai phễu chạy cuối cùng, sau khi mọi khối đã có loại và có ảnh: gom mảnh
+    # bị cắt giữa từ, rồi tắt cờ dịch cho khối rác. Cả hai đều nhắm vào cùng một
+    # cái giá — mỗi khối là một lượt dịch cộng một lượt giải thích.
+    stitch_hyphenated(blocks)
+    mark_noise(blocks)
     return title, blocks, named
 
 
@@ -1538,6 +1544,131 @@ def recover_uncovered(doc, items: list[dict], regions: list[dict] | None) -> lis
     return items + extra
 
 
+# ==================================================== phễu lọc sau khi bóc
+#
+# Hai việc chạy trên danh sách `Block` đã dựng xong, nên dùng chung được cho cả
+# đường docling lẫn đường heuristic. Cả hai đều nhắm vào **cùng một cái giá**:
+# mỗi khối là một đơn vị dịch và một đơn vị giải thích, nên một mảnh vụn không
+# gom lại là hai lượt gọi model trả cho thứ vô nghĩa.
+
+# Từ bị ngắt gạch nối cuối dòng: `differ-` + `ent`. Không nhận gạch ngang dài
+# (– —) và không nhận khi phần trước gạch quá ngắn — `e-` trong `e-mail` hay
+# `w/o-` không phải từ bị ngắt.
+_HYPHEN_END = re.compile(r"[A-Za-zÀ-ỹ]{2,}-$")
+# Đoạn nối tiếp bắt đầu bằng chữ thường: chữ hoa là câu mới, không phải phần đuôi.
+_CONT_LOWER = re.compile(r"^[a-zà-ỹ]")
+
+# Khối chen giữa mà một đoạn bị cắt có thể nhảy qua. Hình, bảng, công thức
+# thường được xếp lên đầu cột nên nằm CHÈN vào giữa câu.
+_INTERLEAVED = ("caption", "equation", "figure", "table")
+
+
+def stitch_hyphenated(blocks: list[Block], max_gap: int = 4) -> int:
+    """Nối lại đoạn bị cắt giữa từ, kể cả khi có hình chen vào giữa.
+
+    Ở bài hai cột, hình và bảng được xếp lên đầu cột nên chúng chen vào **giữa
+    câu**. Đo trên bài CIRAG: 6 đoạn kết thúc bằng `compo-`, `differ-`, `sen-`,
+    `other-`, `re-`, `oth-` — mỗi mảnh thành một khối riêng, được dịch riêng, và
+    model tự ghi vào phần giải thích rằng *"câu gốc bị cắt ngay sau khi nói Bảng
+    3, nên chưa cho biết cụ thể"*. Vừa tốn tiền hai lượt vừa cho ra bản dịch
+    không thể đúng được.
+
+    Mốc nhận biết là **gạch nối cuối khối + chữ thường mở đầu khối nối tiếp**.
+    Cả hai điều kiện đều bắt buộc: chỉ gạch nối thì `w/o Triple + Sentence-`
+    cũng khớp, chỉ chữ thường thì mọi đoạn bắt đầu bằng `the` đều bị dính vào
+    đoạn trước.
+
+    Nối **không chèn khoảng trắng** và bỏ luôn dấu gạch: `differ-` + `ent` phải
+    ra `different`, không phải `differ- ent`.
+
+    Trả về số cặp đã nối.
+    """
+    joined = 0
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b.type != "para" or b.hidden or not _HYPHEN_END.search(b.text.rstrip()):
+            i += 1
+            continue
+        # tìm đoạn văn kế tiếp, cho phép nhảy qua vài khối hình/bảng/công thức
+        j, hopped = i + 1, 0
+        while j < len(blocks) and hopped < max_gap:
+            nxt = blocks[j]
+            if nxt.type == "para" and not nxt.hidden:
+                break
+            if nxt.type not in _INTERLEAVED:
+                j = len(blocks)          # gặp heading/mục khác thì thôi, đừng vắt qua
+                break
+            j += 1
+            hopped += 1
+        if j >= len(blocks) or blocks[j].type != "para":
+            i += 1
+            continue
+        nxt = blocks[j]
+        if not _CONT_LOWER.match(nxt.text.lstrip()):
+            i += 1
+            continue
+
+        b.text = b.text.rstrip()[:-1] + nxt.text.lstrip()
+        nxt.hidden = True
+        nxt.translate = False
+        nxt.text = ""                    # đã dời hết chữ sang khối trước
+        joined += 1
+        # KHÔNG tăng `i`: đoạn vừa nối có thể lại kết thúc bằng gạch nối nữa
+    blocks[:] = [x for x in blocks if x.text.strip() or x.figure]
+    return joined
+
+
+# --------------------------------------------------------- lọc khối nhiễu
+
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]{2,}")
+_ORCID = re.compile(r"\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b")
+_AFFIL = re.compile(
+    r"\b(University|Institute|Laborator|Academy|College|School of|Department of"
+    r"|Corresponding author|equal contribution|Our code|available at)\b", re.I)
+# Khối chỉ gồm số, dấu chấm câu, ký hiệu — "57.3%", "(4) ...", "1 2 3"
+_ONLY_NUMS = re.compile(r"^[\s\d.,%()\[\]{}·•±+\-–—*/:;'\"^_~$#@&|\\<>=]+$")
+
+
+def mark_noise(blocks: list[Block]) -> int:
+    """Tắt cờ dịch cho khối rác. **Không xoá** — người đọc bật lại được.
+
+    Mỗi khối là một đơn vị dịch và một đơn vị giải thích. Một dòng `57.3%` lạc
+    ra từ bảng, một dòng email tác giả, một chú thích `^{1}Our code can be found
+    via github.com/…` — mỗi cái tốn hai lượt gọi model cho thứ không ai đọc.
+    Đo trên bài CIRAG: 27 khối dưới 90 ký tự, trong đó có `57.3%` (5 ký tự) và
+    `(4) ...` (7 ký tự).
+
+    Tắt cờ chứ không xoá, vì ranh giới "rác" không bao giờ chắc chắn: một dòng
+    ngắn toàn số có thể là kết quả chính của bài. Người đọc thấy khối vẫn nằm
+    đúng chỗ, bật lại bằng nút ⊘ nếu cần — cùng lối với `hidden`.
+    """
+    hit = 0
+    for b in blocks:
+        if b.type not in ("para", "meta") or not b.translate or b.figure:
+            continue
+        t = b.text.strip()
+        if not t:
+            continue
+        # Chữ trần: bỏ đánh dấu chỉ số trên/dưới, rồi bỏ luôn **dấu chú thích
+        # chân trang ở đầu dòng**. Không bỏ thì `^{1}Our code…` thành `1Our
+        # code…` — chữ số dính liền chữ cái nên `\bOur code\b` không còn khớp,
+        # và cả dòng chú thích lọt lưới.
+        bare = re.sub(r"[\^_]\{([^}]*)\}", r"\1", t)
+        bare = re.sub(r"^[\s\d*†‡§¶.)\]]+", "", bare).strip()
+        noise = (
+            len(bare) < 12                                    # mảnh vụn
+            or _ONLY_NUMS.match(bare)                         # chỉ toàn số
+            or (_EMAIL.search(bare) and len(bare) < 220)      # dòng email tác giả
+            or _ORCID.search(bare)
+            or (_AFFIL.search(bare) and len(bare) < 200)      # cơ quan / chú thích chân
+        )
+        if noise:
+            b.translate = False
+            hit += 1
+    return hit
+
+
 def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
                        eq_dpi: int = 200,
                        regions: list[dict] | None = None,
@@ -1714,7 +1845,15 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
         except Exception:  # noqa: BLE001
             b.figure_page, b.figure_rect = -1, None
 
-    keep = [b for b in blocks if len(b.text) > 1]
+    keep = [b for b in blocks if len(b.text) > 1 or b.figure]
+
+    # Hai phễu chạy cuối cùng, sau khi mọi khối đã có loại và có ảnh: gom mảnh
+    # bị cắt giữa từ, rồi tắt cờ dịch cho khối rác. Cả hai nhắm vào cùng một cái
+    # giá — mỗi khối là MỘT lượt dịch cộng MỘT lượt giải thích, nên một mảnh vụn
+    # không gom lại là hai lượt gọi model trả cho thứ không đọc được.
+    stitch_hyphenated(keep)
+    mark_noise(keep)
+
     ids = {b.id for b in keep}
     return title, keep, {k: v for k, v in eq_imgs.items() if k in ids}
 
@@ -1758,6 +1897,8 @@ def parse_text(raw: str) -> tuple[str, list[Block], dict[str, bytes]]:
             continue
         blocks.append(Block(bid, "para", one, section, 0, 0, True))
 
+    stitch_hyphenated(blocks)
+    mark_noise(blocks)
     return title, blocks, {}
 
 

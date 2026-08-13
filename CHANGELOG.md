@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.9.0
+
+**Two filters that stop paying to translate rubbish.** Every block is one
+translation call plus one explanation call, so a stray fragment costs twice for
+something nobody reads.
+
+*Paragraphs split mid-word by an intervening figure are now rejoined.* In a
+two-column paper figures and tables float to the top of a column, so they land
+in the middle of a sentence: one paper had six paragraphs ending `differ-`,
+`compo-`, `sen-`, with the tail sitting after one or two captions. Each fragment
+was translated on its own, and the model wrote into the explanation column that
+*"the original sentence is cut off right after mentioning Table 3, so it does
+not yet say which"* — paying twice for a translation that could not be right.
+Joining requires both signals, a hyphen ending and a lower-case continuation,
+and stops at a heading. Five of six joined; the sixth continues with a capital
+and is deliberately left alone.
+
+*Noise blocks no longer get translated.* Fragments under twelve characters,
+blocks that are only digits and punctuation (`57.3%`, `(4) ...`), author emails,
+ORCIDs, and affiliation or footnote lines are flagged as not-to-translate — 8 to
+10 blocks per paper across three real papers. Flagged, not deleted: the boundary
+of "rubbish" is never certain, a short numeric line can be a paper's headline
+result, and the reader can switch any of them back on.
+
 ## 1.8.3
 
 **A box edge clipping the first line lost the whole line.** Layout-model boxes

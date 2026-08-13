@@ -215,6 +215,41 @@ ghép chúng lại và **phải chạy trước NFKC**: NFKC biến phần lớn
 Sửa hai chỗ này không tự động áp cho bài đã nạp — `parse_cache` khoá theo SHA của
 file PDF (xem phần bẫy cache ở trên), phải xoá cache rồi nạp lại bài.
 
+### Phễu lọc sau khi bóc — chỗ tiền rò ra mà không ai thấy
+
+Hai hàm chạy trên danh sách `Block` đã dựng xong nên dùng chung cho cả đường
+docling lẫn đường heuristic. Cả hai nhắm vào **cùng một cái giá**: mỗi khối là
+MỘT lượt dịch cộng MỘT lượt giải thích, nên một mảnh vụn không gom lại là hai
+lượt gọi model trả cho thứ không đọc được.
+
+**`stitch_hyphenated()` — đoạn bị hình chen vào giữa từ.** Ở bài hai cột, hình
+và bảng được xếp lên đầu cột nên chúng chen vào **giữa câu**. Đo trên CIRAG: 6
+đoạn kết thúc bằng `differ-`, `compo-`, `sen-`, `other-`, `oth-`, `re-`; phần
+đuôi nằm sau một hoặc hai caption. Mỗi mảnh được dịch riêng, và model tự ghi vào
+cột giải thích rằng *"câu gốc bị cắt ngay sau khi nói Bảng 3, nên chưa cho biết
+cụ thể"* — vừa tốn hai lượt vừa cho ra bản dịch không thể đúng được.
+
+Mốc nhận biết phải là **cả hai** dấu hiệu: gạch nối cuối khối **và** chữ thường
+mở đầu khối nối tiếp. Chỉ gạch nối thì `w/o Triple + Sentence-` cũng khớp; chỉ
+chữ thường thì mọi đoạn bắt đầu bằng `the` dính vào đoạn trước. Cho nhảy qua tối
+đa 4 khối `caption`/`equation`/`figure`/`table`, nhưng **gặp heading thì dừng** —
+đoạn cuối mục này không nối vào đầu mục sau. Nối bỏ luôn dấu gạch và không chèn
+khoảng trắng: `differ-` + `ent` phải ra `different`. Kết quả: 5/6 nối được, cái
+còn lại phần đuôi mở đầu bằng chữ hoa nên cố ý không nối.
+
+**`mark_noise()` — tắt cờ dịch, KHÔNG xoá.** Bắt: mảnh dưới 12 ký tự, khối chỉ
+gồm số và dấu (`57.3%`, `(4) ...`), dòng email tác giả, ORCID, và chú thích
+chân/cơ quan (`^{1}Our code can be found via github.com/…`). Đo trên ba bài
+thật: 8–10 khối mỗi bài.
+
+Tắt cờ chứ không xoá vì ranh giới "rác" không bao giờ chắc chắn — một dòng ngắn
+toàn số có thể là kết quả chính của bài. Người đọc vẫn thấy khối đúng chỗ và bật
+lại được, cùng lối với `hidden`.
+
+Một bẫy trong chính bộ lọc: **phải bỏ dấu chú thích chân ở đầu dòng trước khi
+chấm**. `^{1}Our code…` sau khi gỡ đánh dấu thành `1Our code…`, chữ số dính liền
+chữ cái nên `\bOur code\b` không còn khớp và cả dòng lọt lưới.
+
 ### Danh sách
 
 `_list_items()` tách một block thành từng mục, mỗi mục là một `Block` riêng mang
