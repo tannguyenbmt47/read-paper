@@ -237,6 +237,18 @@ chữ thường thì mọi đoạn bắt đầu bằng `the` dính vào đoạn 
 khoảng trắng: `differ-` + `ent` phải ra `different`. Kết quả: 5/6 nối được, cái
 còn lại phần đuôi mở đầu bằng chữ hoa nên cố ý không nối.
 
+**`_stitch_runon()` — hai đoạn liền nhau bị cắt giữa câu, không có gạch nối.**
+Không có mốc gạch nối nên luật phải chặt hơn hẳn: hai khối **liền kề** (không
+cho nhảy qua gì), câu trước **không kết thúc bằng dấu câu**, câu sau **mở đầu
+chữ thường**. Đo trên GCR: *"…we propose GCR, a training-free"* + *"framework
+that Grounds, Covers, and Refines…"*.
+
+**Cố ý KHÔNG nhảy qua công thức ở nhánh này.** Mẫu *"…sorted as"* → công thức →
+*"where T_V is the video duration"* đúng là một đoạn bị chen thật, nhưng công
+thức được cắt thành **ảnh** và phải nằm GIỮA hai nửa. Nối chữ lại thì ảnh rơi
+xuống sau cả đoạn — mạch đọc hỏng nặng hơn là để nguyên. Bốn ca như vậy trên
+GCR, đều để nguyên, và đó là quyết định chứ không phải sót.
+
 **`mark_noise()` — tắt cờ dịch, KHÔNG xoá.** Bắt: mảnh dưới 12 ký tự, khối chỉ
 gồm số và dấu (`57.3%`, `(4) ...`), dòng email tác giả, ORCID, và chú thích
 chân/cơ quan (`^{1}Our code can be found via github.com/…`). Đo trên ba bài

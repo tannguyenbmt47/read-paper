@@ -17,6 +17,13 @@ Joining requires both signals, a hyphen ending and a lower-case continuation,
 and stops at a heading. Five of six joined; the sixth continues with a capital
 and is deliberately left alone.
 
+*Adjacent paragraphs split mid-sentence are joined too*, under a stricter rule
+since there is no hyphen to go on: the two blocks must be adjacent, the first
+must not end in punctuation, the second must start lower-case. Splits across a
+display equation are deliberately left alone — the equation is rendered as an
+image and has to stay between the two halves, so merging the text would push the
+image below the whole paragraph and make the reading order worse, not better.
+
 *Noise blocks no longer get translated.* Fragments under twelve characters,
 blocks that are only digits and punctuation (`57.3%`, `(4) ...`), author emails,
 ORCIDs, and affiliation or footnote lines are flagged as not-to-translate — 8 to

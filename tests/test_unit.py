@@ -757,3 +757,34 @@ def test_khoi_ngan_toan_so_nhung_la_ket_qua_that_thi_van_giu():
     bs = [_B("b1", "para", "CIRAG đạt 62,3 EM trên HotpotQA, cao hơn DPR 4,1 điểm.")]
     assert mark_noise(bs) == 0
     assert bs[0].translate is True
+
+
+def test_noi_hai_doan_lien_nhau_bi_cat_giua_cau():
+    """Không có mốc gạch nối thì luật phải chặt hơn hẳn: hai khối LIỀN KỀ, câu
+    trước không kết thúc bằng dấu câu, câu sau mở đầu chữ thường."""
+    from server.parser import stitch_hyphenated
+    bs = [_B("b1", "para", "To address this question, we propose GCR, a training-free"),
+          _B("b2", "para", "framework that Grounds, Covers, and Refines evidence.")]
+    assert stitch_hyphenated(bs) == 1
+    assert bs[0].text == ("To address this question, we propose GCR, a training-free "
+                          "framework that Grounds, Covers, and Refines evidence.")
+
+
+def test_khong_noi_qua_cong_thuc_du_cau_chua_ket_thuc():
+    """Mẫu "…sorted as" → công thức → "where T_V is the video duration" đúng là
+    một đoạn bị chen, NHƯNG công thức được cắt thành ẢNH và phải nằm giữa hai
+    nửa. Nối chữ lại thì ảnh rơi xuống sau cả đoạn — hỏng nặng hơn để nguyên.
+    """
+    from server.parser import stitch_hyphenated
+    bs = [_B("b1", "para", "Let the timestamps in S0 be sorted as"),
+          _B("b2", "equation", "t_1 < t_2 < ... < t_B (12)"),
+          _B("b3", "para", "where T_V is the video duration.")]
+    assert stitch_hyphenated(bs) == 0
+    assert [b.id for b in bs] == ["b1", "b2", "b3"]
+
+
+def test_cau_da_ket_thuc_thi_khong_noi():
+    from server.parser import stitch_hyphenated
+    bs = [_B("b1", "para", "Kết quả được trình bày ở Bảng 3."),
+          _B("b2", "para", "trong đó mỗi hàng là một phương án.")]
+    assert stitch_hyphenated(bs) == 0

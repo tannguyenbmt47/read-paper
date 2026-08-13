@@ -1610,12 +1610,52 @@ def stitch_hyphenated(blocks: list[Block], max_gap: int = 4) -> int:
             continue
 
         b.text = b.text.rstrip()[:-1] + nxt.text.lstrip()
-        nxt.hidden = True
-        nxt.translate = False
         nxt.text = ""                    # đã dời hết chữ sang khối trước
         joined += 1
         # KHÔNG tăng `i`: đoạn vừa nối có thể lại kết thúc bằng gạch nối nữa
+
+    joined += _stitch_runon(blocks)
     blocks[:] = [x for x in blocks if x.text.strip() or x.figure]
+    return joined
+
+
+# Câu đã kết thúc đàng hoàng thì không nối gì cả.
+_SENT_END = re.compile(r"[.!?:;)\]\"'’”]\s*$")
+
+
+def _stitch_runon(blocks: list[Block]) -> int:
+    """Nối hai đoạn LIỀN NHAU bị cắt giữa câu mà không có dấu gạch nối.
+
+    Khác `stitch_hyphenated` ở chỗ không có mốc gạch nối, nên luật phải chặt hơn
+    hẳn: **hai khối phải liền kề** (không cho nhảy qua gì), câu trước **không kết
+    thúc bằng dấu câu**, câu sau **mở đầu bằng chữ thường**. Đo trên bài GCR:
+    *"…we propose GCR, a training-free"* + *"framework that Grounds, Covers, and
+    Refines…"* — rõ ràng một câu bị ngắt ở chỗ xuống dòng.
+
+    **Cố ý KHÔNG nhảy qua công thức.** Mẫu *"…sorted as"* → công thức → *"where
+    T_V is the video duration"* là một đoạn bị công thức chen vào thật, nhưng
+    công thức được cắt thành **ảnh** và phải nằm GIỮA hai nửa. Nối chữ lại thì
+    ảnh rơi xuống sau cả đoạn — mạch đọc hỏng nặng hơn là để nguyên. Bốn ca như
+    vậy trên bài GCR, đều để nguyên.
+
+    Nối **có chèn khoảng trắng**, khác hẳn nhánh gạch nối.
+    """
+    joined = 0
+    i = 0
+    while i < len(blocks) - 1:
+        a, b = blocks[i], blocks[i + 1]
+        if (a.type == "para" and b.type == "para"
+                and not a.hidden and not b.hidden
+                and a.text.strip() and b.text.strip()
+                and not _SENT_END.search(a.text.rstrip())
+                and not _HYPHEN_END.search(a.text.rstrip())
+                and _CONT_LOWER.match(b.text.lstrip())):
+            a.text = a.text.rstrip() + " " + b.text.lstrip()
+            b.text = ""
+            del blocks[i + 1]
+            joined += 1
+            continue                     # đoạn vừa nối có thể còn nối tiếp nữa
+        i += 1
     return joined
 
 
