@@ -1659,6 +1659,46 @@ def _stitch_runon(blocks: list[Block]) -> int:
     return joined
 
 
+# ------------------------------------------------- nhận diện thư mục tham khảo
+#
+# Chép nguyên luật đã dùng ở kho survey (`survey/ingest.py`), vì nó đã được hiệu
+# chỉnh trên dữ liệu thật ở đó. Dấu hiệu bắt buộc là **nơi công bố**, không phải
+# mật độ năm hay `et al.`: đoạn văn *"RAG tốt với truy vấn đơn (Lewis et al.,
+# 2020; Lin et al., 2024)…"* có mật độ năm CAO HƠN cả thư mục thật.
+#
+# Vì sao luồng đọc-hiểu cũng cần: `parse_pdf` gắn nhãn `reference` khi tìm được
+# tiêu đề mục tham khảo, nhưng đường docling thì không có bước đó — đo trên bài
+# GCR, cả thư mục rơi vào section "Conclusion" với `translate=True`, tức **5.664
+# trên 32.701 ký tự (17% hoá đơn dịch) đổ vào danh sách tài liệu**.
+_REF_VENUE = re.compile(
+    r"\b(In Proceedings|Proceedings of|arXiv:|arXiv preprint|Advances in Neural"
+    r"|Transactions on|Journal of|Conference on|Springer|Elsevier|ACM |IEEE "
+    r"|pp\.\s*\d|doi:|PMLR|NeurIPS|ICLR|ICML|ACL|EMNLP|NAACL|CVPR|ICCV|ECCV)",
+    re.I)
+_REF_AUTHORS = re.compile(r"[A-Z][a-zÀ-ỹ]+,\s*[A-Z]\.")
+_YEAR = re.compile(r"\b(19|20)\d{2}\b")
+
+
+def looks_like_refs(text: str) -> bool:
+    """Khối này có phải danh sách tham khảo không?
+
+    Đòi **hai** dấu hiệu độc lập: có năm, và có nơi công bố. Rồi thêm một trong
+    ba: đánh số `[12]`, tên tác giả dạng `Nguyen, T.`, hoặc **≥3 nơi công bố**
+    trong cùng một khối (thư mục đã gộp thì luôn có nhiều).
+    """
+    t = (text or "").strip()
+    if len(t) < 120 or not _YEAR.search(t):
+        return False
+    venues = _REF_VENUE.findall(t)
+    if not venues:
+        return False
+    if len(venues) >= 3:
+        return True
+    # khối ngắn hơn thì đòi dấu hiệu hình thức của một mục thư mục
+    return (bool(re.match(r"^\s*(References|Tài liệu tham khảo|\[\d+\])", t, re.I))
+            or len(_REF_AUTHORS.findall(t)) >= 2)
+
+
 # --------------------------------------------------------- lọc khối nhiễu
 
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]{2,}")
@@ -1697,7 +1737,8 @@ def mark_noise(blocks: list[Block]) -> int:
         bare = re.sub(r"[\^_]\{([^}]*)\}", r"\1", t)
         bare = re.sub(r"^[\s\d*†‡§¶.)\]]+", "", bare).strip()
         noise = (
-            len(bare) < 12                                    # mảnh vụn
+            looks_like_refs(bare)                             # thư mục tham khảo
+            or len(bare) < 12                                 # mảnh vụn
             or _ONLY_NUMS.match(bare)                         # chỉ toàn số
             or (_EMAIL.search(bare) and len(bare) < 220)      # dòng email tác giả
             or _ORCID.search(bare)

@@ -249,6 +249,15 @@ thức được cắt thành **ảnh** và phải nằm GIỮA hai nửa. Nối 
 xuống sau cả đoạn — mạch đọc hỏng nặng hơn là để nguyên. Bốn ca như vậy trên
 GCR, đều để nguyên, và đó là quyết định chứ không phải sót.
 
+**`looks_like_refs()` — thư mục tham khảo ở luồng đọc-hiểu.** `parse_pdf` gắn
+nhãn `reference` khi tìm được tiêu đề mục, nhưng **đường docling không có bước
+đó**. Đo trên bài GCR: cả thư mục rơi vào section `Conclusion` với
+`translate=True` — **5.664 trên 32.701 ký tự, tức 17% hoá đơn dịch**, đổ vào
+danh sách tài liệu. Luật chép từ `survey/ingest.py` vì đã hiệu chỉnh trên dữ
+liệu thật ở đó: dấu hiệu bắt buộc là **nơi công bố**, không phải mật độ năm hay
+`et al.` — đoạn văn *"(Lewis et al., 2020; Lin et al., 2024; Ram et al., 2023)"*
+có mật độ năm CAO HƠN cả thư mục thật. Sau khi lọc: 32.701 → 26.382 ký tự.
+
 **`mark_noise()` — tắt cờ dịch, KHÔNG xoá.** Bắt: mảnh dưới 12 ký tự, khối chỉ
 gồm số và dấu (`57.3%`, `(4) ...`), dòng email tác giả, ORCID, và chú thích
 chân/cơ quan (`^{1}Our code can be found via github.com/…`). Đo trên ba bài

@@ -24,6 +24,16 @@ display equation are deliberately left alone — the equation is rendered as an
 image and has to stay between the two halves, so merging the text would push the
 image below the whole paragraph and make the reading order worse, not better.
 
+*The bibliography is no longer translated.* `parse_pdf` labels a reference
+section when it finds the heading, but the layout-model path has no such step,
+so on one paper the entire bibliography landed in the Conclusion section marked
+for translation — **5,664 of 32,701 characters, 17% of the translation bill**,
+spent on a list of citations. The detector is the one already tuned on real data
+for the corpus tool: the required signal is a **publication venue**, not a
+density of years or "et al.", since a sentence citing "(Lewis et al., 2020; Lin
+et al., 2024; Ram et al., 2023)" has a higher year density than a real
+bibliography. That paper now translates 26,382 characters instead of 32,701.
+
 *Noise blocks no longer get translated.* Fragments under twelve characters,
 blocks that are only digits and punctuation (`57.3%`, `(4) ...`), author emails,
 ORCIDs, and affiliation or footnote lines are flagged as not-to-translate — 8 to

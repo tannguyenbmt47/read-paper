@@ -788,3 +788,27 @@ def test_cau_da_ket_thuc_thi_khong_noi():
     bs = [_B("b1", "para", "Kết quả được trình bày ở Bảng 3."),
           _B("b2", "para", "trong đó mỗi hàng là một phương án.")]
     assert stitch_hyphenated(bs) == 0
+
+
+def test_thu_muc_tham_khao_khong_bi_dich():
+    """Đường docling không có bước gắn nhãn `reference` như `parse_pdf`, nên cả
+    thư mục rơi vào section cuối với `translate=True`. Đo trên bài GCR: **5.664
+    trên 32.701 ký tự — 17% hoá đơn dịch** đổ vào danh sách tài liệu."""
+    from server.parser import mark_noise, looks_like_refs
+    refs = ("Song, E.; Chai, W.; Ye, T.; Hwang, J.-N. 2026. MovieChat+: "
+            "Question-Aware Sparse Memory. IEEE Transactions on PAMI. "
+            "Li, X.; Wang, G. 2025. In Proceedings of CVPR. Bai, S. 2024. NeurIPS.")
+    assert looks_like_refs(refs)
+    bs = [_B("b1", "para", refs)]
+    assert mark_noise(bs) == 1 and bs[0].translate is False
+
+
+def test_cau_van_day_trich_dan_khong_bi_coi_la_thu_muc():
+    """Dấu hiệu bắt buộc là NƠI CÔNG BỐ, không phải mật độ năm: đoạn văn dẫn
+    "(Lewis et al., 2020; Lin et al., 2024; Ram et al., 2023)" có mật độ năm cao
+    hơn cả thư mục thật."""
+    from server.parser import looks_like_refs
+    assert not looks_like_refs(
+        "RAG hoạt động tốt với truy vấn đơn (Lewis et al., 2020; Lin et al., "
+        "2024; Ram et al., 2023) nhưng gặp khó khi câu hỏi cần bắc cầu qua "
+        "nhiều tài liệu khác nhau trong cùng một kho tài liệu lớn.")
