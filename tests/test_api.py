@@ -421,3 +421,26 @@ def test_khong_o_chon_nao_bi_long_trong_label(app_client):
         co_ten = (f'for="{sid.group(1)}"' in html
                   or "aria-label=" in attrs or "title=" in attrs)
         assert co_ten, f"select {sid.group(1)} không có nhãn nào"
+
+
+def test_o_xem_truoc_hinh_co_bo_phong_to(app_client):
+    """Hình cắt từ PDF dày đặc chữ nhỏ — nhãn trục, chú giải, số trong bảng — mà
+    ô xem trước chỉ rộng chừng 560px. Đọc được con số trên biểu đồ mới là lý do
+    người ta bấm vào "Figure 3", nên ô đó phải phóng to và kéo được.
+
+    Phép kiểm cấu trúc, vì hành vi kéo–thả chỉ soát được bằng trình duyệt.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = root.joinpath("web/index.html").read_text()
+    js = root.joinpath("web/app.js").read_text()
+    css = root.joinpath("web/style.css").read_text()
+
+    for el in ("figPeekIn", "figPeekOut", "figPeekZoom"):
+        assert f'id="{el}"' in html, f"thiếu nút {el}"
+    assert "wireFigPeek()" in js, "bộ phóng to chưa được nối vào lúc khởi động"
+    for fn in ("function figZoom", "function figApply", "function figReset"):
+        assert fn in js
+    # transform-origin phải ở góc trên-trái, nếu không phép phóng quanh con trỏ
+    # tính sai tâm và hình nhảy mỗi lần cuộn
+    assert "transform-origin: 0 0" in css

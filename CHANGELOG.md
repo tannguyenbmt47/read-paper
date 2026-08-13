@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.9.3
+
+**The figure preview can be panned and zoomed.** Clicking "Figure 3" in the body
+opens a small window showing which image the reference points at — but figures
+cut from a PDF are dense with small type (axis labels, legends, numbers inside
+tables) and the window is only about 560px wide, so fitted to width they cannot
+be read. Reading the number on the chart is the whole reason for clicking, so
+the image now zooms on the scroll wheel, drags to pan, and double-clicks between
+fit and 3×.
+
+Position is driven by `transform` rather than scrollbars, because zooming has to
+keep the point under the cursor stationary and that needs exact coordinates. The
+image always keeps at least a quarter of itself inside the frame, so a hard drag
+cannot fling it out of sight, and the zoom resets whenever a different figure is
+opened.
+
 ## 1.9.2
 
 **Highlights now cover the whole word and stand out from the page.** The mark

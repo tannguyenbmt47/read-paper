@@ -1278,3 +1278,23 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
 /* Nửa sau chưa dịch thì đừng ghi "chưa dịch" lần nữa — nửa đầu đã ghi rồi, và
    hai dòng chữ nghiêng xám liền nhau làm đoạn trông càng vụn. */
 .pair.is-cont .vi .pending { display: none; }
+
+/* Kéo–thả và phóng to trong ô xem trước hình.
+
+   Hình cắt từ PDF dày đặc chữ nhỏ — trục, chú giải, số trong bảng — mà ô xem
+   trước chỉ rộng 560px, nên thu vừa khung là không đọc nổi. `overflow: hidden`
+   ở khung ngoài để phần phóng to không đẩy vỡ bố cục; vị trí do `transform`
+   quyết chứ không do thanh cuộn, vì phóng quanh CON TRỎ thì phải đặt được toạ
+   độ chính xác. */
+.figpeek-body { overflow: hidden; cursor: grab; touch-action: none; }
+.figpeek-body.is-drag { cursor: grabbing; }
+.figpeek-body img {
+  transform-origin: 0 0;
+  will-change: transform;
+  user-select: none; -webkit-user-drag: none;
+}
+.figpeek-z {
+  font-size: 11px; color: var(--muted); min-width: 3.2em; text-align: center;
+  cursor: pointer; user-select: none;
+}
+.figpeek-z:hover { color: var(--ink); }

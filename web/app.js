@@ -71,9 +71,98 @@ function openFigPeek(blockId) {
   }
   $("#figPeekGo").onclick = () => { closeFigPeek(); jumpToBlock(blockId); };
   $("#figPeek").classList.remove("hidden");
+  figReset();          // hình mới thì về vừa khung, đừng giữ mức phóng của hình trước
 }
 
 function closeFigPeek() { $("#figPeek").classList.add("hidden"); }
+
+/* ---- kéo–thả và phóng to trong ô xem trước hình ----
+
+   Hình cắt từ PDF dày đặc chữ nhỏ (nhãn trục, chú giải, số trong bảng) mà ô xem
+   trước chỉ rộng chừng 560px, nên thu vừa khung là không đọc nổi — mà đọc được
+   con số trên biểu đồ mới là lý do người ta bấm vào "Figure 3".
+
+   Đặt vị trí bằng `transform` chứ không bằng thanh cuộn: phóng phải lấy CON TRỎ
+   làm tâm (chỗ đang nhìn phải đứng yên dưới chuột), việc đó cần đặt được toạ độ
+   chính xác, thanh cuộn thì không. */
+const FIG_MIN = 1, FIG_MAX = 8;
+const figv = { s: 1, x: 0, y: 0 };
+
+function figApply() {
+  const img = $("#figPeekImg");
+  const box = $(".figpeek-body").getBoundingClientRect();
+  const w = img.offsetWidth * figv.s;
+  const h = img.offsetHeight * figv.s;
+
+  // Không cho kéo hình mất hút khỏi khung: luôn còn ít nhất một phần tư hình
+  // nằm trong tầm nhìn ở mỗi chiều. Thiếu chốt này thì một cú kéo mạnh là hình
+  // biến mất và người dùng tưởng hỏng.
+  const keep = 0.25;
+  const clamp = (v, span, boxSpan) =>
+    Math.min(boxSpan - span * keep, Math.max(-(span - boxSpan * keep), v));
+  figv.x = w ? clamp(figv.x, w, box.width) : 0;
+  figv.y = h ? clamp(figv.y, h, box.height) : 0;
+
+  img.style.transform = `translate(${figv.x}px, ${figv.y}px) scale(${figv.s})`;
+  $("#figPeekZoom").textContent = Math.round(figv.s * 100) + "%";
+}
+
+function figReset() { figv.s = 1; figv.x = 0; figv.y = 0; figApply(); }
+
+/** Phóng quanh một điểm trong khung, để chỗ đang nhìn đứng yên dưới con trỏ. */
+function figZoom(mul, cx, cy) {
+  const box = $(".figpeek-body").getBoundingClientRect();
+  const px = cx == null ? box.width / 2 : cx - box.left;
+  const py = cy == null ? box.height / 2 : cy - box.top;
+  const s2 = Math.min(FIG_MAX, Math.max(FIG_MIN, figv.s * mul));
+  if (s2 === figv.s) return;
+  // giữ điểm (px,py) bất động: x' = px - (px - x) * s2/s
+  figv.x = px - (px - figv.x) * (s2 / figv.s);
+  figv.y = py - (py - figv.y) * (s2 / figv.s);
+  figv.s = s2;
+  figApply();
+}
+
+function wireFigPeek() {
+  const body = $(".figpeek-body");
+  if (!body) return;
+
+  body.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    figZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+  }, { passive: false });
+
+  let drag = null;
+  body.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX - figv.x, y: e.clientY - figv.y, id: e.pointerId };
+    body.setPointerCapture(e.pointerId);
+    body.classList.add("is-drag");
+  });
+  body.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    figv.x = e.clientX - drag.x;
+    figv.y = e.clientY - drag.y;
+    figApply();
+  });
+  const stop = (e) => {
+    if (!drag) return;
+    body.releasePointerCapture(drag.id);
+    drag = null;
+    body.classList.remove("is-drag");
+  };
+  body.addEventListener("pointerup", stop);
+  body.addEventListener("pointercancel", stop);
+  // Bấm đúp: về vừa khung nếu đang phóng, phóng gấp ba nếu đang vừa khung.
+  body.addEventListener("dblclick", (e) => {
+    if (figv.s > 1.02) figReset();
+    else figZoom(3, e.clientX, e.clientY);
+  });
+
+  $("#figPeekIn").onclick = () => figZoom(1.4);
+  $("#figPeekOut").onclick = () => figZoom(1 / 1.4);
+  $("#figPeekZoom").onclick = figReset;
+}
 
 const state = {
   doc: null, chunks: 0, translating: false, stopping: false,
@@ -166,6 +255,7 @@ async function init() {
   wireFind();
   wirePdfPane();
   wireHighlights();
+  wireFigPeek();
   wireSlides();
   wirePresent();
   const id = location.hash.slice(1);

@@ -633,6 +633,28 @@ quét khai node, không thì `|"thiếu"|` bị đọc thành node tên `u` và 
 Công thức dựng bằng `baseline` ở mức run (`_rich_runs`), không cần OMML — vì
 `^{…}` / `_{…}` vốn đã là dạng lưu.
 
+### Ô xem trước hình: kéo và phóng
+
+Bấm vào chữ *"Figure 3"* trong bài mở `#figPeek` — cửa sổ nhỏ cho biết chỗ đó
+tham chiếu tới hình nào. Hình cắt từ PDF **dày đặc chữ nhỏ** (nhãn trục, chú
+giải, số trong bảng) mà ô này chỉ rộng chừng 560px, nên thu vừa khung là không
+đọc nổi — trong khi đọc được con số trên biểu đồ mới đúng là lý do người ta bấm
+vào. Vì thế: cuộn chuột để phóng, kéo để di, bấm đúp để nhảy giữa vừa-khung và
+gấp ba.
+
+Ba chi tiết quyết định nó dùng được hay không:
+
+- **Đặt vị trí bằng `transform`, không bằng thanh cuộn.** Phóng phải lấy **con
+  trỏ** làm tâm — chỗ đang nhìn phải đứng yên dưới chuột — việc đó cần đặt toạ
+  độ chính xác (`x' = px − (px − x)·s2/s`), thanh cuộn không làm được.
+- **`transform-origin: 0 0`.** Để mặc định (`50% 50%`) thì công thức giữ điểm
+  bất động ở trên tính sai tâm và hình nhảy mỗi lần cuộn.
+- **Chặn kéo mất hút.** Luôn giữ ít nhất ¼ hình trong khung ở mỗi chiều; thiếu
+  chốt này thì một cú kéo mạnh là hình biến mất và người dùng tưởng hỏng.
+
+`figReset()` gọi mỗi lần mở một hình mới — giữ mức phóng của hình trước thì mở
+hình sau ra thấy một mảng trắng.
+
 ### Sửa tay bản dịch, và chốt chặn rò hệ chữ
 
 Nút ✎ trên mỗi khối ở màn đọc mở một `<textarea>` chứa **văn bản thô đang lưu**,

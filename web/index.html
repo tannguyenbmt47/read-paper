@@ -527,10 +527,15 @@
   <header class="figpeek-head">
     <strong id="figPeekTitle">Hình</strong>
     <span class="spacer"></span>
+    <button id="figPeekOut" class="icon-btn" title="Thu nhỏ (cuộn chuột trên hình)">−</button>
+    <span id="figPeekZoom" class="figpeek-z" title="Bấm để về vừa khung">100%</span>
+    <button id="figPeekIn" class="icon-btn" title="Phóng to (cuộn chuột trên hình)">+</button>
     <button id="figPeekGo" class="icon-btn" title="Cuộn tới hình này trong bài">↧</button>
     <button id="figPeekClose" class="icon-btn" title="Đóng (Esc)">✕</button>
   </header>
-  <div class="figpeek-body"><img id="figPeekImg" alt=""></div>
+  <!-- Hình cắt từ PDF thường dày đặc chữ nhỏ (trục, chú giải, số trong bảng),
+       thu về bề ngang ô xem trước thì không đọc nổi. Kéo để di, cuộn để phóng. -->
+  <div class="figpeek-body"><img id="figPeekImg" alt="" draggable="false"></div>
   <p id="figPeekCap" class="muted small"></p>
 </div>
 
