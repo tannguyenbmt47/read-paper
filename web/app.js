@@ -2791,7 +2791,9 @@ function renderDoc() {
   host.innerHTML = `<div class="doc-inner">${blocks
     .filter((b) => b.type !== "reference")
     .filter((b) => !b.hidden || state.showHidden)
-    .map((b) => pairHTML(b, translations[b.id], notes[b.id]))
+    .map((b, i, arr) => pairHTML(b, translations[b.id], notes[b.id],
+      // công thức nằm giữa hai nửa của một đoạn: siết luôn khoảng cách của nó
+      b.type === "equation" && arr[i + 1]?.cont))
     .join("")}</div>`;
   syncHiddenBar(nHidden);
   wirePairs();
@@ -2801,9 +2803,14 @@ function renderDoc() {
   host.onscroll = onDocScroll;
 }
 
-function pairHTML(b, vi, note) {
+function pairHTML(b, vi, note, inFlow = false) {
+  // `cont` = nửa sau của một đoạn bị công thức chen vào giữa. Ba khối vẫn là ba
+  // khối (ảnh công thức phải đứng giữa hai nửa, và mỗi khối vẫn là một đơn vị
+  // dịch/bôi/ghi chú), chỉ bỏ khoảng cách và vạch ngăn để đọc ra liền một đoạn
+  // như trang in.
   const cls = (b.type === "heading" ? "h" + Math.min(b.level || 1, 3) : b.type)
     + (b.marker ? " li" : "")
+    + (b.cont ? " is-cont" : "") + (inFlow ? " in-flow" : "")
     + (b.type === "equation" && b.figure ? " eq-img" : "");
   // dấu đầu mục treo ngoài lề, lặp ở cả cột gốc lẫn cột dịch vì hai cột là hai
   // bản của cùng một mục

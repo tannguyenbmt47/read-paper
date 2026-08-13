@@ -35,6 +35,10 @@ class Block:
     figure_manual: bool = False    # người dùng đã tự chỉnh khung này chưa
     figure_source: str = "heuristic"  # "heuristic" | "model" | "manual"
     marker: str = ""   # dấu đầu mục nếu khối này là một mục trong danh sách
+    # Khối này là PHẦN TIẾP của đoạn phía trên, bị công thức chen vào giữa —
+    # xem `mark_continuations()`. Chỉ ảnh hưởng cách hiển thị, không đụng nội
+    # dung: ba khối vẫn là ba khối để ảnh công thức đứng đúng chỗ giữa hai nửa.
+    cont: bool = False
     # Người đọc tự ẩn khối rác còn sót (nhãn trục lạc ra từ hình, dòng chân
     # trang…). Ẩn chứ KHÔNG xoá: bản dịch đã trả tiền rồi, và người ta hay đổi
     # ý. Khối ẩn cũng không vào mẻ dịch nên không tốn thêm.
@@ -1221,6 +1225,7 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
     # bị cắt giữa từ, rồi tắt cờ dịch cho khối rác. Cả hai đều nhắm vào cùng một
     # cái giá — mỗi khối là một lượt dịch cộng một lượt giải thích.
     stitch_hyphenated(blocks)
+    mark_continuations(blocks)
     mark_noise(blocks)
     return title, blocks, named
 
@@ -1673,6 +1678,38 @@ def _stitch_runon(blocks: list[Block]) -> int:
     return joined
 
 
+def mark_continuations(blocks: list[Block]) -> int:
+    """Đánh dấu đoạn bị CÔNG THỨC chen vào giữa, để đọc liền lại được.
+
+    Mẫu kinh điển của bài phương pháp: *"Let the timestamps be sorted as"* →
+    công thức hiển thị → *"where T_V is the video duration"*. Trong bản in đó là
+    **một đoạn**; ở đây nó là ba khối, và người đọc thấy ba mẩu rời rạc, mẩu
+    giữa không có bản dịch, mẩu cuối mở đầu bằng "where" chẳng rõ nối vào đâu.
+
+    **Không gộp thành một khối.** Công thức được cắt thành ảnh và phải đứng
+    GIỮA hai nửa; gộp chữ lại thì ảnh rơi xuống sau cả đoạn. Cũng không gộp để
+    giữ nguyên chuyện mỗi khối là một đơn vị dịch, một vệt bôi, một ghi chú.
+
+    Chỉ gắn cờ `cont` lên nửa sau, rồi để tầng hiển thị bỏ khoảng cách và vạch
+    ngăn giữa ba khối — đọc ra đúng như trang in, mà không đụng gì tới dữ liệu.
+    """
+    n = 0
+    for i, b in enumerate(blocks):
+        if b.type != "para" or not _CONT_LOWER.match(b.text.lstrip()):
+            continue
+        j = i - 1
+        while j >= 0 and blocks[j].type == "equation":
+            j -= 1
+        if j == i - 1 or j < 0:          # không có công thức chen vào
+            continue
+        prev = blocks[j]
+        if (prev.type == "para" and prev.text.strip()
+                and not _SENT_END.search(prev.text.rstrip())):
+            b.cont = True
+            n += 1
+    return n
+
+
 # ------------------------------------------------- nhận diện thư mục tham khảo
 #
 # Chép nguyên luật đã dùng ở kho survey (`survey/ingest.py`), vì nó đã được hiệu
@@ -1947,6 +1984,7 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
     # giá — mỗi khối là MỘT lượt dịch cộng MỘT lượt giải thích, nên một mảnh vụn
     # không gom lại là hai lượt gọi model trả cho thứ không đọc được.
     stitch_hyphenated(keep)
+    mark_continuations(keep)
     mark_noise(keep)
 
     ids = {b.id for b in keep}
@@ -1993,6 +2031,7 @@ def parse_text(raw: str) -> tuple[str, list[Block], dict[str, bytes]]:
         blocks.append(Block(bid, "para", one, section, 0, 0, True))
 
     stitch_hyphenated(blocks)
+    mark_continuations(blocks)
     mark_noise(blocks)
     return title, blocks, {}
 

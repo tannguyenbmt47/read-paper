@@ -249,6 +249,31 @@ thức được cắt thành **ảnh** và phải nằm GIỮA hai nửa. Nối 
 xuống sau cả đoạn — mạch đọc hỏng nặng hơn là để nguyên. Bốn ca như vậy trên
 GCR, đều để nguyên, và đó là quyết định chứ không phải sót.
 
+**`mark_continuations()` — đoạn bị CÔNG THỨC chen vào giữa.** Mẫu kinh điển của
+bài phương pháp: *"Let the timestamps be sorted as"* → công thức hiển thị →
+*"where T_V is the video duration"*. Trong bản in đó là **một đoạn**; ở đây là ba
+khối, và người đọc thấy ba mẩu rời, mẩu giữa không có bản dịch, mẩu cuối mở đầu
+bằng "where" chẳng rõ nối vào đâu.
+
+**Không gộp thành một khối**, và đây là quyết định chứ không phải làm dở: ảnh
+công thức phải đứng GIỮA hai nửa (gộp chữ thì ảnh rơi xuống sau cả đoạn), và mỗi
+khối vẫn phải là một đơn vị dịch / một vệt bôi / một ghi chú riêng. Chỉ gắn cờ
+`cont` lên nửa sau, rồi **tầng hiển thị** bỏ khoảng cách thừa và **ẩn dòng "chưa
+dịch"** của nửa sau — nửa đầu đã ghi rồi, hai dòng chữ nghiêng xám liền nhau làm
+đoạn trông càng vụn.
+
+Hai bẫy khi chỉnh chỗ này:
+- **Đừng kéo margin âm.** Khoảng cách giữa hai `.pair` thường vốn đã là 0, nên
+  margin âm không làm gọn thêm mà đẩy khối **chồng lên nhau** — đo được −8px và
+  chữ công thức đè lên dòng cuối đoạn trên.
+- **Đo khoảng cách giữa CHỮ, không giữa hộp.** Bỏ padding thì hộp co lại nên khe
+  giữa hai hộp *to ra* trong khi chữ lại gần nhau hơn — đo nhầm là kết luận
+  ngược. Số đúng: chữ→chữ 17px, đoạn thường 15px.
+
+`.pair.is-cont` / `.pair.in-flow` phải khai ở **cả** `web/style.css` lẫn
+`_EXPORT_CSS` bên `main.py` — bản xem trong app và file xuất ra là hai đoạn code
+dựng cùng một markup, sửa một bên phải sửa bên kia.
+
 **`looks_like_refs()` — thư mục tham khảo ở luồng đọc-hiểu.** `parse_pdf` gắn
 nhãn `reference` khi tìm được tiêu đề mục, nhưng **đường docling không có bước
 đó**. Đo trên bài GCR: cả thư mục rơi vào section `Conclusion` với

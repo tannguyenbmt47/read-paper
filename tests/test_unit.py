@@ -830,3 +830,24 @@ def test_noi_qua_chu_thich_hinh_nhung_khong_qua_cong_thuc():
              _B("c2", "equation", "t_1 < t_2 (12)"),
              _B("c3", "para", "where T_V is the video duration.")]
     assert stitch_hyphenated(khong) == 0
+
+
+def test_danh_dau_doan_bi_cong_thuc_chen_vao_giua():
+    """Mẫu "…sorted as" → công thức → "where T_V is…" là MỘT đoạn trong bản in.
+    Không gộp thành một khối (ảnh công thức phải đứng giữa hai nửa), chỉ gắn cờ
+    `cont` để tầng hiển thị bỏ khoảng cách."""
+    from server.parser import mark_continuations
+    bs = [_B("b1", "para", "Let the timestamps in S0 be sorted as"),
+          _B("b2", "equation", "t_1 < t_2 (12)"),
+          _B("b3", "para", "where T_V is the video duration.")]
+    assert mark_continuations(bs) == 1
+    assert bs[2].cont is True and bs[0].cont is False
+    assert [b.type for b in bs] == ["para", "equation", "para"]   # KHÔNG gộp
+
+
+def test_cau_truoc_da_ket_thuc_thi_khong_danh_dau_cont():
+    from server.parser import mark_continuations
+    bs = [_B("b1", "para", "Chúng tôi đánh giá trên ba tập dữ liệu."),
+          _B("b2", "equation", "x = y"),
+          _B("b3", "para", "trong đó y là số khung hình.")]
+    assert mark_continuations(bs) == 0

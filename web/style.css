@@ -1250,3 +1250,21 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   display: block; font-family: var(--sans); font-size: .78em;
   color: var(--warn); margin-bottom: .35rem;
 }
+
+/* Đoạn bị CÔNG THỨC chen vào giữa — xem `parser.mark_continuations()`.
+
+   Mẫu kinh điển của bài phương pháp: "Let the timestamps be sorted as" → công
+   thức → "where T_V is the video duration". Trong bản in đó là MỘT đoạn; ở đây
+   là ba khối, và người đọc thấy ba mẩu rời, mẩu giữa không có bản dịch, mẩu
+   cuối mở đầu bằng "where" chẳng rõ nối vào đâu.
+
+   Không gộp thành một khối: ảnh công thức phải đứng GIỮA hai nửa, và mỗi khối
+   vẫn phải là một đơn vị dịch / một vệt bôi / một ghi chú riêng. Chỉ bỏ khoảng
+   cách để ba khối đọc ra liền một đoạn. */
+/* Siết bằng padding, KHÔNG kéo margin âm: khoảng cách giữa hai `.pair` thường
+   vốn đã là 0, nên margin âm không làm gọn thêm mà đẩy khối chồng lên nhau —
+   đo được -8px và chữ công thức đè lên dòng cuối của đoạn trên. */
+.pair.is-cont, .pair.in-flow { padding-top: 0; padding-bottom: 0; }
+/* Nửa sau chưa dịch thì đừng ghi "chưa dịch" lần nữa — nửa đầu đã ghi rồi, và
+   hai dòng chữ nghiêng xám liền nhau làm đoạn trông càng vụn. */
+.pair.is-cont .vi .pending { display: none; }

@@ -1460,6 +1460,12 @@ table{border-collapse:collapse;width:100%;font-size:.9rem}
 th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
 th{background:var(--surface-2);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.8rem}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:0 1.6rem;margin:0 0 1.1rem}
+/* Nửa sau của đoạn bị công thức chen vào giữa — xem `mark_continuations()`.
+   Ba khối vẫn là ba khối để ảnh công thức đứng đúng chỗ, chỉ bỏ khoảng cách
+   để đọc ra liền một đoạn như trang in. Cùng quy ước với `.pair.is-cont`
+   bên `web/style.css` — sửa một bên phải sửa bên kia. */
+.pair.is-cont,.pair.in-flow{margin-top:0;margin-bottom:.25rem}
+.pair.is-cont .pending{display:none}
 .one .pair{grid-template-columns:1fr}
 .en{color:var(--muted);font-size:.94em}
 .vi{color:var(--ink)}
@@ -1583,7 +1589,8 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
             out.append("</table>")
 
     out.append("<h2>Nội dung</h2>")
-    for b in doc["blocks"]:
+    _bl = doc["blocks"]
+    for i, b in enumerate(_bl):
         if b["type"] in ("reference", "meta"):
             continue
         vi = tr.get(b["id"], "")
@@ -1594,7 +1601,13 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
             uri = _data_uri(doc_id, b["figure"]) if b.get("figure") else ""
             body = (f"<img src='{uri}' alt='công thức'>" if uri
                     else f"<div class='eq'>{rich(b['text'])}</div>")
-            out.append(f"<div class='pair'><div class='eqbox'>{body}</div></div>")
+            # Công thức chen giữa hai nửa một đoạn: siết khoảng cách để ba
+            # khối đọc ra liền như trang in. Cùng quy ước với `pairHTML` bên
+            # `app.js` — sửa một bên phải sửa bên kia, không thì bản xem trong
+            # app và file xuất ra trông khác nhau.
+            nxt = _bl[i + 1] if i + 1 < len(_bl) else None
+            flow = " in-flow" if (nxt or {}).get("cont") else ""
+            out.append(f"<div class='pair{flow}'><div class='eqbox'>{body}</div></div>")
             continue
 
         cells = []
@@ -1620,7 +1633,8 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
                                  ("caution", "Cần lưu ý"), ("check", "Tự kiểm tra"))
                 if n.get(k))
             cells.append(f"<div class='note'>{mermaid(n.get('diagram',''))}<dl>{dl}</dl></div>")
-        out.append(f"<div class='pair{' li' if b.get('marker') else ''}'>{''.join(cells)}</div>")
+        cls = (" li" if b.get("marker") else "") + (" is-cont" if b.get("cont") else "")
+        out.append(f"<div class='pair{cls}'>{''.join(cells)}</div>")
 
     # Mermaid nặng 3.5MB — chỉ nhúng khi bài thật sự có sơ đồ để vẽ
     script = ""

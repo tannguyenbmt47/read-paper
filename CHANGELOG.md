@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.1
+
+**A paragraph interrupted by a display equation now reads as one paragraph.**
+The classic shape in a methods paper — "Let the timestamps be sorted as", then
+the equation, then "where T_V is the video duration" — is one paragraph in
+print. Here it was three blocks: three separate rows, the middle one with no
+translation, the last starting with "where" and no visible link to anything.
+
+They are still three blocks, deliberately. The equation is rendered as an image
+that has to sit between the two halves, and each block has to stay its own unit
+for translation, highlighting and notes. What changed is that the tail is marked
+as a continuation, so the display layer drops the extra spacing and hides the
+second "chưa dịch" placeholder — the first half already says it, and two grey
+italic lines in a row make the passage look more broken, not less.
+
 ## 1.9.0
 
 **Two filters that stop paying to translate rubbish.** Every block is one
