@@ -12,9 +12,12 @@
   --warn: #8a6100;
   --warn-bg: #fdf6e3;        /* nền cảnh báo — dùng ở bộ soát slide */
   /* năm màu bôi vàng — xem mark.hl[data-c] ở cuối file */
-  --c-y:#fff3a3; --c-yl:#d9a441; --c-g:#c8f0cf; --c-gl:#3f9a5b;
-  --c-b:#c7e4fb; --c-bl:#2f7fc4; --c-p:#fcd2e3; --c-pl:#c1568c;
-  --c-v:#e0d6fb; --c-vl:#7a5bc4;
+  /* Đậm hơn hẳn bộ cũ. Đo tương phản với nền trắng: bộ cũ chỉ 1,13–1,38 nên
+     vệt bôi gần như chìm vào nền — đúng lời phàn nàn "màu bị nhạt so với nền".
+     Bộ này 1,37–1,73, mà chữ trên vệt vẫn ≥8,9 (ngưỡng cần là 4,5). */
+  --c-y:#ffd94d; --c-yl:#c98f1c; --c-g:#8fdda1; --c-gl:#2f7d4a;
+  --c-b:#a8d5f7; --c-bl:#1f6fb0; --c-p:#f9b8d4; --c-pl:#b03a72;
+  --c-v:#cdbcf7; --c-vl:#6746b8;
   --radius: 10px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -34,7 +37,7 @@
     --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #857f76;
     --accent: #e08a52; --accent-soft: #2c211a;
     --ok: #6cc08a; --warn: #d9a441; --warn-bg: #2b2416;
-  --c-y:#5a4a12; --c-yl:#d9a441; --c-g:#1f4a2c; --c-gl:#6cc08a;
+  --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
   --c-b:#173c58; --c-bl:#5aa9e6; --c-p:#4d1f36; --c-pl:#e08ab5;
   --c-v:#33265c; --c-vl:#a98ff0;
   --eq-bg: #21202a; --eq-line: #3b3846; --gl-bg: #1c2420; --gl-line: #33463a; --gl-ink: #a9c0af; --head: #e8996a;
@@ -45,7 +48,7 @@
   --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #857f76;
   --accent: #e08a52; --accent-soft: #2c211a; --ok: #6cc08a; --warn: #d9a441;
   --warn-bg: #2b2416;
-  --c-y:#5a4a12; --c-yl:#d9a441; --c-g:#1f4a2c; --c-gl:#6cc08a;
+  --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
   --c-b:#173c58; --c-bl:#5aa9e6; --c-p:#4d1f36; --c-pl:#e08ab5;
   --c-v:#33265c; --c-vl:#a98ff0;
   --eq-bg: #21202a; --eq-line: #3b3846; --gl-bg: #1c2420; --gl-line: #33463a; --gl-ink: #a9c0af; --head: #e8996a;
@@ -55,9 +58,9 @@
   --ink: #23211d; --ink-2: #5d5850; --muted: #8b857a;
   --accent: #b0521f; --accent-soft: #fdf0e7; --ok: #2f6b46; --warn: #8a6100;
   --warn-bg: #fdf6e3;
-  --c-y:#fff3a3; --c-yl:#d9a441; --c-g:#c8f0cf; --c-gl:#3f9a5b;
-  --c-b:#c7e4fb; --c-bl:#2f7fc4; --c-p:#fcd2e3; --c-pl:#c1568c;
-  --c-v:#e0d6fb; --c-vl:#7a5bc4;
+  --c-y:#ffd94d; --c-yl:#c98f1c; --c-g:#8fdda1; --c-gl:#2f7d4a;
+  --c-b:#a8d5f7; --c-bl:#1f6fb0; --c-p:#f9b8d4; --c-pl:#b03a72;
+  --c-v:#cdbcf7; --c-vl:#6746b8;
   --eq-bg: #fffdf9; --eq-line: #e8d9c4; --gl-bg: #f6f8f5;
   --gl-line: #cfe0d2; --gl-ink: #46564a; --head: #8d4418;
 }
@@ -1041,11 +1044,18 @@ sub { bottom: -.22em; }
 /* Vệt bôi neo theo khoảng ký tự trong VĂN BẢN HIỂN THỊ rồi bọc bằng DOM Range,
    không cắt chuỗi HTML — `sci()` chèn <sup>/<sub>/<a> nên mọi vị trí tính trên
    HTML đều lệch so với chỗ người đọc thật sự bôi. */
+/* Tô KÍN cả chữ, không phải nửa dưới.
+   Bản trước dùng `linear-gradient(transparent 55%, màu 55%)` — kiểu gạch chân
+   dày, chỉ tô 45% phía dưới dòng. Đọc ra thì đúng hai lời phàn nàn đã nhận:
+   "bôi không hết chữ" (vì nửa trên chữ không có màu) và "màu bị nhạt so với
+   nền" (vì diện tích tô chỉ bằng non nửa). Bút dạ thật tô kín cả chữ. */
 mark.hl {
-  background: linear-gradient(transparent 55%, var(--hl-bg) 55%);
-  color: inherit; padding: 0 .05em; border-radius: 2px; cursor: pointer;
+  background: var(--hl-bg);
+  color: inherit; padding: .06em .12em; margin: 0 -.06em;
+  border-radius: 3px; cursor: pointer;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
 }
-mark.hl:hover { background: var(--hl-bg); }
+mark.hl:hover { box-shadow: 0 0 0 2px var(--hl-line); }
 mark.hl.has-note { border-bottom: 2px solid var(--hl-line); }
 mark.hl.is-on { background: var(--hl-on); }
 

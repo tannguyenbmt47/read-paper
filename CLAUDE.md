@@ -694,6 +694,23 @@ Ba chỗ dễ vấp:
   khoảng trống cuối dòng. Nhắm chuột vào đó có thể trúng ô cha chứ không trúng
   `<mark>` — dùng `getClientRects()[0]` khi cần toạ độ thật (đã vấp lúc viết test).
 
+**Vệt bôi phải tô KÍN chữ, và màu phải khai ở CẢ BỐN khối theme.** Bản đầu dùng
+`linear-gradient(transparent 55%, màu 55%)` — kiểu gạch chân dày, chỉ tô 45%
+phía dưới dòng. Người dùng mô tả đúng hai triệu chứng của nó: *"bôi không hết
+chữ"* (nửa trên chữ không có màu) và *"màu bị nhạt so với nền"* (diện tích tô
+chỉ bằng non nửa). Đo thêm: bộ màu cũ chỉ đạt tương phản **1,13–1,38** với nền
+trắng, tức gần như chìm hẳn. Bộ mới 1,37–1,73, chữ trên vệt vẫn ≥8,9 (ngưỡng
+cần 4,5).
+
+Cái bẫy đi kèm: `--c-y…--c-v` khai ở **bốn** chỗ (`:root`, `@media dark`,
+`[data-theme=dark]`, `[data-theme=light]`). Sửa mỗi `:root` thì bật theme sáng
+tường minh là màu cũ quay lại — đã vấp đúng vậy, đo trong trình duyệt vẫn ra
+`#fff3a3` sau khi đã "sửa".
+
+Còn phần **phủ chữ thì `wrapRange` vốn đã đúng**: đo trên bài thật, bôi 115 ký
+tự cắt qua cả `<sup>` thì phủ đủ 115/115 trong một thẻ `<mark>`. Đừng đi sửa
+nhầm chỗ đó.
+
 Năm màu (`y g b p v`) đặt trên chính thẻ `<mark data-c>` để đổi màu không phải vẽ
 lại DOM. Màu vừa dùng nhớ ở `localStorage` vì người ta hay bôi liền mấy đoạn cùng
 loại.

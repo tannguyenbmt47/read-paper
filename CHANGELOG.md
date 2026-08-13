@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.2
+
+**Highlights now cover the whole word and stand out from the page.** The mark
+was drawn with `linear-gradient(transparent 55%, colour 55%)` — a thick
+underline that tints only the lower 45% of the line, which is exactly what "the
+highlight doesn't cover the text" and "the colour is too pale against the
+background" describe. It is now a solid fill. The palette was measured as well:
+the old colours reached only 1.13–1.38 contrast against white, close to
+invisible; the new ones sit at 1.37–1.73 while text on top stays above 8.9,
+where 4.5 is the threshold.
+
+The colours had to be updated in all four theme blocks. Changing only `:root`
+left the explicit light theme on the old values, so a browser check still
+reported the original pale yellow after the "fix".
+
 ## 1.9.1
 
 **A paragraph interrupted by a display equation now reads as one paragraph.**
