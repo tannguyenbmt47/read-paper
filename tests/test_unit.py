@@ -812,3 +812,21 @@ def test_cau_van_day_trich_dan_khong_bi_coi_la_thu_muc():
         "RAG hoạt động tốt với truy vấn đơn (Lewis et al., 2020; Lin et al., "
         "2024; Ram et al., 2023) nhưng gặp khó khi câu hỏi cần bắc cầu qua "
         "nhiều tài liệu khác nhau trong cùng một kho tài liệu lớn.")
+
+
+def test_noi_qua_chu_thich_hinh_nhung_khong_qua_cong_thuc():
+    """Hình/bảng là phần tử NỔI — trong bản in đoạn văn chảy vòng qua chúng, nên
+    nhảy qua để nối là đúng. Công thức thì nằm trong mạch lập luận và được cắt
+    thành ảnh phải đứng giữa hai nửa, nên không nhảy."""
+    from server.parser import stitch_hyphenated
+    noi = [_B("b1", "para", "reformulating selection not as a ranking problem"),
+           _B("b2", "caption", "Figure 2: Qualitative examples"),
+           _B("b3", "para", "but a fixed-budget joint evidence curation problem.")]
+    assert stitch_hyphenated(noi) == 1
+    assert noi[0].text.endswith("but a fixed-budget joint evidence curation problem.")
+    assert [b.type for b in noi] == ["para", "caption"]
+
+    khong = [_B("c1", "para", "Let the timestamps in S0 be sorted as"),
+             _B("c2", "equation", "t_1 < t_2 (12)"),
+             _B("c3", "para", "where T_V is the video duration.")]
+    assert stitch_hyphenated(khong) == 0

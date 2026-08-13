@@ -1643,16 +1643,30 @@ def _stitch_runon(blocks: list[Block]) -> int:
     joined = 0
     i = 0
     while i < len(blocks) - 1:
-        a, b = blocks[i], blocks[i + 1]
-        if (a.type == "para" and b.type == "para"
-                and not a.hidden and not b.hidden
-                and a.text.strip() and b.text.strip()
-                and not _SENT_END.search(a.text.rstrip())
-                and not _HYPHEN_END.search(a.text.rstrip())
+        a = blocks[i]
+        if (a.type != "para" or a.hidden or not a.text.strip()
+                or _SENT_END.search(a.text.rstrip())
+                or _HYPHEN_END.search(a.text.rstrip())):
+            i += 1
+            continue
+
+        # Cho nhảy qua khối NỔI (hình, bảng và chú thích của chúng) — chúng là
+        # phần tử trôi, trong bản in đoạn văn chảy vòng qua chúng. **Không** nhảy
+        # qua `equation`: công thức nằm trong mạch lập luận (`…sorted as` → công
+        # thức → `where T_V is…`) và được cắt thành ảnh phải đứng giữa hai nửa.
+        j = i + 1
+        while j < len(blocks) and blocks[j].type in ("caption", "figure", "table"):
+            j += 1
+        if j >= len(blocks) or j - i > 3:
+            i += 1
+            continue
+
+        b = blocks[j]
+        if (b.type == "para" and not b.hidden and b.text.strip()
                 and _CONT_LOWER.match(b.text.lstrip())):
             a.text = a.text.rstrip() + " " + b.text.lstrip()
             b.text = ""
-            del blocks[i + 1]
+            del blocks[j]
             joined += 1
             continue                     # đoạn vừa nối có thể còn nối tiếp nữa
         i += 1
