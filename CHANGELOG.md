@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.8.3
+
+**A box edge clipping the first line lost the whole line.** Layout-model boxes
+hug the text closely, so the top edge often falls inside the first line rather
+than above it. On one paper the abstract's box began at y=249.4 while its first
+line spanned 244.5–253.5 — a centre of 249.0, four tenths of a point too high —
+so "Long-video question answering requires identifying sparse yet" fell outside
+every box and vanished, even though the layout model had read it correctly.
+
+Span assignment now takes a second pass: anything no box contains by centre is
+assigned to the box it overlaps most, requiring at least a third of the span to
+be inside. The first pass is untouched, so no correct assignment changes, and
+spans that genuinely touch nothing still fall through to the existing recovery
+path. Word retention on that paper: **68.1% → 79.2%**, 674 words recovered; two
+other papers unchanged.
+
 ## 1.8.2
 
 **Choosing a model did nothing.** The corpus PATCH route kept its own copy of

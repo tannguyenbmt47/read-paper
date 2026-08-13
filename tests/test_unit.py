@@ -636,3 +636,54 @@ def test_khong_co_ids_thi_van_chay_dang_chuan():
     """Chỗ gọi chưa biết trước mã vẫn phải dùng được, rơi về `<<<id>>>` thuần."""
     from server.pipeline import _parse_labeled
     assert _parse_labeled("<<<b4>>>\nMột.") == {"b4": "Một."}
+
+
+# --------- gán span: mép khung cắt ngang dòng đầu thì không được mất cả dòng
+
+
+class _TrangGia:
+    """Trang giả, chỉ cần đúng thứ `assign_spans` đọc."""
+
+    def __init__(self, spans):
+        self._spans = spans
+
+    def get_text(self, _kind):
+        return {"blocks": [{"type": 0, "lines": [{"spans": self._spans}]}]}
+
+
+def test_span_bi_mep_khung_cat_ngang_van_vao_dung_khoi():
+    """Khung của mô hình bám rất sát chữ, nên mép trên hay cắt ngang dòng đầu.
+
+    Đo thật trên bài GCR: khung abstract bắt đầu ở y=249,4 còn dòng đầu nằm ở
+    y=244,5–253,5 — tâm ở 249,0, **cao hơn mép khung 0,4pt**. Gán theo tâm thì
+    cả dòng "Long-video question answering requires identifying sparse yet"
+    rơi ra ngoài và biến mất khỏi bài, dù docling đã bóc nó đúng.
+    """
+    from server.parser import assign_spans
+    dong_dau = {"text": "Long-video question answering", "bbox": (64.0, 244.5, 282.0, 253.5)}
+    dong_hai = {"text": "critical evidence from videos", "bbox": (64.0, 254.5, 282.0, 263.4)}
+    khung_abstract = (64.0, 249.4, 282.5, 522.5)
+
+    got = assign_spans(_TrangGia([dong_dau, dong_hai]), [khung_abstract])
+    assert [s["text"] for s in got[0]] == [dong_dau["text"], dong_hai["text"]]
+
+
+def test_span_chi_cham_mep_thi_khong_bi_hut_vao():
+    """Chồng lấn phải đủ đáng kể. Chạm mép một chút mà đã hút vào thì chữ của
+    khối bên cạnh bị kéo sang — dương tính giả tệ hơn âm tính giả ở đây."""
+    from server.parser import assign_spans
+    # span cao 10pt, chỉ có 1pt nằm trong khung → 10%, dưới ngưỡng 33%
+    span = {"text": "của khối khác", "bbox": (64.0, 240.0, 282.0, 250.0)}
+    got = assign_spans(_TrangGia([span]), [(64.0, 249.0, 282.5, 522.5)])
+    assert got[0] == []
+
+
+def test_luot_vet_khong_doi_phep_gan_dung_san():
+    """Span có khung chứa tâm thì vẫn về đúng khung NHỎ NHẤT như cũ — lượt vét
+    chỉ chạy cho span đã trượt hết ở lượt một."""
+    from server.parser import assign_spans
+    span = {"text": "trong công thức", "bbox": (100.0, 300.0, 200.0, 310.0)}
+    to = (50.0, 250.0, 400.0, 400.0)
+    nho = (90.0, 295.0, 210.0, 315.0)
+    got = assign_spans(_TrangGia([span]), [to, nho])
+    assert got[0] == [] and [s["text"] for s in got[1]] == ["trong công thức"]

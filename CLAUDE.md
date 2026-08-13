@@ -262,6 +262,23 @@ ranh giới cột — thì **cả đoạn biến mất khỏi bài mà không c�
 bài CIRAG: 20,4% số span rơi ngoài; người đọc thấy một đoạn đứt giữa chừng ở chữ
 "Current" rồi nhảy sang ý khác.
 
+**Mép khung cắt ngang dòng đầu là ca riêng, và nó mất NGUYÊN DÒNG.** Khung của
+mô hình bám rất sát chữ nên mép trên thường nằm lọt vào giữa dòng đầu tiên. Đo
+trên bài GCR: khung abstract bắt đầu ở `y=249,4`, dòng đầu nằm ở `244,5–253,5`
+tức tâm ở `249,0` — **cao hơn mép đúng 0,4pt**, thế là cả dòng *"Long-video
+question answering requires identifying sparse yet"* rơi ra ngoài, trong khi
+docling đã bóc nó hoàn toàn đúng.
+
+Vì thế `assign_spans` có **lượt vét thứ hai**: span nào không khung nào chứa tâm
+thì gán theo **diện tích chồng lấn lớn nhất**, đòi chồng ≥⅓ span. Lượt này chạy
+sau nên không đổi một phép gán đúng nào ở lượt một, và span thật sự không chạm
+khung nào vẫn rơi xuống `recover_uncovered()`. Đo lại: bài GCR **68,1% → 79,2%**
+số từ giữ được (674 từ), hai bài khác không đổi.
+
+Span nhặt ở lượt hai phải **sắp lại theo thứ tự PyMuPDF đọc ra** (`_seq`), không
+thì dòng đầu của đoạn nằm ở cuối khối — các tầng dưới có sắp lại theo hình học
+nên bài vẫn ra đúng, nhưng để hàm trả về thứ tự sai là đặt sẵn bẫy cho lần sau.
+
 `recover_uncovered()` gom phần rơi ngoài thành khối `para` rồi thả vào `items`
 trước khi sắp thứ tự đọc, nên nó đi chung đường với mọi khối khác. Hai bộ lọc
 giữ cho nó không nhặt nhầm: bỏ span nằm trong vùng hình/bảng (đó là chữ trong

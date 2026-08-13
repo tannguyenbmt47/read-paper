@@ -386,6 +386,8 @@ def assign_spans(page, boxes: list[tuple]) -> list[list[dict]]:
     out: list[list[dict]] = [[] for _ in boxes]
     order = sorted(range(len(boxes)),
                    key=lambda i: (boxes[i][2] - boxes[i][0]) * (boxes[i][3] - boxes[i][1]))
+    leftover: list[tuple[int, dict]] = []
+    seq = 0
     for b in page.get_text("dict")["blocks"]:
         if b.get("type") != 0:
             continue
@@ -393,6 +395,8 @@ def assign_spans(page, boxes: list[tuple]) -> list[list[dict]]:
             for s in l.get("spans", []):
                 if not s.get("text"):
                     continue
+                seq += 1
+                s["_seq"] = seq
                 x0, y0, x1, y1 = s["bbox"]
                 cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
                 for i in order:
@@ -400,6 +404,43 @@ def assign_spans(page, boxes: list[tuple]) -> list[list[dict]]:
                     if r[0] <= cx <= r[2] and r[1] <= cy <= r[3]:
                         out[i].append(s)
                         break
+                else:
+                    leftover.append((seq, s))
+
+    # Lượt vét: span không có khung nào chứa TÂM nó thì thử gán theo **phần diện
+    # tích chồng lấn lớn nhất**.
+    #
+    # Vì sao cần: khung của mô hình bám rất sát chữ, nên mép trên của khung
+    # thường cắt ngang dòng đầu tiên. Đo trên bài GCR: khung abstract bắt đầu ở
+    # y=249,4 còn dòng đầu nằm ở y=244,5–253,5, tức tâm ở 249,0 — **cao hơn mép
+    # khung đúng 0,4pt**. Cả dòng "Long-video question answering requires
+    # identifying sparse yet" rơi ra ngoài và biến mất khỏi bài, dù docling đã
+    # bóc nó đúng.
+    #
+    # Lượt này chạy SAU và chỉ nhận span đã trượt hết ở lượt một, nên không đổi
+    # một phép gán đúng nào. Span thật sự không chạm khung nào vẫn rơi xuống
+    # `recover_uncovered()` như cũ.
+    touched: set[int] = set()
+    for _seq, s in leftover:
+        x0, y0, x1, y1 = s["bbox"]
+        best, best_area = -1, 0.0
+        for i, r in enumerate(boxes):
+            w = min(x1, r[2]) - max(x0, r[0])
+            h = min(y1, r[3]) - max(y0, r[1])
+            if w > 0 and h > 0 and (a := w * h) > best_area:
+                best, best_area = i, a
+        # Đòi chồng ít nhất một phần ba span: chạm mép một chút thì chưa đủ để
+        # kết luận nó thuộc về khung đó.
+        if best >= 0 and best_area >= 0.33 * max(1e-6, (x1 - x0) * (y1 - y0)):
+            out[best].append(s)
+            touched.add(best)
+
+    # Span nhặt ở lượt hai được nối vào CUỐI danh sách, nên phải sắp lại về đúng
+    # thứ tự PyMuPDF đọc ra. Không sắp thì dòng đầu của đoạn nằm ở cuối khối —
+    # các tầng dưới có sắp lại theo hình học nên bài vẫn ra đúng, nhưng để hàm
+    # này trả về thứ tự sai là đặt sẵn một cái bẫy cho lần sửa sau.
+    for i in touched:
+        out[i].sort(key=lambda x: x["_seq"])
     return out
 
 
