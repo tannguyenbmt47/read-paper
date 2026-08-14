@@ -462,7 +462,7 @@ async def reparse(doc_id: str):
                 tmp = f.name
             read = await loop.run_in_executor(None, layout.read, tmp)
             os.unlink(tmp)
-            _t, blocks, imgs = await loop.run_in_executor(
+            new_title, blocks, imgs = await loop.run_in_executor(
                 None, lambda: parser.blocks_from_layout(
                     read["items"], data, regions=read["regions"]))
             better = await loop.run_in_executor(
@@ -473,12 +473,31 @@ async def reparse(doc_id: str):
             print(f"[reparse] mô hình bố cục lỗi, dùng heuristic: {e}")
             blocks = []
     if len(blocks) < 10:
-        _t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
+        new_title, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
 
     if not blocks:
         raise HTTPException(422, "Bóc lại không ra khối nào — giữ nguyên bản cũ.")
 
+    # Tiêu đề bóc lại được thì cũng nên sửa — nhưng CHỈ khi bản cũ là một mẩu
+    # cụt của bản mới. Tiêu đề đoán từ khối đầu trang hay mất dòng đầu: bài GCR
+    # lưu thành "Question Answering", đúng là đuôi của "Ground, Cover, and
+    # Refine: … for Long-Video Question Answering". Bóc lại vốn sửa được chỗ đó
+    # nhưng lại vứt tiêu đề mới đi, nên bài mang tên sai vĩnh viễn — mà tên sai
+    # thì hỏng cả danh sách bài, bản xuất ra, slide tiêu đề, và phần tra Semantic
+    # Scholar bên kho survey.
+    #
+    # Chỉ vá đúng ca cụt đuôi, không đụng tới tên người dùng tự đặt: có nút đổi
+    # tên rồi, ghi đè lựa chọn của họ là lỗi nặng hơn hẳn cái nó sửa.
+    fixed_title = ""
+    cur = (doc.get("title") or "").strip()
+    nt = (new_title or "").strip()
+    if nt and cur and nt != cur and len(nt) > len(cur) and cur.lower() in nt.lower():
+        doc["title"] = nt
+        fixed_title = nt
+
     stats = pipeline.reparse_merge(doc, [b.dict() for b in blocks])
+    if fixed_title:
+        stats["title_fixed"] = fixed_title
     store.save(doc)
 
     # Ảnh cắt theo mã khối, mà mã khối vừa đổi cho phần mới — ghi lại toàn bộ.

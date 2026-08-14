@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.9.5
+
+**Re-parsing now repairs a truncated title.** A title guessed from the top of
+page one often loses its first line: one paper was stored as "Question
+Answering", which is the tail of "Ground, Cover, and Refine: Evidence-Centric
+Frame Selection for Long-Video Question Answering". Re-parsing extracts the
+whole thing correctly but was throwing the new title away and replacing only the
+blocks, so the paper kept the wrong name forever — and the name is not
+cosmetic: it appears in the document list, at the head of every export, on the
+title slide, and it is what Semantic Scholar is queried with in the corpus tool.
+
+Only the truncation case is repaired: the stored title must be a strict
+substring of the newly extracted one. A title you typed yourself is never
+overwritten, since there is a rename button and clobbering a deliberate choice
+would be worse than the bug being fixed.
+
 ## 1.9.4
 
 **The figure preview window can be enlarged, not just the image inside it.**

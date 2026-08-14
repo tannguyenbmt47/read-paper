@@ -444,3 +444,30 @@ def test_o_xem_truoc_hinh_co_bo_phong_to(app_client):
     # transform-origin phải ở góc trên-trái, nếu không phép phóng quanh con trỏ
     # tính sai tâm và hình nhảy mỗi lần cuộn
     assert "transform-origin: 0 0" in css
+
+
+def test_boc_lai_va_duoc_tieu_de_bi_cut_dau(app_client, doc):
+    """Tiêu đề đoán từ khối đầu trang hay mất dòng đầu — bài GCR lưu thành
+    "Question Answering", đúng là đuôi của "Ground, Cover, and Refine: … for
+    Long-Video Question Answering". Bóc lại vốn sửa được nhưng lại vứt tiêu đề
+    mới đi, nên bài mang tên sai vĩnh viễn.
+
+    Chỉ vá ca CỤT ĐUÔI, không đụng tên người dùng tự đặt.
+    """
+    from server import main
+    cur, new = "Question Answering", ("Ground, Cover, and Refine: Evidence-Centric "
+                                      "Frame Selection for Long-Video Question Answering")
+
+    def vá(cu, moi):
+        cu, moi = cu.strip(), moi.strip()
+        return (moi if moi and cu and moi != cu and len(moi) > len(cu)
+                and cu.lower() in moi.lower() else cu)
+
+    assert vá(cur, new) == new                       # cụt đuôi → vá
+    assert vá("Tên tôi tự đặt", new) == "Tên tôi tự đặt"   # không dính gì → giữ
+    assert vá(new, cur) == new                       # bản mới ngắn hơn → giữ
+    assert vá(new, new) == new
+
+    # và route thật phải mang cùng luật đó
+    src = __import__("pathlib").Path(main.__file__).read_text()
+    assert "title_fixed" in src and "cur.lower() in nt.lower()" in src
