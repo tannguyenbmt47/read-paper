@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.4
+
+**The figure preview window can be enlarged, not just the image inside it.**
+Zooming reads one cell at a time, which is the wrong tool for a table: comparing
+a row against a column is the reason for opening it, and that needs the whole
+grid on screen at once. A ⤢ button expands the panel to 1200×880 and back, and
+the panel is resizable by dragging its corner. It is anchored bottom-right, so
+it grows left and up rather than off the screen.
+
 ## 1.9.3
 
 **The figure preview can be panned and zoomed.** Clicking "Figure 3" in the body

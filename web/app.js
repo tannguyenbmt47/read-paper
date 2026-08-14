@@ -159,6 +159,17 @@ function wireFigPeek() {
     else figZoom(3, e.clientX, e.clientY);
   });
 
+  // Mở rộng cả khung. Bảng nhiều số thì phóng ảnh trong khung nhỏ chỉ đọc được
+  // từng ô mà mất cái nhìn toàn bảng — so hàng với cột mới là lý do mở nó ra.
+  $("#figPeekBig").onclick = () => {
+    const box = $("#figPeek");
+    const big = box.classList.toggle("is-big");
+    box.style.width = box.style.height = "";   // bỏ cỡ đã kéo tay, để CSS quyết
+    $("#figPeekBig").textContent = big ? "⤡" : "⤢";
+    $("#figPeekBig").title = big ? "Thu khung về cỡ thường" : "Mở rộng khung";
+    figReset();                                 // khung đổi cỡ thì canh lại ảnh
+  };
+
   $("#figPeekIn").onclick = () => figZoom(1.4);
   $("#figPeekOut").onclick = () => figZoom(1 / 1.4);
   $("#figPeekZoom").onclick = figReset;

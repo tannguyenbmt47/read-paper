@@ -1298,3 +1298,17 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   cursor: pointer; user-select: none;
 }
 .figpeek-z:hover { color: var(--ink); }
+
+/* Mở rộng cả KHUNG, không chỉ phóng ảnh bên trong.
+
+   Bảng cắt từ PDF có hàng chục số trong một lưới; phóng ảnh lên trong khung
+   560px thì đọc được từng ô nhưng mất cái nhìn toàn bảng — mà so hàng với cột
+   mới là lý do người ta mở bảng ra. Khung neo ở góc dưới-phải nên nới bề rộng
+   là nó nở sang trái và lên trên, không đụng mép màn hình.
+
+   `resize: both` cho chỉnh tay tiếp; cần `overflow` khác `visible` mới có tay
+   nắm, nên đặt `hidden` — phần tràn đã do `.figpeek-body` lo. */
+.figpeek { resize: both; overflow: hidden; min-width: 320px; min-height: 220px; }
+.figpeek.is-big {
+  width: min(1200px, 92vw); height: min(880px, 90vh); max-height: 90vh;
+}

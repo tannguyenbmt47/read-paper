@@ -652,6 +652,12 @@ Ba chi tiết quyết định nó dùng được hay không:
 - **Chặn kéo mất hút.** Luôn giữ ít nhất ¼ hình trong khung ở mỗi chiều; thiếu
   chốt này thì một cú kéo mạnh là hình biến mất và người dùng tưởng hỏng.
 
+**Phóng ảnh không thay được việc nới KHUNG.** Bảng cắt từ PDF có hàng chục số
+trong một lưới: phóng ảnh trong khung 560px thì đọc được từng ô nhưng mất cái
+nhìn toàn bảng — mà so hàng với cột mới là lý do người ta mở bảng ra. Nên có nút
+⤢ nới khung lên 1200×880, cộng `resize: both` để kéo tay. Khung neo ở góc
+dưới-phải nên nở sang trái và lên trên, không tràn mép màn hình.
+
 `figReset()` gọi mỗi lần mở một hình mới — giữ mức phóng của hình trước thì mở
 hình sau ra thấy một mảng trắng.
 
