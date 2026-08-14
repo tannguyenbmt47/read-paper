@@ -194,13 +194,16 @@ async def sections(doc_id: str):
 
 
 @app.get("/api/doc/{doc_id}/estimate")
-async def estimate(doc_id: str):
+async def estimate(doc_id: str, mode: str = "both"):
     """Bước 1: báo cáo tiền xử lý — bóc ra được gì, sắp tốn bao nhiêu."""
     try:
         doc = store.load(doc_id)
     except KeyError:
         raise HTTPException(404, "Không tìm thấy tài liệu")
-    return await pipeline.estimate(doc)
+    # `mode` quyết định số cột sẽ sinh, tức gần gấp đôi chi phí đầu ra giữa
+    # "chỉ dịch" và "dịch + giải thích". Không truyền vào thì ước tính bỏ sót
+    # nguyên một cột.
+    return await pipeline.estimate(doc, mode=mode)
 
 
 @app.patch("/api/doc/{doc_id}/blocks")

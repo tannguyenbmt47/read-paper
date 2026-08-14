@@ -205,11 +205,15 @@ def build_doc(doc_id: str, title: str, blocks: list[Block], source: str, model: 
     }
 
 
-async def estimate(doc: dict) -> dict:
+async def estimate(doc: dict, mode: str = "both") -> dict:
     """Ước lượng khối lượng và chi phí của bước 2, tính trước khi tiêu đồng nào.
 
     Đây là lý do bước tiền xử lý đáng tách riêng: nhìn được cấu trúc bóc ra có
     đúng không, và biết trước sẽ tốn bao nhiêu, rồi mới quyết định dịch.
+
+    `mode` phải truyền vào: `"both"` sinh hai cột nên tốn gần gấp đôi `"vi"`.
+    Con số này là thứ duy nhất người dùng dùng để quyết định, nên sai một chiều
+    vài lần là họ thôi tin — và lúc đó cả kiến trúc hai bước mất giá trị.
     """
     todo = [b for b in doc["blocks"] if b.get("translate")]
     src_chars = sum(len(b["text"]) for b in todo)
@@ -217,12 +221,28 @@ async def estimate(doc: dict) -> dict:
 
     # ~3.6 ký tự/token cho tiếng Anh học thuật; tiếng Việt dài hơn ~1.25 lần
     src_tok = src_chars / 3.6
-    out_tok = src_tok * 1.25
     n_chunks = max(len(plan_chunks(doc)), 1)
     ctx_tok = doc_chars / 3.6
 
-    # lượt đầu ghi cache, các lượt sau đọc cache (rẻ ~10x)
-    prompt_tok = ctx_tok * (1 + 0.1 * n_chunks) + src_tok
+    # ĐẦU RA: phải tính theo SỐ CỘT sẽ sinh, không chỉ cột dịch.
+    #
+    # Bản đầu chỉ nhân 1,25 cho bản dịch, trong khi mặc định của màn đọc là hiện
+    # cả hai cột — và cột giải thích còn dài hơn bản dịch (`PLAIN_TASK` đòi nói
+    # cả vai trò của đoạn trong lập luận). Bỏ sót nguyên một cột.
+    cols = 1.0 + (1.15 if mode in ("both", "plain") else 0.0)
+    out_tok = src_tok * 1.25 * cols
+    if doc.get("refine"):
+        out_tok *= 1.7                       # pass soát lại, ô tick "Dịch kỹ"
+
+    # ĐẦU VÀO: mỗi mẻ gửi lại TOÀN BỘ prefix, không phải 10%.
+    #
+    # Bản đầu giả định `ctx_tok * (1 + 0.1 * n_chunks)` — như thể chỉ 10% ngữ
+    # cảnh được gửi lại mỗi mẻ. Thực tế mọi mẻ đều gửi nguyên `cached_prefix`;
+    # nó được đọc từ cache nên RẺ hơn, nhưng vẫn tính tiền và vẫn phải đếm.
+    # Đo trên bốn bài đã dịch xong: ước tính cũ thấp hơn thực chi 5,3–9,2 lần,
+    # và **luôn lệch về phía rẻ** — kiểu sai tệ nhất cho một con số mà người
+    # dùng dựa vào để quyết có tiêu tiền hay không.
+    prompt_tok = ctx_tok * n_chunks + src_tok
     brief_out = 3000
 
     price = None
@@ -235,9 +255,14 @@ async def estimate(doc: dict) -> dict:
     except Exception:  # noqa: BLE001
         price = None
 
-    cost = None
+    # Trả về một DẢI, không một con số. Ước tính token vốn có sai số ±40% (mật
+    # độ ký tự/token khác nhau theo bài, model trả lời dài ngắn khác nhau), và
+    # một con số duy nhất tạo ra ảo giác chính xác mà nó không có. Dải thì trung
+    # thực, và người dùng vẫn quyết định được.
+    cost = lo = hi = None
     if price and (price[0] or price[1]):
         cost = prompt_tok * price[0] + (out_tok + brief_out) * price[1]
+        lo, hi = cost * 0.7, cost * 1.6
 
     return {
         "blocks_total": len(doc["blocks"]),
@@ -248,6 +273,12 @@ async def estimate(doc: dict) -> dict:
         "prompt_tokens": round(prompt_tok),
         "output_tokens": round(out_tok + brief_out),
         "cost_usd": round(cost, 4) if cost is not None else None,
+        "cost_low": round(lo, 4) if lo is not None else None,
+        "cost_high": round(hi, 4) if hi is not None else None,
+        # Ước tính này CHỈ tính lượt dịch. Brief, giải thích từng đoạn khi bấm 💡,
+        # bôi vàng hỏi, dựng slide đều tính riêng — nói rõ để người dùng không
+        # tưởng đây là tổng hoá đơn của cả bài.
+        "covers": "lượt dịch" + (" + cột giải thích" if mode in ("both", "plain") else ""),
         "model": doc["model"],
     }
 
@@ -1025,9 +1056,16 @@ _STEPY = ("bước", "trước hết", "sau đó", "cuối cùng", "lần lượ
 
 
 def _walks_mechanism(sl: dict) -> bool:
+    """Slide này có đi hết một cơ chế không.
+
+    Dùng `depth.STRICT_CAUSAL` chứ KHÔNG dùng `depth.CAUSAL`: bộ rộng chứa
+    `khi`, `nếu`, `nên`, `trong khi` — hư từ có mặt trong gần như mọi câu tiếng
+    Việt. Đo trên một bộ slide thật, đếm bằng bộ rộng cho kết quả **ngược**: hai
+    slide mô tả cơ chế thì trượt, còn slide ablation không có cơ chế nào lại đạt.
+    """
     t = slide_text(sl).lower()
     steps = sum(1 for k in _STEPY if k in t)
-    causal = sum(1 for k in depth.CAUSAL if k in t)
+    causal = sum(1 for k in depth.STRICT_CAUSAL if k in t)
     return steps >= 2 and causal >= 2
 
 

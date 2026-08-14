@@ -505,14 +505,30 @@ function mountReview(doc) {
   loadEstimate();
 }
 
+/* Chế độ cột đang chọn — quyết định phần nào SINH RA, tức phần nào trả tiền.
+   Dùng chung cho cả ước tính lẫn lượt dịch, để hai chỗ không lệch nhau. */
+function colMode() {
+  const vi = $("#colVi")?.checked, gl = $("#colGl")?.checked;
+  if (vi && gl) return "both";
+  if (gl) return "plain";
+  return "vi";
+}
+
 async function loadEstimate() {
   const box = $("#revStats");
   box.innerHTML = `<div class="stat"><b>…</b><span>đang ước lượng</span></div>`;
   try {
-    const e = await fetch(`/api/doc/${state.doc.id}/estimate`).then((r) => r.json());
+    // Truyền `mode` theo hai ô tick cột: bật cả hai thì sinh gần gấp đôi chữ,
+    // nên ước tính phải theo đúng cái người dùng đang chọn.
+    const e = await fetch(`/api/doc/${state.doc.id}/estimate?mode=${colMode()}`)
+      .then((r) => r.json());
     const money = e.cost_usd == null
       ? `<div class="stat"><b>—</b><span>không lấy được giá của model</span></div>`
-      : `<div class="stat warn-stat"><b>$${e.cost_usd.toFixed(3)}</b><span>ước tính cho bước 2</span></div>`;
+      // DẢI chứ không một con số: ước tính token có sai số thật, và một con số
+      // duy nhất tạo ảo giác chính xác mà nó không có. Kèm luôn phạm vi — con số
+      // này chỉ tính lượt dịch, không gồm giải thích từng đoạn, slide, hỏi đáp.
+      : `<div class="stat warn-stat"><b>$${(e.cost_low ?? e.cost_usd).toFixed(3)}–${(e.cost_high ?? e.cost_usd).toFixed(3)}</b>`
+        + `<span>ước tính · ${esc(e.covers || "lượt dịch")}</span></div>`;
     box.innerHTML =
       `<div class="stat"><b>${e.blocks_to_translate}</b><span>khối sẽ dịch / ${e.blocks_total} khối</span></div>` +
       `<div class="stat"><b>${e.figures}</b><span>hình &amp; bảng</span></div>` +

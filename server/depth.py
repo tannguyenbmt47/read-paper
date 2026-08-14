@@ -76,6 +76,24 @@ CAUSAL = (
     "tức là", "nghĩa là", "cụ thể", "ví dụ",
 )
 
+# Bộ nhân quả CHẶT — chỉ dùng cho phép kiểm "slide này có đi hết cơ chế không".
+#
+# `CAUSAL` ở trên cố ý rộng, vì `missing_mechanism` chỉ hỏi "câu này có MỘT dấu
+# hiệu nhân quả nào không" — rộng ở đó là đúng. Nhưng đếm nó để kết luận "đã đi
+# hết cơ chế" thì sai hẳn: `khi`, `nếu`, `nên`, `trong khi` có mặt trong gần như
+# mọi câu tiếng Việt. Đo trên một bộ slide thật: hai slide MÔ TẢ CƠ CHẾ thì
+# trượt, còn slide ablation KHÔNG có cơ chế nào lại đạt, nhờ đúng mấy hư từ đó.
+# Đếm hư từ còn dạy model rắc "sau đó / trong khi" vào cho qua cửa.
+# Thứ CỐ Ý bỏ ra so với `CAUSAL`: `khi `, `nếu `, `trong khi` — liên từ thời
+# gian/điều kiện, có mặt trong gần như mọi câu tiếng Việt nên đếm chúng là đếm
+# nhiễu. Giữ lại `nên ` vì nó là liên từ nhân quả thật ("A, nên B"), dù cũng là
+# tình thái từ ("nên làm") — mất nó thì bỏ sót cơ chế thật.
+STRICT_CAUSAL = (
+    "vì ", "bởi ", "do đó", "dẫn đến", "dẫn tới", "khiến", "làm cho",
+    "bằng cách", "thông qua", "nhờ ", "nhờ đó", "kết quả là", "cho nên",
+    "nên ", "thay vì", "để tránh", "nếu không", "ngược lại",
+)
+
 _WORD = re.compile(r"[0-9A-Za-zÀ-ỹà-ỹ]+", re.UNICODE)
 
 # Từ chức năng — không tính khi đo trùng lặp giữa khái niệm và lời giải thích.

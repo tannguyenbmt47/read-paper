@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.12.0
+
+Two more audits — how well the tool actually teaches, and the interface as a
+design rather than as a list of bugs. What each turned up, and what is fixed:
+
+**The cost estimate was wrong by five to nine times, always cheap.** The whole
+reason for splitting review from translation is knowing the price before
+spending anything, and that number rested on two bad assumptions: output was
+counted for the Vietnamese column only, though the reader generates an
+explanation column by default and that column runs longer; and input assumed
+each batch re-sends a tenth of the context when in fact every batch re-sends the
+whole cached prefix. Both are fixed, the estimate now follows the column
+checkboxes, and it reports a range with its scope stated rather than a single
+number implying precision it does not have.
+
+**The "walks a mechanism" check was scoring the opposite of what it meant.** It
+counted any word from the broad causal list, which includes `khi`, `nếu` and
+`trong khi` — function words present in nearly every Vietnamese sentence. On a
+real deck the two slides that genuinely describe a mechanism failed while an
+ablation slide with no mechanism passed. There is now a strict list for this
+one purpose, keeping real connectives like `nên` and dropping the temporal and
+conditional ones.
+
+**`falsify` was generated, guarded, and never shown.** "What observation would
+prove this approach wrong" is the most Feynman field in the whole synthesis: the
+model wrote it, `check` complained when it was missing, and it appeared in
+neither the interface nor the Markdown export — paying for the tokens and hiding
+the result, while the warning pointed at a field nobody could see to fix.
+
+**One lecture carried 109 warnings, 106 of them the same kind.** Grouping now
+happens in the data rather than only in the interface, since those entries were
+written to the database and travelled with the lecture. That paper drops to 11,
+and the three real warnings are visible instead of buried.
+
+**Exported lectures printed each answer directly under its question**, undoing
+the one place in the tool with genuine retrieval practice — the in-app view
+folds answers away deliberately. Answers now sit at the end.
+
+Interface: the reading toolbar wrapped nothing, so at 1024px the export button
+left the screen and at 768px the translate button — the tool's primary action —
+sat outside the viewport entirely; the muted text colour measured 3.51:1 against
+the page, below the 4.5:1 threshold, and it is the colour of nearly every
+explanatory line in the app; per-block buttons were 20px and invisible without
+hover, so on a touch device the explain and edit buttons could not be reached at
+all. And **Move to another corpus** was hidden whenever only one corpus existed
+— exactly when a paper has just been loaded into the wrong one; it is always
+offered now, and the destination picker can create the corpus.
+
 ## 1.11.1
 
 **Dragging to select one column no longer picks up the others.** The bilingual

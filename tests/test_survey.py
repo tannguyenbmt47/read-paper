@@ -1046,3 +1046,49 @@ def test_danh_dau_cache_khong_bi_tien_to_bi_danh_lam_truot():
     assert f("anthropic/claude-sonnet-4.5") and f("~anthropic/claude-opus-4.1")
     assert f("qwen/qwen3") and f("~alibaba/x")
     assert not f("openai/gpt-5.6") and not f("~deepseek/deepseek-v4-flash-latest")
+
+
+def test_falsify_phai_den_duoc_mat_nguoi_doc(client, sdb, kho):
+    """`falsify` — "quan sát nào sẽ chứng minh hướng này sai" — là trường Feynman
+    nhất của bản tổng hợp. Model vẫn sinh, `check` vẫn đòi, mà nó chưa bao giờ
+    được vẽ ra: trả tiền token đầu ra rồi giấu đi, và cảnh báo "thiếu phản chứng"
+    trỏ tới một trường người dùng không nhìn thấy để mà sửa."""
+    from pathlib import Path
+    from server.survey import synth
+    root = Path(__file__).resolve().parents[1]
+    assert "a.falsify" in root.joinpath("web/survey.js").read_text()
+
+    md = synth.as_markdown({"approaches": [
+        {"name": "A", "idea": "y", "mechanism": "m", "bet": "b",
+         "falsify": "nếu đo trên video dài hơn 30 phút"}]})
+    assert "nếu đo trên video dài hơn 30 phút" in md
+
+
+def test_gom_canh_bao_bai_giang_cung_muc_cung_loai(client):
+    """Một bài thật có 106 cảnh báo `mã_đoạn_không_có`, riêng một mục 71 mã KHÁC
+    nhau — gom theo thông điệp không ăn. Ba cảnh báo thật nằm lẫn trong đó."""
+    from server.survey import lecture
+    nhieu = [{"section": "check", "kind": "mã_đoạn_không_có", "msg": f"mã {i}"}
+             for i in range(71)]
+    that = [{"section": "limits", "kind": "thiếu_cơ_chế", "msg": "câu này nông"}]
+    got = lecture._gom(nhieu + that)
+    assert len(got) == 2, got
+    assert got[0]["n"] == 71 and "và 67 chỗ nữa" in got[0]["msg"]
+    assert got[1]["kind"] == "thiếu_cơ_chế"      # cảnh báo thật không bị nuốt
+
+
+def test_di_het_co_che_khong_dem_hu_tu():
+    """`CAUSAL` cố ý rộng cho `missing_mechanism`, nhưng đếm nó để kết luận "đã
+    đi hết cơ chế" thì sai: `khi`, `nếu`, `nên`, `trong khi` có mặt trong gần như
+    mọi câu tiếng Việt. Đo trên deck thật: slide ablation KHÔNG có cơ chế nào lại
+    đạt, còn hai slide mô tả cơ chế thì trượt."""
+    from server import pipeline
+    hu_tu = {"headline": "ICI tích luỹ bằng chứng nhiều bước mà vẫn ổn định",
+             "bullets": ["Khi số bước tăng thì kết quả không đổi",
+                         "Trong khi đó chi phí tăng, nên cần cân nhắc, sau đó dừng"]}
+    that = {"headline": "ICI dựng core triple set",
+            "bullets": ["Bước 1: nhận truy vấn, trả về tập triple ứng viên",
+                        "Bước 2: lọc bằng cách so ràng buộc toàn cục, "
+                        "nhờ đó bỏ được triple mâu thuẫn, dẫn đến tập nhất quán"]}
+    assert not pipeline._walks_mechanism(hu_tu)
+    assert pipeline._walks_mechanism(that)

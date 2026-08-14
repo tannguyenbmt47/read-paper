@@ -321,6 +321,11 @@ def as_markdown(d: dict) -> str:
                 f"**Ý tưởng.** {a['idea']}", "",
                 f"**Cơ chế.** {a['mechanism']}", "",
                 f"**Đặt cược vào.** {a['bet']}", ""]
+        # `falsify` đi liền `bet` — "đặt cược vào X" thì phải kèm "sai nếu Y".
+        # Trường này vẫn được sinh và vẫn bị `check` đòi, nhưng trước đây không
+        # xuất hiện ở giao diện lẫn bản Markdown.
+        if a.get("falsify"):
+            out += [f"**Sẽ sai nếu.** {a['falsify']}", ""]
         if a.get("cost"):
             out += [f"**Cái giá.** {a['cost']}", ""]
         if a.get("papers"):

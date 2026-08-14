@@ -332,7 +332,50 @@ def check(sections: dict, chunk_ids: set[str], paper_id: str = "") -> list[dict]
             for w in depth.check_text(text, label=f"{title}{' · ' + label if label else ''}"):
                 warns.append({"section": name, "kind": w["kind"], "msg": w["msg"],
                               "text": w.get("text", "")})
-    return warns
+
+    return _gom(warns)
+
+
+# Từ ngần này cảnh báo cùng (mục, loại) trở lên thì gộp thành một dòng.
+GROUP_AT = 3
+GROUP_SHOW = 4          # số ví dụ giữ lại trong dòng đã gộp
+
+
+def _gom(warns: list[dict]) -> list[dict]:
+    """Gộp cảnh báo cùng MỤC và cùng LOẠI thành một dòng kèm số lần.
+
+    Đo trên một bài thật: **106 cảnh báo `mã_đoạn_không_có`**, riêng mục `check`
+    có 71 mã — và chúng KHÁC nhau từng cái, nên gộp theo thông điệp không ăn gì.
+    Ba cảnh báo thật (`số_không_có_trong_bài`, `thiếu_cơ_chế`) nằm lẫn trong đó
+    và không ai nhìn thấy. Một chốt chặn kêu 106 lần thì người dùng thôi đọc nó,
+    và cảnh báo thật trôi theo — bài học đã ghi trong CLAUDE.md.
+
+    Gộp ở tầng dữ liệu chứ không chỉ ở giao diện: `warns` được ghi xuống DB, nên
+    106 phần tử ấy còn theo bài giảng đi khắp nơi.
+    """
+    buckets: dict[tuple, list[dict]] = {}
+    order: list[tuple] = []
+    for w in warns:
+        key = (w.get("section", ""), w["kind"])
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(w)
+
+    out: list[dict] = []
+    for key in order:
+        group = buckets[key]
+        if len(group) < GROUP_AT:
+            out.extend(group)
+            continue
+        head = dict(group[0])
+        vi_du = [w["msg"] for w in group[:GROUP_SHOW]]
+        con = len(group) - len(vi_du)
+        head["msg"] = ("; ".join(vi_du)
+                       + (f" — và {con} chỗ nữa cùng loại" if con else ""))
+        head["n"] = len(group)
+        out.append(head)
+    return out
 
 
 def _shallow(warns: list[dict]) -> dict[str, str]:
@@ -420,9 +463,18 @@ def as_markdown(paper: dict, lec: dict) -> str:
         out.append("")
     if (d := s.get("check")):
         head("check")
-        for i, it in enumerate(d.get("items") or [], 1):
+        # Đáp án xuống CUỐI file, không nằm ngay dưới câu hỏi. Bản trong app đã
+        # cẩn thận gập đáp án vào `<details>` vì chính lúc người đọc tự dựng lại
+        # lời giải thích mới là lúc họ học được — rồi bản mang đi lại in đáp án
+        # ngay dưới câu, làm mất sạch tác dụng đó.
+        items = d.get("items") or []
+        for i, it in enumerate(items, 1):
             out.append(f"{i}. {it.get('q', '')}")
-            out.append(f"   > {it.get('a', '')}\n")
+        if items:
+            out.append("\n<details>\n<summary>Đáp án</summary>\n")
+            for i, it in enumerate(items, 1):
+                out.append(f"{i}. {it.get('a', '')}")
+            out.append("\n</details>")
     if lec.get("refs"):
         out.append("\n## Các bài được dẫn (dùng cho phần đối chiếu)\n")
         for r in lec["refs"]:

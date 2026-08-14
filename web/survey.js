@@ -323,8 +323,7 @@ function svRenderPapers(more = false) {
           ? '<button class="btn xs" data-act="enrich">Bơm nội dung · ~$0,034</button>' : ""}
         ${p.card ? '<button class="btn xs" data-act="recard">Bóc lại phiếu · ~$0,01</button>' : ""}
         <button class="btn xs" data-act="edit" title="Sửa tiêu đề, năm, nơi đăng — miễn phí">Sửa</button>
-        ${SV.surveys.length > 1
-          ? '<button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>' : ""}
+        <button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>
         <button class="btn xs is-danger" data-act="drop">Bỏ</button>
       </div>
     </li>`).join("");
@@ -411,14 +410,17 @@ function svEditBox(li, pid) {
    ra điều đó — người dùng không có cách nào tự biết. */
 function svMoveBox(li, pid) {
   if (li.querySelector(".sv-move")) return;      // đã mở rồi
+  // Kho đích có thể chưa tồn tại — đó chính là tình huống hay gặp nhất: mới
+  // có một kho, vừa nạp nhầm bài vào đó. Giấu nút đi lúc này là giấu đúng lúc
+  // người dùng cần nó nhất, và họ sẽ xoá bài rồi nạp lại, mất ~$0,034.
   const others = SV.surveys.filter((s) => s.id !== SV.id);
-  if (!others.length) return;
 
   const box = document.createElement("div");
   box.className = "sv-move";
   box.innerHTML = `<label>Chuyển sang
       <select class="input">${others.map((s) =>
-        `<option value="${esc(s.id)}">${esc(s.name)} · ${s.papers} bài</option>`).join("")}</select>
+        `<option value="${esc(s.id)}">${esc(s.name)} · ${s.papers} bài</option>`).join("")}
+        <option value="__new">＋ Kho mới…</option></select>
     </label>
     <div class="sv-moveact">
       <button class="btn xs" data-go="1">Chuyển · miễn phí</button>
@@ -432,7 +434,16 @@ function svMoveBox(li, pid) {
   box.onclick = async (e) => {
     if (e.target.dataset.cancel) { box.remove(); return; }
     if (!e.target.dataset.go) return;
-    const to = box.querySelector("select").value;
+    let to = box.querySelector("select").value;
+    if (to === "__new") {
+      const ten = prompt("Tên kho mới:", "");
+      if (!ten || !ten.trim()) return;
+      const s2 = await svFetch("/api/survey", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: ten.trim() }),
+      });
+      to = s2.id;
+    }
     e.target.disabled = true;
     try {
       const d = await svFetch(`/api/survey/${SV.id}/paper/${pid}/move`, {
@@ -698,6 +709,12 @@ function svRenderSynth(d, stale) {
         a.mechanism ? `<p><b>Cơ chế.</b> ${esc(a.mechanism)}</p>` : "",
         // `bet` là trường có giá trị nhất — nó nói hướng này sụp khi nào.
         a.bet ? `<p class="sv-bet"><b>Đặt cược vào:</b> ${esc(a.bet)}</p>` : "",
+        // `falsify` là trường Feynman nhất của cả bản tổng hợp — "quan sát nào
+        // sẽ chứng minh hướng này sai". Model vẫn sinh nó, `check` vẫn đòi nó,
+        // mà nó chưa bao giờ tới mắt người đọc: ta trả tiền token đầu ra rồi
+        // giấu đi, và cảnh báo "thiếu phản chứng" trỏ tới một trường không nhìn
+        // thấy được để mà sửa. Đặt ngay dưới `bet` vì hai thứ đi liền nhau.
+        a.falsify ? `<p class="sv-bet"><b>Sẽ sai nếu:</b> ${esc(a.falsify)}</p>` : "",
         a.cost ? `<p class="small"><b>Cái giá.</b> ${esc(a.cost)}</p>` : "",
         (a.papers || []).length ? `<p class="sv-plist">${svPaperList(a.papers)}</p>` : "");
       if ((a.evidence || []).length) {

@@ -5,7 +5,7 @@
   --line: #e2ded4;
   --ink: #23211d;
   --ink-2: #5d5850;
-  --muted: #8b857a;
+  --muted: #6f6a61;
   --accent: #b0521f;
   --accent-soft: #fdf0e7;
   --ok: #2f6b46;
@@ -55,7 +55,7 @@
 }
 :root[data-theme="light"] {
   --bg: #fbfaf7; --surface: #ffffff; --surface-2: #f4f2ed; --line: #e2ded4;
-  --ink: #23211d; --ink-2: #5d5850; --muted: #8b857a;
+  --ink: #23211d; --ink-2: #5d5850; --muted: #6f6a61;
   --accent: #b0521f; --accent-soft: #fdf0e7; --ok: #2f6b46; --warn: #8a6100;
   --warn-bg: #fdf6e3;
   --c-y:#ffd94d; --c-yl:#c98f1c; --c-g:#8fdda1; --c-gl:#2f7d4a;
@@ -1334,3 +1334,25 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
 .doc.sel-en .vi, .doc.sel-en .gl,
 .doc.sel-vi .en, .doc.sel-vi .gl,
 .doc.sel-gl .en, .doc.sel-gl .vi { user-select: none; -webkit-user-select: none; }
+
+
+/* Vùng bấm và trợ năng cho hàng nút trên mỗi khối.
+
+   Hai vấn đề đo được: nút 20×20px (dưới ngưỡng 24px của WCAG) và `opacity: 0`
+   cho tới khi `:hover` — trên thiết bị cảm ứng thì KHÔNG CÓ hover, nên nút
+   Giải thích và nút Sửa bản dịch không có đường nào bấm tới. `.fig-crop` và
+   `.sv-pact` đã có bù cho ca này, `.tools`/`.blk-act` thì bị sót. */
+.tools button, .blk-act button { min-width: 24px; min-height: 24px; }
+@media (hover: none) {
+  .tools, .blk-act { opacity: .7; }
+}
+
+/* Thanh công cụ màn đọc phải xuống dòng thay vì đẩy nút chính ra ngoài màn
+   hình. Đo thật: ở 768px, `#translateBtn` — nút chính của cả công cụ — nằm ở
+   680→779 trong khung 768, tức lọt ra ngoài; ở 1024px thì `#exportBtn` mất.
+   Màn Tìm hiểu cùng bài toán mà không vỡ, vì nó cho phép xuống dòng. */
+@media (max-width: 1040px) {
+  .topbar { flex-wrap: wrap; row-gap: .35rem; }
+  .topbar-actions { flex-wrap: wrap; }
+  .topbar-title { flex-basis: 100%; order: -1; }
+}
