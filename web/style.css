@@ -1320,3 +1320,17 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
 .figpeek.is-big {
   width: min(1200px, 92vw); height: min(880px, 90vh); max-height: 90vh;
 }
+
+/* Chọn chữ chỉ trong một cột — xem `lockSelectionColumn()` bên `app.js`.
+
+   Lưới xếp theo hàng nên thứ tự DOM là `en, vi, gl, en, vi, gl…`; trình duyệt
+   quét vùng chọn theo thứ tự đó, không theo cột nhìn thấy. Kéo xuống vài hàng
+   trong cột dịch là vơ luôn bản gốc và cột giải thích ở giữa, copy ra thành ba
+   thứ tiếng trộn nhau.
+
+   Chữ trong phần tử `user-select: none` thì bị bỏ qua khi quét — nên khoá hai
+   cột kia ngay lúc bắt đầu kéo là đủ. Không có thuộc tính CSS nào làm được việc
+   này trực tiếp. */
+.doc.sel-en .vi, .doc.sel-en .gl,
+.doc.sel-vi .en, .doc.sel-vi .gl,
+.doc.sel-gl .en, .doc.sel-gl .vi { user-select: none; -webkit-user-select: none; }

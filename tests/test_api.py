@@ -498,3 +498,27 @@ def test_ma_nguon_duoc_mount_de_khoi_dung_lai_anh(app_client):
     assert "./web:/app/web:ro" in yml
     assert "./server:/app/server:ro" in yml
     assert "./data:/data" in yml          # dữ liệu vẫn phải nằm ngoài ảnh
+
+
+def test_chon_chu_bi_khoa_theo_cot(app_client):
+    """Lưới song ngữ xếp theo hàng nên thứ tự DOM là `en, vi, gl, en, vi, gl…`.
+    Trình duyệt quét vùng chọn theo thứ tự đó chứ không theo cột nhìn thấy, nên
+    kéo xuống vài hàng trong một cột là vơ luôn hai cột kia — copy ra thành ba
+    thứ tiếng trộn nhau.
+
+    Không có thuộc tính CSS nào giới hạn vùng chọn theo cột; cách duy nhất là
+    `user-select: none` ở hai cột kia, đặt ngay lúc `mousedown` — đặt ở `mouseup`
+    thì vùng chọn đã lớn xong rồi.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    js = root.joinpath("web/app.js").read_text()
+    css = root.joinpath("web/style.css").read_text()
+
+    assert "function lockSelectionColumn" in js
+    assert 'doc.addEventListener("mousedown", (e) => lockSelectionColumn(e.target));' in js
+    for rule in (".doc.sel-en .vi", ".doc.sel-vi .en", ".doc.sel-gl .en"):
+        assert rule in css, f"thiếu luật {rule}"
+    # cả khối luật phải kết thúc bằng `user-select: none`
+    i = css.index(".doc.sel-en")
+    assert "user-select: none" in css[i:css.index("}", i) + 1]

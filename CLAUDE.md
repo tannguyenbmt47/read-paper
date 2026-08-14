@@ -661,6 +661,25 @@ dưới-phải nên nở sang trái và lên trên, không tràn mép màn hình
 `figReset()` gọi mỗi lần mở một hình mới — giữ mức phóng của hình trước thì mở
 hình sau ra thấy một mảng trắng.
 
+### Chọn chữ chỉ trong một cột
+
+Lưới song ngữ xếp **theo hàng**, nên thứ tự DOM là `en, vi, gl, en, vi, gl…`.
+Trình duyệt quét vùng chọn theo thứ tự DOM chứ không theo cột nhìn thấy: kéo từ
+hàng 1 xuống hàng 3 trong cột dịch là vơ luôn bản gốc và cột giải thích của
+những hàng ở giữa, copy ra thành ba thứ tiếng trộn nhau. Đo trên bài thật:
+2.733 ký tự chọn được, trong đó có nguyên văn tiếng Anh của các hàng xen giữa.
+
+**Không có thuộc tính CSS nào giới hạn vùng chọn theo cột.** Nhưng chữ nằm trong
+phần tử `user-select: none` thì **bị bỏ qua khi quét vùng chọn** — nên chỉ cần
+tắt chọn ở hai cột kia ngay lúc bắt đầu kéo. Sau khi khoá: 2.703 ký tự, không
+còn chữ của cột khác, mà chữ của chính cột đó vẫn đủ.
+
+Hai chi tiết:
+- **Khoá ở `mousedown`, không phải `mouseup`.** Đặt ở `mouseup` thì vùng chọn đã
+  lớn xong từ lâu.
+- **Đừng bỏ khoá lúc thả chuột.** Người dùng hay thả rồi kéo tiếp cho dài thêm;
+  bỏ sớm thì lần nới đó lại dính cột khác. Bỏ ở `mousedown` của lượt kéo sau.
+
 ### Sửa tay bản dịch, và chốt chặn rò hệ chữ
 
 Nút ✎ trên mỗi khối ở màn đọc mở một `<textarea>` chứa **văn bản thô đang lưu**,

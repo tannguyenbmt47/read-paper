@@ -2048,8 +2048,34 @@ async function saveHlNote() {
   } catch (e) { $("#hlMsg").textContent = "Lỗi: " + e.message; }
 }
 
+/* Chọn chữ chỉ trong MỘT cột.
+
+   Lưới song ngữ xếp theo hàng, nên thứ tự DOM là `en, vi, gl, en, vi, gl…`.
+   Trình duyệt chọn theo thứ tự DOM chứ không theo cột nhìn thấy: kéo từ hàng 1
+   xuống hàng 3 trong cột dịch là vơ luôn bản gốc và cột giải thích của những
+   hàng ở giữa. Copy ra thì ba thứ tiếng trộn vào nhau.
+
+   Không có thuộc tính CSS nào giới hạn vùng chọn theo cột. Nhưng chữ nằm trong
+   phần tử `user-select: none` thì **bị bỏ qua khi quét vùng chọn** — nên chỉ
+   cần, ngay lúc bắt đầu kéo, tắt chọn ở hai cột kia. Bỏ cờ khi bắt đầu lượt kéo
+   sau, chứ không bỏ lúc thả chuột: người dùng hay thả rồi kéo tiếp cho dài thêm,
+   và bỏ sớm thì lần nới đó lại dính cột khác. */
+const SEL_COLS = ["en", "vi", "gl"];
+
+function lockSelectionColumn(target) {
+  const doc = $("#doc");
+  const cell = target?.closest?.(".en, .vi, .gl");
+  SEL_COLS.forEach((c) => doc.classList.remove("sel-" + c));
+  if (cell) {
+    const col = SEL_COLS.find((c) => cell.classList.contains(c));
+    if (col) doc.classList.add("sel-" + col);
+  }
+}
+
 function wireHighlights() {
   const doc = $("#doc");
+  // `mousedown` chứ không phải `mouseup`: phải khoá TRƯỚC khi vùng chọn lớn lên.
+  doc.addEventListener("mousedown", (e) => lockSelectionColumn(e.target));
   doc.addEventListener("mouseup", () => setTimeout(onDocSelect, 0));
   doc.addEventListener("keyup", (e) => {
     if (e.shiftKey) setTimeout(onDocSelect, 0);

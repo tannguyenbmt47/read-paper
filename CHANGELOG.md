@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.11.1
+
+**Dragging to select one column no longer picks up the others.** The bilingual
+grid is laid out by rows, so the DOM order is `en, vi, gl, en, vi, gl…` and the
+browser sweeps a selection in that order rather than down the visible column.
+Selecting three rows of the translation therefore swept in the English and the
+explanation of every row in between, and copying produced three languages
+interleaved.
+
+No CSS property constrains a selection to a column, but text inside
+`user-select: none` is skipped by the sweep — so the other two columns are
+disabled the moment a drag starts, and re-enabled when the next drag starts
+somewhere else. Measured on a real paper: 2,733 characters selected before,
+2,703 after, with the other columns gone and the chosen column intact.
+
 ## 1.11.0
 
 Four parallel audits — synthesis, cost, frontend, data integrity — each asked
