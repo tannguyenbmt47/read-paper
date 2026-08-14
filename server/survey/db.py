@@ -357,6 +357,9 @@ def delete_survey(sid: str) -> None:
     for p in list_papers(sid):
         drop_paper(p["id"])
     with conn() as c:
+        # Xoá phải kéo theo thứ trỏ tới nó — cùng luật đã áp cho `drop_run`.
+        c.execute("DELETE FROM qcache WHERE run_id IN"
+                  " (SELECT id FROM run WHERE survey_id = ?)", (sid,))
         c.execute("DELETE FROM run WHERE survey_id = ?", (sid,))
         c.execute("DELETE FROM survey WHERE id = ?", (sid,))
 
@@ -406,9 +409,15 @@ def update_paper(pid: str, **fields) -> None:
     # tên cũ mãi mãi.
     new_title = fields.get("title")
     if new_title is not None and new_title != old_title:
+        # UPDATE và rebuild phải nằm CHUNG một giao dịch. Tách ra thì nếu rebuild
+        # ném lỗi (luồng SSE khác đang giữ khoá ghi — đúng thứ đã vấp với
+        # `integrity()`) hoặc tiến trình chết giữa hai lệnh, `chunk.title` đã là
+        # tiêu đề MỚI trong khi chỉ mục còn token của tiêu đề CŨ. Từ đó mọi lệnh
+        # xoá FTS mang nội dung lệch, và nó nổ rất muộn ở "database disk image is
+        # malformed" — đúng kịch bản đã làm hỏng DB một lần, chỉ khác cửa vào.
         with c:
             c.execute("UPDATE chunk SET title = ? WHERE paper_id = ?", (new_title, pid))
-        reindex()
+            c.execute("INSERT INTO chunk_fts(chunk_fts) VALUES ('rebuild')")
 
 
 # Hai cột nặng, chỉ dùng ở màn bài giảng. Danh sách bài trả về cho mọi màn hình
@@ -732,8 +741,15 @@ def set_ctx(paper_id: str, ctx_by_ord: dict[int, str]) -> None:
                                  (r["rowid"],)).fetchone())
 
 
-def get_chunks(ids: list[str]) -> dict[str, dict]:
-    """Tra hàng loạt theo mã đoạn, kèm metadata của bài để dựng trích dẫn."""
+def get_chunks(ids: list[str], survey_id: str = "") -> dict[str, dict]:
+    """Tra hàng loạt theo mã đoạn, kèm metadata của bài để dựng trích dẫn.
+
+    `survey_id` khác rỗng thì **chỉ trả đoạn thuộc kho đó**. Thiếu bộ lọc này
+    thì một trích dẫn trỏ sang kho khác vẫn tra ra bình thường, và tệ hơn: phép
+    soát số liệu lấy chính đoạn ngoại lai đó làm nguồn chân lý. Cùng lý do
+    `verify.check_answer` đòi mã phải nằm trong tập đã lấy về ở lượt này — mã có
+    thật trong DB nhưng model chưa từng đọc cũng là bịa.
+    """
     if not ids:
         return {}
     c = conn()
@@ -744,7 +760,11 @@ def get_chunks(ids: list[str]) -> dict[str, dict]:
         q = ("SELECT ch.*, p.title AS paper_title, p.year, p.survey_id, p.cites,"
              " p.loupe_doc_id FROM chunk ch JOIN paper p ON p.id = ch.paper_id"
              f" WHERE ch.id IN ({','.join('?' * len(batch))})")
-        for row in c.execute(q, batch):
+        args = list(batch)
+        if survey_id:
+            q += " AND p.survey_id = ?"
+            args.append(check_id(survey_id))
+        for row in c.execute(q, args):
             d = dict(row)
             d["children"] = _loads(d.get("children"), [])
             out[row["id"]] = d

@@ -424,7 +424,15 @@ mark.hit.cur { background: var(--accent); color: #fff; }
 }
 .doc.cols-1 .pair { grid-template-columns: minmax(0, 1fr); }
 .doc.cols-2 .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.doc.cols-3 .pair { grid-template-columns: 1fr 1fr 1fr; gap: 0 1.5rem; }
+/* `1fr` là `minmax(auto, 1fr)`, mà `auto` ở đây là `min-content` — một URL
+   dài hay chuỗi công thức không có chỗ ngắt sẽ ép cột nở ra và cả trang đọc
+   tràn ngang. Hai luật một cột / hai cột ở trên đã viết `minmax(0, …)`; luật
+   ba cột bị sót. */
+.doc.cols-3 .pair {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 1.5rem;
+}
+.en, .vi, .gl { overflow-wrap: anywhere; }
 .doc:not(.show-en) .en { display: none; }
 .doc:not(.show-vi) .vi { display: none; }
 .doc:not(.show-gl) .gl { display: none; }

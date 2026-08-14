@@ -134,8 +134,14 @@ def _clean(survey_id: str, d: dict, lin: list[dict]) -> dict:
     real = {p["id"] for p in papers}
 
     def pid(x):
+        """Nhãn ngắn `P1` → mã bài thật. Nhãn lạ thì GIỮ NGUYÊN để `check` bắt.
+
+        Bản trước viết `back.get(x, x if x in real else x)` — hai nhánh của biểu
+        thức điều kiện y hệt nhau, nên nó chỉ là `back.get(x, x)` viết vòng vo.
+        Trông như có kiểm tra mà không kiểm gì cả.
+        """
         x = str(x or "").strip()
-        return back.get(x, x if x in real else x)
+        return back.get(x, x)
 
     def s(x):
         return str(x or "").strip()
@@ -210,7 +216,9 @@ def check(survey_id: str, d: dict) -> list[dict]:
     warns: list[dict] = []
     papers = {p["id"]: p for p in sdb.list_papers(survey_id)}
     cites = _cites(d)
-    rows = sdb.get_chunks([c for c, _ in cites])
+    # Lọc theo kho: trích dẫn trỏ sang kho khác vẫn tra ra được nếu không lọc,
+    # và tệ hơn là phép soát số dưới đây lấy chính đoạn ngoại lai làm chân lý.
+    rows = sdb.get_chunks([c for c, _ in cites], survey_id)
 
     # 1) mã đoạn phải có thật
     for cid, claim in cites:
@@ -235,9 +243,16 @@ def check(survey_id: str, d: dict) -> list[dict]:
                           "text": claim[:140]})
 
     # 3) mã bài nhắc tới phải có thật
+    # `framings` và `tensions[].sides` cũng mang `papers` mà trước đây không được
+    # quét: chip đỏ hiện lên trong mục "Bài toán" và "Chỗ các bài nói ngược nhau"
+    # trong khi bộ đếm cảnh báo vẫn nói 0 — người dùng thấy sai mà chốt nói ổn,
+    # đúng kiểu làm mất lòng tin vào cảnh báo.
+    sides = [sd for t in (d.get("tensions") or []) for sd in (t.get("sides") or [])]
     for key, items in (("approaches", d.get("approaches", [])),
                        ("novelty", d.get("novelty", [])),
-                       ("read_order", d.get("read_order", []))):
+                       ("read_order", d.get("read_order", [])),
+                       ("framings", (d.get("problem") or {}).get("framings") or []),
+                       ("tensions", sides)):
         for it in items:
             ids = it.get("papers") or ([it["paper"]] if it.get("paper") else [])
             for pid in ids:

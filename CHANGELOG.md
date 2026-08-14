@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.11.0
+
+Four parallel audits — synthesis, cost, frontend, data integrity — each asked
+for evidence rather than suspicion. What they found, and what is fixed:
+
+**Two features were simply dead.** Clicking a past question in the corpus
+history did nothing: the click handler was assigned inside a render function
+that runs on every reload, silently overwriting the one bound at startup. And
+the delete button beside each question never worked, because the attribute was
+written `data-dropRun` while HTML lower-cases attribute names, so the lookup
+read `undefined` and the request went to `/run/undefined`. The selector
+`[data-dropRun]` still matched — which is why the confirmation dialog appeared
+and the failure looked like a server problem.
+
+**Editing a translation twice overwrote the second edit with the first.** The
+save handler was attached to the cell, which survives the whole reading session,
+so every re-open stacked another handler holding a stale textarea. The second
+save fired both and the older value won the race. Two related bugs in the same
+place: the list marker vanished from an edited item, and closing the find bar
+restored its saved copy of the cell over the edit.
+
+**Stale content stayed on screen after switching.** Changing corpus left the
+previous corpus's synthesis, answers, lecture and graph in place — everything
+that *changes* changed correctly, so the wrong thing was the thing that did not.
+Opening a different paper left the previous paper's chat log visible.
+
+**Four routes never checked that the paper belongs to the corpus in the URL.**
+Deleting worked across corpora and returned the current corpus's stats, so
+nothing looked wrong; `enrich` was worse, writing a paper's entity graph into a
+corpus that does not contain it. All six paper routes now share one check.
+
+**Changing a title updated the index in a second transaction.** If that second
+statement failed — a concurrent SSE stream holding the write lock is exactly the
+case already seen — the text would be new while the index still held the old
+tokens, which is the silent corruption path that damaged the database once
+before. Both statements are now one transaction.
+
+**Synthesis checks had three holes.** Paper labels in `framings` and
+`tensions[].sides` were never validated, so red chips appeared while the warning
+count said zero; a label-mapping helper read `x if x in real else x`, two
+identical branches pretending to be a check; and citations were resolved without
+filtering by corpus, so a citation could point into another corpus and then be
+used as the source of truth for number checking.
+
+**Money.** The alias prefix used throughout the app (`~anthropic/…`) failed a
+`startswith` test, so those models silently lost their cache markers. The
+context pass re-sent every passage in the user message although the full text
+was already in the cached prefix — about 17k wasted tokens per paper. Batches
+were sized at 4,500 characters while using only 7–15% of the output ceiling;
+at 12,000 a paper drops from 15–16 batches to 6–7, cutting input by a quarter
+with a warm cache and far more without one.
+
+Also: figure crops are rendered to a pixel target rather than a fixed dpi, so
+zooming has real detail to show; the lecture prompt no longer contains a real
+passage id as its example, which the model had been copying verbatim into every
+section; the lecture's source-side number extraction now matches the deliberate
+asymmetry documented for the answer checker; deleting a corpus clears its cached
+questions; and the three-column reading layout no longer overflows on a long
+URL.
+
 ## 1.10.0
 
 **Re-parsing says when it fell back to the weaker extractor.** Without the

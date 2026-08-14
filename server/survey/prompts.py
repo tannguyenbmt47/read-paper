@@ -63,12 +63,22 @@ Return an entry for EVERY id given, in the same order.
 
 
 def ctx_user(items: list[dict]) -> str:
-    """items: [{'ord': int, 'section': str, 'text': str}]"""
+    """Chỉ liệt kê MÃ đoạn — toàn văn đã nằm sẵn trong prefix được cache.
+
+    Bản trước chép lại tối đa 900 ký tự của từng đoạn vào message `user`, tức
+    gửi bài lần thứ hai ở chỗ **không có cache**. Đo trên 4 bài: 204.520 ký tự
+    lặp ≈ 56.800 token giá đầy đủ, khoảng **17k token thừa mỗi bài** — bằng
+    đúng một bản sao của cả bài mỗi lần nạp.
+
+    `card_user` và `graph._user` vốn đã làm đúng: chúng truyền chuỗi rỗng vì
+    nội dung đã ở prefix. Đây là chỗ duy nhất không đối xứng.
+    """
     lines = []
     for it in items:
-        head = f"[{it['ord']}] ({it.get('section') or 'không rõ mục'})"
-        lines.append(f"{head} {it['text'][:900]}")
-    return "PASSAGES TO SITUATE:\n\n" + "\n\n".join(lines)
+        sec = it.get("section") or "không rõ mục"
+        lines.append(f"[{it['ord']}] ({sec})")
+    return ("PASSAGES TO SITUATE — full text of each is in the paper above, "
+            "marked <<<…c{ord}>>>:\n" + "\n".join(lines))
 
 
 # --------------------------------------------------- pass B: bóc phiếu bài
@@ -605,7 +615,8 @@ Chỗ nào bài báo nói vắn tắt vì cho là hiển nhiên, bạn phải d�
 
 - **Mọi con số phải có mặt nguyên văn trong bài.** Không suy ra, không làm tròn
   khác đi, không ghép hai số thành một tỉ lệ mới.
-- **Mỗi mục phải khai `source` — danh sách mã đoạn** (dạng `p50d58cb2d3c14`) mà
+- **Mỗi mục phải khai `source` — danh sách mã đoạn** (chính là mã ghi trong
+  `<<<…>>>` ở phần TOÀN VĂN bên trên, chép nguyên si) mà
   nội dung mục đó dựa vào. Mã phải có thật trong phần TOÀN VĂN bên trên.
 - Bài không nói thì **viết là bài không nói**. Đừng lấp bằng kiến thức chung của
   bạn; người đọc không phân biệt được đâu là bài, đâu là bạn.

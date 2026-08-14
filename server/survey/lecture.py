@@ -48,7 +48,7 @@ from .. import db as maindb
 from .. import depth, llm
 from ..pipeline import _NUM, _URLISH, _norm_num
 from . import db as sdb
-from . import ingest, prompts, refs
+from . import ingest, prompts, refs, verify
 
 # **Tắt hẳn nghĩ thầm.** Đã vấp thật, hai mẻ trên bốn: model chạy 76 giây rồi
 # trả về chuỗi RỖNG — `extract_json` ném "không tìm thấy JSON" vì trong phản hồi
@@ -308,9 +308,12 @@ def check(sections: dict, chunk_ids: set[str], paper_id: str = "") -> list[dict]
     if paper_id:
         for row in sdb.conn().execute(
                 "SELECT text FROM chunk WHERE paper_id = ?", (sdb.check_id(paper_id),)):
-            txt = _TIMEISH.sub(" ", _URLISH.sub(" ", row["text"] or ""))
-            for m in _NUM.finditer(txt):
-                have.add(_norm_num(m.group(0)))
+            # Phía NGUỒN bóc rộng tay hơn phía bài giảng — `verify.source_numbers`
+            # nhận cả `100M`, `7B`, `1,000`. Dùng `_NUM` chặt ở đây thì 48 con số
+            # CÓ THẬT trong bài không vào `have` (đo trên một bài: 110 so với
+            # 158), và mỗi lần bài giảng nhắc lại chúng là một cảnh báo kêu oan.
+            txt = _TIMEISH.sub(" ", row["text"] or "")
+            have |= verify.source_numbers(txt)
 
     for name, data in sections.items():
         title = prompts.SECTIONS.get(name, {}).get("title", name)

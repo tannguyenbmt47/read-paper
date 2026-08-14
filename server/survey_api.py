@@ -201,9 +201,28 @@ async def loupe_docs(sid: str):
     return {"docs": [{**d, "in_survey": d["id"] in have} for d in store.list_docs()]}
 
 
+def _need_paper(sid: str, pid: str) -> dict:
+    """Bài phải TỒN TẠI và phải THUỘC kho đang thao tác.
+
+    Thiếu phép kiểm này thì `DELETE …/paper/{pid}` xoá được bài của kho khác rồi
+    trả về `stats` của kho hiện tại — nhìn vào không thấy gì lạ, **hỏng câm**. Và
+    `enrich` còn nặng hơn xoá: nó ghi `entity`/`edge` theo `sid` lấy từ URL, tức
+    nhét đồ thị của một bài vào kho không chứa nó — đúng trạng thái "kho đầy node
+    mồ côi" mà `move_paper` viết cả một khối chú thích để tránh.
+
+    Một helper thay vì chép ba dòng vào từng route, cùng lý do `SURVEY_FIELDS`
+    là nguồn duy nhất.
+    """
+    p = sdb.load_paper(pid)
+    if p.get("survey_id") != sid:
+        raise HTTPException(404, "Bài không thuộc kho này")
+    return p
+
+
 @router.post("/{sid}/paper/{pid}/enrich")
 async def enrich(sid: str, pid: str):
     """Chạy phần tốn tiền cho một bài đã nạp thô. **Có giá.**"""
+    _need_paper(sid, pid)
     _need(sid)
     try:
         return await ingest.enrich_paper(sid, pid, say=lambda m: _say(sid, f"{pid}: {m}"))
@@ -215,6 +234,7 @@ async def enrich(sid: str, pid: str):
 
 @router.post("/{sid}/paper/{pid}/recard")
 async def recard(sid: str, pid: str):
+    _need_paper(sid, pid)
     _need(sid)
     try:
         return await ingest.recard(pid)
@@ -294,6 +314,7 @@ async def move_paper(sid: str, pid: str, to: str = Body(..., embed=True)):
 
 @router.delete("/{sid}/paper/{pid}")
 async def drop_paper(sid: str, pid: str):
+    _need_paper(sid, pid)
     _need(sid)
     sdb.drop_paper(pid)
     return {"ok": True, "stats": sdb.stats(sid)}
@@ -301,6 +322,7 @@ async def drop_paper(sid: str, pid: str):
 
 @router.get("/{sid}/paper/{pid}")
 async def get_paper(sid: str, pid: str):
+    _need_paper(sid, pid)
     _need(sid)
     try:
         p = sdb.load_paper(pid)

@@ -28,6 +28,7 @@ const SV = {
   hits: [],         // kết quả tra đoạn, đã lấy về nhưng chưa vẽ hết
   shownPapers: 0,   // số bài đã vẽ — xem `svPage`
   shownHits: 0,
+  shown: "",        // kho mà nội dung đang hiện trên màn thuộc về
   surveys: [],      // danh sách kho, dùng cho ô "chuyển bài sang kho khác"
 };
 
@@ -250,6 +251,23 @@ function svBackends(d) {
 async function svLoad() {
   if (!SV.id) return;
   localStorage.setItem(SV_KEY, SV.id);
+  // Dọn nội dung của kho trước. Mọi thứ ĐỔI thì đổi đúng; thứ sai là thứ KHÔNG
+  // đổi — bản tổng hợp, câu trả lời, bài giảng, bảng, đồ thị của kho cũ nằm
+  // nguyên đó, và bấm một trích dẫn trong đó là tra mã của kho A trong kho B
+  // rồi báo "không mở được đoạn".
+  if (SV.shown !== SV.id) {
+    ["#svSyn", "#svLec", "#svAnswer", "#svSteps", "#svWarns", "#svLecWarns",
+     "#svSynWarns", "#svHits", "#svGraph", "#svGrid"].forEach((sel) => {
+      const el = $(sel); if (el) el.innerHTML = "";
+    });
+    ["#svCost", "#svSynProg", "#svLecProg"].forEach((sel) => {
+      const el = $(sel); if (el) el.textContent = "";
+    });
+    const q = $("#svQ"); if (q) q.value = "";
+    SV.hits = []; SV.found = []; SV.answer = ""; SV.cites.clear();
+    SV.lecPid = "";
+    SV.shown = SV.id;
+  }
   const d = await svFetch(`/api/survey/${SV.id}`);
   SV.survey = d;
   SV.papers = d.papers;
@@ -452,22 +470,16 @@ function svRenderHistory(runs) {
       `<div class="sv-runrow">
          <button class="sv-runitem" data-run="${esc(r.id)}">
            <span>${esc(r.question)}</span><i>${money(r.cost)}</i></button>
-         <button class="sv-runx" data-dropRun="${esc(r.id)}" title="Xoá lượt hỏi này">×</button>
+         <button class="sv-runx" data-drop-run="${esc(r.id)}" title="Xoá lượt hỏi này">×</button>
        </div>`).join("")
       + (runs.length > show.length
         ? `<button class="sv-link" id="svAllRuns">Xem cả ${runs.length} lượt…</button>` : "")
     : "";
   const all = $("#svAllRuns");
   if (all) all.onclick = () => svRenderAllRuns(runs);
-
-  $("#svHistory").onclick = async (e) => {
-    const x = e.target.closest("[data-dropRun]");
-    if (!x) return;
-    e.stopPropagation();            // đừng mở lượt hỏi mà mình vừa xoá
-    if (!confirm("Xoá lượt hỏi này khỏi lịch sử?")) return;
-    await svFetch(`/api/survey/${SV.id}/run/${x.dataset.dropRun}`, { method: "DELETE" });
-    await svLoad();
-  };
+  // KHÔNG gắn handler ở đây. Hàm này chạy lại ở mỗi `svLoad()`, mà `.onclick =`
+  // ghi đè im lặng — bản gắn ở `svWire` (chạy một lần) sẽ bị xoá sạch, và nút
+  // "xem lại lượt hỏi cũ" chết câm. Một sự kiện, một chỗ gắn.
 }
 
 function svRenderAllRuns(runs) {
@@ -1373,8 +1385,19 @@ function svWire() {
     }
   });
 
-  // xem lại một lượt đã hỏi
+  // Một handler cho cả hai nhánh của danh sách lịch sử. Gắn ở đây — nơi chạy
+  // đúng một lần — chứ không gắn trong hàm render.
   $("#svHistory").onclick = async (e) => {
+    const x = e.target.closest("[data-drop-run]");
+    if (x) {
+      e.stopPropagation();          // đừng mở lượt hỏi mà mình vừa xoá
+      if (!confirm("Xoá lượt hỏi này khỏi lịch sử?")) return;
+      try {
+        await svFetch(`/api/survey/${SV.id}/run/${x.dataset.dropRun}`, { method: "DELETE" });
+        await svLoad();
+      } catch (err) { svProg("Lỗi: " + err.message); }
+      return;
+    }
     const b = e.target.closest("[data-run]");
     if (!b) return;
     const r = await svFetch(`/api/survey/${SV.id}/run/${b.dataset.run}`);

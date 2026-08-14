@@ -853,6 +853,11 @@ function mountDoc(doc) {
   state.doc = doc;
   state.chunks = doc.chunks || 0;
   state.history = [];
+  // Khung chat phải dọn theo. `state.history` rỗng nên MODEL không nhầm, nhưng
+  // DOM vẫn đầy hỏi-đáp về bài trước — màn hình và model bất đồng, kiểu tệ nhất:
+  // người đọc thấy văn bản đúng ngữ pháp nói về bài khác mà không dấu hiệu gì.
+  const cl = $("#chatLog"); if (cl) cl.innerHTML = "";
+  const ci = $("#chatInput"); if (ci) ci.value = "";
   state.session = 0;
   showScreen("reader");
   $("#docTitleVi").textContent = doc.brief?.title_vi || doc.title || "(không tiêu đề)";
@@ -2996,7 +3001,7 @@ function editCell(pair, which) {
   ta.focus();
   ta.setSelectionRange(raw.length, raw.length);
 
-  const cancel = () => { cell.innerHTML = before; };
+  const cancel = () => { delete cell.dataset.orig; cell.innerHTML = before; };
   const save = async () => {
     const val = ta.value;
     if (val === raw) return cancel();
@@ -3009,7 +3014,14 @@ function editCell(pair, which) {
       const res = await r.json();
       if (which === "vi") state.doc.translations[id] = res.vi;
       else state.doc.plain[id] = res.plain;
-      cell.innerHTML = sci(which === "vi" ? res.vi : res.plain);
+      // Thanh tìm kiếm cất bản HTML gốc vào `dataset.orig` rồi khôi phục khi
+      // đóng — bản chép đó nằm trên chính `cell` nên `innerHTML` không cuốn đi,
+      // và nó sẽ ghi đè bản vừa sửa. Xoá đi thì đóng tìm kiếm không còn lật
+      // ngược công sửa của người dùng.
+      delete cell.dataset.orig;
+      const mk = pair.querySelector(".li-mk");
+      cell.innerHTML = (mk ? mk.outerHTML : "")
+        + sci(which === "vi" ? res.vi : res.plain);
       cell.classList.add("was-edited");
       status("Đã lưu bản sửa — bộ nhớ dịch cũng được cập nhật");
     } catch (e) {
@@ -3017,12 +3029,16 @@ function editCell(pair, which) {
       cancel();
     }
   };
-  cell.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-e]");
-    if (!b) return;
-    e.stopPropagation();
-    (b.dataset.e === "save" ? save : cancel)();
-  });
+  // Gắn vào chính hai NÚT vừa dựng, không gắn vào `cell`.
+  //
+  // `cell` sống sót qua cả phiên đọc (mọi đường thoát chỉ thay `innerHTML` của
+  // nó), nên gắn vào `cell` là mỗi lần mở sửa lại chồng thêm một handler. Lần
+  // sửa thứ hai chạy CẢ HAI: handler cũ còn giữ textarea cũ và văn bản gốc cũ,
+  // nên nó `PATCH` đè bản cũ lên bản vừa gõ — mất chữ, và hai request đua nhau.
+  // `e.stopPropagation()` không cứu được vì hai handler nằm trên cùng phần tử.
+  // Hai nút này chết theo `cell.innerHTML` nên không tích lại được.
+  $('[data-e="save"]', cell).onclick = (e) => { e.stopPropagation(); save(); };
+  $('[data-e="cancel"]', cell).onclick = (e) => { e.stopPropagation(); cancel(); };
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.stopPropagation(); cancel(); }
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }

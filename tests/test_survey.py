@@ -1011,3 +1011,38 @@ def test_route_khong_giu_ban_chep_rieng_cua_danh_sach_truong(client):
     # và danh sách chung phải phủ đúng những cột kho mà người dùng sửa được
     from server.survey import db as sdb
     assert set(sdb.SURVEY_FIELDS) >= {"model", "fast_model", "name", "budget_usd"}
+
+
+def test_moi_route_tren_bai_deu_kiem_bai_thuoc_kho(client, sdb, kho):
+    """`DELETE …/paper/{pid}` từng xoá được bài của kho KHÁC rồi trả `stats` của
+    kho hiện tại — nhìn vào không thấy gì lạ, hỏng câm. `enrich` còn nặng hơn:
+    nó ghi `entity`/`edge` theo `sid` lấy từ URL, tức nhét đồ thị của một bài vào
+    kho không chứa nó."""
+    sid2 = client.post("/api/survey", json={"name": "kho bảy"}).json()["id"]
+    pid = kho["p1"]                       # bài của kho `kho["sid"]`
+    for method, path in (("delete", f"/api/survey/{sid2}/paper/{pid}"),
+                         ("get", f"/api/survey/{sid2}/paper/{pid}"),
+                         ("post", f"/api/survey/{sid2}/paper/{pid}/recard"),
+                         ("post", f"/api/survey/{sid2}/paper/{pid}/enrich")):
+        r = getattr(client, method)(path)
+        assert r.status_code == 404, f"{method.upper()} {path} → {r.status_code}"
+    assert sdb.load_paper(pid)["survey_id"] == kho["sid"]   # không bị đụng
+
+
+def test_xoa_kho_thi_qcache_di_theo(client, sdb, kho):
+    rid = sdb.save_run(kho["sid"], "câu hỏi", "trả lời", [], [], [], {}, 0.0)
+    sdb.qcache_put(sdb.qcache_key(kho["sid"], "câu hỏi"), rid)
+    c = sdb.conn()
+    assert c.execute("SELECT COUNT(*) FROM qcache WHERE run_id = ?", (rid,)).fetchone()[0] == 1
+    sdb.delete_survey(kho["sid"])
+    assert c.execute("SELECT COUNT(*) FROM qcache WHERE run_id = ?", (rid,)).fetchone()[0] == 0
+
+
+def test_danh_dau_cache_khong_bi_tien_to_bi_danh_lam_truot():
+    """App đặt tên model dạng `~anthropic/claude-…`. `startswith("anthropic/")`
+    thuần thì không khớp — mất `cache_control` mà không lỗi, không cảnh báo, chỉ
+    thấy hoá đơn cao gấp mấy lần."""
+    from server.llm import _needs_explicit_cache as f
+    assert f("anthropic/claude-sonnet-4.5") and f("~anthropic/claude-opus-4.1")
+    assert f("qwen/qwen3") and f("~alibaba/x")
+    assert not f("openai/gpt-5.6") and not f("~deepseek/deepseek-v4-flash-latest")

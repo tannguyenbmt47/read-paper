@@ -67,9 +67,20 @@ def _client() -> AsyncOpenAI:
     )
 
 
+# Nhà cung cấp cần đánh dấu `cache_control` thủ công; còn lại cache tự động.
+_MANUAL_CACHE = ("anthropic", "qwen", "alibaba")
+
+
 def _needs_explicit_cache(model: str) -> bool:
-    m = model.lower()
-    return m.startswith("anthropic/") or m.startswith("qwen/") or m.startswith("alibaba/")
+    """Có phải model đòi tự đặt điểm cache không.
+
+    Phải bỏ tiền tố bí danh `~` trước khi so. App đặt tên model dạng
+    `~anthropic/claude-…` (xem `MODEL_CHOICES` bên `main.py`), mà `startswith`
+    thuần thì `~anthropic/…` KHÔNG khớp — thế là mất `cache_control` mà không
+    lỗi, không cảnh báo, chỉ thấy hoá đơn cao gấp mấy lần.
+    """
+    m = model.lower().lstrip("~")
+    return m.split("/", 1)[0] in _MANUAL_CACHE
 
 
 def system_message(cached_prefix: str, volatile_suffix: str = "", *, model: str) -> dict:

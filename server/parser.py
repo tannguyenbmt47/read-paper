@@ -2092,10 +2092,28 @@ async def fetch_pdf_url(url: str) -> bytes:
 # ---------------------------------------------------------------- chunking
 
 
-def chunk_blocks(blocks: list[Block], max_chars: int = 4500) -> list[list[Block]]:
+def chunk_blocks(blocks: list[Block], max_chars: int = 12_000) -> list[list[Block]]:
     """Gom block thành mẻ dịch, ưu tiên không cắt ngang section.
 
     Mỗi mẻ đủ nhỏ để model dịch kỹ, đủ lớn để giữ mạch trong một section.
+    
+    `max_chars` = 12.000 chứ không phải 4.500 như bản đầu. Mỗi mẻ là một request,
+    tức một lần đọc lại prefix ~13–22k token; cắt nhỏ thì trả tiền đọc prefix
+    nhiều lần cho cùng một bài. Đo trên bốn bài thật: mẻ ở mức 4.500 chỉ sinh
+    1.800–3.600 token đầu ra, tức **7–15% trần `max_tokens`** — trần không hề là
+    thứ đang ràng buộc, con số 4.500 chỉ là quán tính.
+
+    | bài | mẻ @4500 | token input | mẻ @12000 | token input |
+    |---|---|---|---|---|
+    | CIRAG | 16 | 62k | 7 | 45k (−27%) |
+    | Theia | 15 | 60k | 7 | 45k (−25%) |
+    | SONIC | 15 | 69k | 6 | 49k (−29%) |
+
+    Khi cache **trượt** thì lợi hơn nhiều — một bài đo được `cached_tokens = 0`
+    trên 394.900 token input, ở mức mẻ mới còn ~148k.
+
+    Rủi ro duy nhất là mẻ bị cắt cụt, mà `_parse_labeled` vốn chịu được cắt cụt
+    và vòng vá thiếu trong `stream_chunk` là lưới thứ hai.
     """
     out: list[list[Block]] = []
     cur: list[Block] = []
