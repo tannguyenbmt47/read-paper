@@ -997,7 +997,7 @@ def apply_layout(blocks: list[Block], regions: list[dict], pdf_bytes: bytes,
             if rect.is_empty or rect.height < 20:
                 continue
             try:
-                png = render_rect(page, rect, dpi=dpi)
+                png = render_rect(page, rect)          # nhắm pixel
             except Exception:  # noqa: BLE001
                 continue
             if _looks_blank(page.get_pixmap(clip=rect, dpi=72)):
@@ -1011,7 +1011,7 @@ def apply_layout(blocks: list[Block], regions: list[dict], pdf_bytes: bytes,
 
 
 def recrop(blocks: list[Block], pdf_bytes: bytes,
-           fig_dpi: int = 160, eq_dpi: int = 200) -> dict[str, bytes]:
+           ) -> dict[str, bytes]:
     """Cắt lại ảnh từ khung đã lưu sẵn trong từng block.
 
     `parse_cache` giữ cấu trúc khối (kèm `figure_page` và `figure_rect`) nhưng
@@ -1034,15 +1034,43 @@ def recrop(blocks: list[Block], pdf_bytes: bytes,
             if r.is_empty or r.height < 6:
                 continue
             try:
-                out[b.figure] = render_rect(
-                    page, r, dpi=eq_dpi if b.type == "equation" else fig_dpi)
+                out[b.figure] = render_rect(page, r)   # nhắm pixel, xem `dpi_for`
             except Exception:  # noqa: BLE001
                 continue
     return out
 
 
-def render_rect(page, rect, dpi: int = 140) -> bytes:
-    """Cắt một vùng của trang thành PNG. Dùng chung cho cắt tự động và cắt tay."""
+# Ảnh cắt ra phải chịu được PHÓNG TO, không chỉ vừa khung.
+#
+# Ô xem trước cho phóng tới 8× và nới khung lên 1200px, mà một khung nhỏ cắt ở
+# 160 dpi chỉ ra 558px — phóng lên là kéo giãn pixel, mờ nhoè. Nhắm theo DPI cố
+# định thì sai ở đầu kia: hình chiếm cả bề ngang trang vốn đã nhiều pixel, ép
+# 300 dpi lên nó chỉ làm file phình.
+#
+# Nên nhắm theo **số pixel đích**: khung nào cũng ra khoảng 1600px ngang, DPI tự
+# suy từ bề rộng thật của khung. Đo trên một bài 9 khung:
+#   160 dpi cứng   → 1456 KB, bề ngang 558–1151px  (không đều, chỗ mờ chỗ thừa)
+#   300 dpi cứng   → 3976 KB, bề ngang 1044–2156px
+#   nhắm 1600px    → 2674 KB, bề ngang 1393–1604px ← đều, và nhẹ hơn 33%
+TARGET_PX = 1600
+DPI_LO, DPI_HI = 160, 400
+
+
+def dpi_for(width_pt: float, target_px: int = TARGET_PX) -> int:
+    """DPI để một khung rộng `width_pt` điểm cho ra khoảng `target_px` pixel."""
+    if width_pt <= 0:
+        return DPI_LO
+    return max(DPI_LO, min(DPI_HI, round(target_px * 72 / width_pt)))
+
+
+def render_rect(page, rect, dpi: int | None = None) -> bytes:
+    """Cắt một vùng của trang thành PNG. Dùng chung cho cắt tự động và cắt tay.
+
+    `dpi=None` là chế độ nhắm pixel — dùng cho mọi ảnh người đọc sẽ phóng to.
+    Truyền số cụ thể chỉ khi cần đúng độ phân giải đó (xem trước trang PDF).
+    """
+    if dpi is None:
+        dpi = dpi_for(rect.width)
     return page.get_pixmap(clip=rect, dpi=dpi).tobytes("png")
 
 
@@ -1078,7 +1106,9 @@ def _render_figures(
             if rect is None:
                 continue
             try:
-                pix = page.get_pixmap(clip=rect, dpi=140)
+                # Nhắm pixel như đường docling (xem `dpi_for`): 140 dpi cứng cho
+                # ra khung hẹp chỉ vài trăm pixel, phóng lên là mờ nhoè.
+                pix = page.get_pixmap(clip=rect, dpi=dpi_for(rect.width))
             except Exception:  # noqa: BLE001
                 continue
             if _looks_blank(pix):
@@ -1802,7 +1832,6 @@ def mark_noise(blocks: list[Block]) -> int:
 
 
 def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
-                       eq_dpi: int = 200,
                        regions: list[dict] | None = None,
                        ) -> tuple[str, list[Block], dict[str, bytes]]:
     """Dựng danh sách Block từ cấu trúc do mô hình bố cục trả về.
@@ -1972,7 +2001,7 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
     for b, pno, r, _mine in eq_jobs:
         try:
             with fitz.open(stream=pdf_bytes, filetype="pdf") as work:
-                eq_imgs[b.id] = render_rect(work[pno], r, dpi=eq_dpi)
+                eq_imgs[b.id] = render_rect(work[pno], r)   # nhắm pixel
             b.figure = b.id
         except Exception:  # noqa: BLE001
             b.figure_page, b.figure_rect = -1, None

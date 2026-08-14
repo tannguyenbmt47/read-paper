@@ -648,7 +648,10 @@ async def crop(doc_id: str, block_id: str, body: dict = Body(...)):
             r = fitz.Rect(x0, y0, x1, y1) & page.rect
             if r.is_empty:
                 raise ValueError("khung nằm ngoài trang")
-            return parser.render_rect(page, r, dpi=int(body.get("dpi") or 160))
+            # `dpi=None` = nhắm pixel (xem `parser.dpi_for`): khung người dùng
+            # tự cắt cũng sẽ được phóng to xem, nên phải nét như khung tự động.
+            dpi = body.get("dpi")
+            return parser.render_rect(page, r, dpi=int(dpi) if dpi else None)
 
     try:
         png = await asyncio.get_running_loop().run_in_executor(None, work)
