@@ -22,4 +22,16 @@ services:
     volumes:
       # SQLite + PDF gốc + ảnh cắt ra. Nâng cấp ảnh không mất bài đã đọc.
       - ./data:/data
+      # Mã nguồn đọc thẳng từ đĩa thay vì bản đã nướng vào ảnh. Không có hai
+      # dòng này thì MỖI lần sửa giao diện đều phải `docker compose build`, và
+      # quên là thấy y hệt bản cũ — đã mất cả buổi vì đúng chuyện đó.
+      #   sửa web/    → F5 trên trình duyệt
+      #   sửa server/ → docker compose restart
+      #
+      # Đánh đổi: mã trên đĩa CHE mã trong ảnh, nên đem ảnh sang máy khác mà
+      # không có thư mục nguồn thì nó chạy bản cũ nằm trong ảnh. Chấp nhận được
+      # với công cụ chạy local; bỏ hai dòng này nếu đem đi nơi khác.
+      # `:ro` để container không ghi bậy vào mã nguồn.
+      - ./web:/app/web:ro
+      - ./server:/app/server:ro
     restart: unless-stopped

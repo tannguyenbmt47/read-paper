@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.10.0
+
+**Re-parsing says when it fell back to the weaker extractor.** Without the
+layout model the route quietly used the rule-based path and still reported
+success, while the result was much worse — on one paper 8 equations with images
+became 3 with none, and an equation without its image renders as broken
+mathematical text. Nothing in the interface hinted at why. The response now
+carries `layout_used` and `fallback_why`, and the reader shows a dialog naming
+the reason and the fix.
+
+**Source is mounted into the container, so UI changes no longer need a
+rebuild.** The image bakes `web/` and `server/`, which meant every frontend
+change required `docker compose build` — and forgetting it showed the old
+version, which cost most of a day. Editing `web/` now needs only a refresh, and
+`server/` only a restart. The trade-off is that on-disk code shadows the image's
+copy, so moving the image to a machine without the source runs the baked
+version; drop the two lines if that ever matters.
+
 ## 1.9.5
 
 **Re-parsing now repairs a truncated title.** A title guessed from the top of

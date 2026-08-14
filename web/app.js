@@ -993,7 +993,19 @@ function wireReader() {
       const st = res.stats;
       status(`Bóc lại xong: ${st.blocks} khối · giữ ${st.kept} bản dịch cũ · `
         + `${st.new} khối mới` + (st.to_translate ? ` · ${st.to_translate} khối chờ dịch` : "")
-        + (st.dropped ? ` · bỏ ${st.dropped} khối không còn` : ""));
+        + (st.dropped ? ` · bỏ ${st.dropped} khối không còn` : "")
+        + (st.title_fixed ? ` · đã vá tiêu đề bị cụt` : ""));
+      // Rơi về đường lùi phải NÓI RA. Trước đây nó im lặng, nên bạn bấm Bóc lại
+      // thấy "xong" mà kết quả kém hẳn — công thức mất ảnh, hiện ra bằng chữ
+      // toán vỡ — và không có cách nào đoán ra vì sao.
+      if (st.layout_used === false) {
+        alert("Bóc lại bằng ĐƯỜNG LÙI, không dùng mô hình bố cục.\n\n"
+          + "Lý do: " + (st.fallback_why || "không rõ") + ".\n\n"
+          + "Kết quả kém hơn rõ rệt: công thức không được cắt thành ảnh nên hiện "
+          + "ra bằng chữ toán vỡ nát, và nhiều đoạn bị cắt vụn hơn.\n\n"
+          + "Cách chữa: chạy bằng ./run.sh trên máy (đã có sẵn mô hình), hoặc dựng "
+          + "lại ảnh Docker với WITH_LAYOUT=1 và LAYOUT_BACKEND=docling.");
+      }
     } catch (e) {
       status("Lỗi: " + e.message);
     } finally {

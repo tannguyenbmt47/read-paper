@@ -454,6 +454,12 @@ async def reparse(doc_id: str):
 
     blocks: list = []
     imgs: dict = {}
+    # Đường bóc nào đã chạy. Trước đây chỗ này rơi về heuristic **im lặng**:
+    # người dùng bấm Bóc lại, thấy "xong", mà kết quả kém hẳn — công thức không
+    # có ảnh nên hiện ra bằng chữ toán vỡ nát — và không có dấu hiệu nào để
+    # đoán ra. Đo trên bài SONIC: 8 công thức kèm ảnh tụt còn 3 và không ảnh nào.
+    # Cùng họ với mấy cái bẫy "hỏng câm" khác trong dự án này, nên phải nói ra.
+    why_fallback = "" if layout.available() else "máy chưa cài/đã tắt mô hình bố cục"
     if layout.available():
         try:
             import tempfile
@@ -471,8 +477,11 @@ async def reparse(doc_id: str):
                 imgs.update(better)
         except Exception as e:  # noqa: BLE001 — mô hình hỏng thì rơi về heuristic
             print(f"[reparse] mô hình bố cục lỗi, dùng heuristic: {e}")
+            why_fallback = f"mô hình bố cục lỗi ({type(e).__name__})"
             blocks = []
     if len(blocks) < 10:
+        if not why_fallback:
+            why_fallback = f"mô hình chỉ ra {len(blocks)} khối, quá ít nên không tin được"
         new_title, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
 
     if not blocks:
@@ -495,7 +504,11 @@ async def reparse(doc_id: str):
         doc["title"] = nt
         fixed_title = nt
 
+    doc["layout_model"] = not why_fallback
     stats = pipeline.reparse_merge(doc, [b.dict() for b in blocks])
+    stats["layout_used"] = not why_fallback
+    if why_fallback:
+        stats["fallback_why"] = why_fallback
     if fixed_title:
         stats["title_fixed"] = fixed_title
     store.save(doc)

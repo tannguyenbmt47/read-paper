@@ -1164,6 +1164,34 @@ Nên: nhãn đứng riêng, nối bằng `for=`, khối bọc là `<div>` (`.fld
 `test_khong_o_chon_nao_bi_long_trong_label` canh cấu trúc này, vì đây đúng là
 loại lỗi mà chỉ phép kiểm cấu trúc mới giữ được.
 
+### Đường lùi phải NÓI RA, và mã nguồn phải mount vào container
+
+Hai cái bẫy cùng một họ, và cùng đã ngốn cả buổi.
+
+**Bóc lại rơi về heuristic im lặng.** Thiếu docling thì `POST …/reparse` lặng lẽ
+dùng `parse_pdf`, trả về "xong", trong khi kết quả kém hẳn: đo trên bài SONIC,
+**8 công thức kèm ảnh tụt còn 3 và không ảnh nào** — công thức mất ảnh thì hiện
+ra bằng chữ toán vỡ nát, mà người dùng không có cách nào đoán ra vì sao. Giờ
+route trả `layout_used` + `fallback_why`, giao diện hiện hẳn một hộp thoại nói
+lý do và cách chữa.
+
+**Ảnh Docker nướng sẵn `web/` và `server/`.** Nên mỗi lần sửa giao diện đều phải
+`docker compose build`, quên là thấy y hệt bản cũ. Đã mount:
+
+```yaml
+      - ./web:/app/web:ro
+      - ./server:/app/server:ro
+```
+
+Từ đó: sửa `web/` → F5; sửa `server/` → `docker compose restart`. Đánh đổi: mã
+trên đĩa **che** mã trong ảnh, nên đem ảnh sang máy khác mà không có thư mục
+nguồn thì nó chạy bản cũ nằm trong ảnh — bỏ hai dòng này nếu đem đi nơi khác.
+
+Và nhớ: **container mặc định `LAYOUT_BACKEND=off`** (`WITH_LAYOUT=0`), tức bản
+Docker gọn không có docling. Mọi phép đo về chất lượng bóc phải nói rõ chạy ở
+đâu, nếu không hai lần đo cùng một PDF ra hai kết quả khác hẳn mà không hiểu vì
+sao.
+
 ### Các quy ước nhỏ dễ vấp
 
 - `store.py` chỉ là mặt tiền mỏng của `db.py`, giữ tên hàm cũ thời còn lưu JSON.

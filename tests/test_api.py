@@ -471,3 +471,30 @@ def test_boc_lai_va_duoc_tieu_de_bi_cut_dau(app_client, doc):
     # và route thật phải mang cùng luật đó
     src = __import__("pathlib").Path(main.__file__).read_text()
     assert "title_fixed" in src and "cur.lower() in nt.lower()" in src
+
+
+def test_boc_lai_noi_ra_khi_roi_ve_duong_lui(app_client):
+    """Trước đây chỗ này rơi về heuristic **im lặng**: bấm Bóc lại, thấy "xong",
+    mà kết quả kém hẳn — công thức không được cắt thành ảnh nên hiện ra bằng chữ
+    toán vỡ nát — và không có dấu hiệu nào để đoán ra.
+
+    Đo trên bài SONIC: 8 công thức kèm ảnh tụt còn 3 và không ảnh nào.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    src = root.joinpath("server/main.py").read_text()
+    js = root.joinpath("web/app.js").read_text()
+
+    assert 'stats["layout_used"]' in src, "route không nói ra đã dùng đường nào"
+    assert "fallback_why" in src, "route không nói ra vì sao rơi về đường lùi"
+    assert "st.layout_used === false" in js, "giao diện không hiện cảnh báo"
+
+
+def test_ma_nguon_duoc_mount_de_khoi_dung_lai_anh(app_client):
+    """Mỗi lần sửa giao diện mà phải dựng lại ảnh Docker thì rất dễ quên, và
+    quên là thấy y hệt bản cũ — đã mất cả buổi vì đúng chuyện đó."""
+    from pathlib import Path
+    yml = Path(__file__).resolve().parents[1].joinpath("docker-compose.yml").read_text()
+    assert "./web:/app/web:ro" in yml
+    assert "./server:/app/server:ro" in yml
+    assert "./data:/data" in yml          # dữ liệu vẫn phải nằm ngoài ảnh
