@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.12.2
+
+**Answers containing a table showed the raw pipes.** The reader has its own
+Markdown renderer, `renderMd()` in `app.js`, and it never had a table branch —
+so an answer comparing three papers arrived as `| Thí nghiệm | Input | Output |`
+followed by `|---|---|---|`, exactly the shape the prompt asks the model to use
+whenever it compares three or more sources. The corpus side, `svMd()` in
+`survey.js`, had rendered tables correctly since it was written; the reader was
+the copy that fell behind. Tables now scroll horizontally inside their own box
+rather than widening the chat bubble, and the header row is set off by a heavier
+rule instead of a fill — the bubble is already `--surface-2`, so filling the
+header with the same token made it vanish into the background.
+
+**Subscripts written without braces stayed as underscores.** The parser stores
+`x_{t}`, and both renderers handled that; but the model writes `x_t`, `z_t`,
+`X_t+H` in prose, which matched nothing. The new rule is deliberately narrow —
+a single-letter base and a subscript of one or two characters — because
+`snake_case` looks identical: widening it would turn `source_block_ids`,
+`paper_id` and `t_max` into formulas. `svMd()` did not render the stored
+`^{…}` / `_{…}` form at all, so quoted passages showed `d_{i}`; it does now.
+
+`test_hai_bo_dung_markdown_deu_dung_bang_va_chi_so` holds both renderers to the
+same floor, and guards the fact that `survey.js` borrows `_SUBSCRIPTISH` from
+`app.js`: deleting the declaration would throw at render time and leave every
+corpus answer blank with no error on screen.
+
 ## 1.12.1
 
 **Asking a question about the paper was completely broken.** `paint()` was

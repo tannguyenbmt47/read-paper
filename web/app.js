@@ -3502,10 +3502,21 @@ function tidyMath(s) {
     .trim();
 }
 
+/* Chỉ số dưới KHÔNG ngoặc, chỉ ở cột trả lời. Model viết `x_t`, `z_t`, `X_t+H`
+   chứ không viết dạng lưu `x_{t}`, nên `_{…}` ở trên không bắt được và người đọc
+   thấy nguyên dấu gạch dưới giữa câu.
+
+   Luật cố ý HẸP, vì `snake_case` trông y hệt: gốc phải là **một chữ cái duy
+   nhất**, chỉ số dài 1–2 ký tự. Nhờ đó `paper_id`, `chunk_id`, `t_max`,
+   `source_block_ids` không bị chạm — nới ra là mọi tên biến trong câu trả lời
+   hoá thành công thức. */
+const _SUBSCRIPTISH = /(?<![\w`>])([A-Za-z])_([A-Za-z0-9](?:\+[A-Za-z0-9]{1,2})?)(?![\w{])/g;
+
 function mdInline(s) {
   return s
     .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
     .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
+    .replace(_SUBSCRIPTISH, "$1<sub>$2</sub>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
     .replace(/(?<![*\w])\*([^*\n]+)\*(?!\w)/g, "<i>$1</i>")
@@ -3516,10 +3527,11 @@ function mdInline(s) {
 
 function renderMd(src) {
   const out = [];
-  let list = null, quote = false, fence = null, math = null;
+  let list = null, quote = false, fence = null, math = null, table = false;
   const shut = () => {
     if (list) { out.push(`</${list}>`); list = null; }
     if (quote) { out.push("</blockquote>"); quote = false; }
+    if (table) { out.push("</tbody></table></div>"); table = false; }
   };
 
   for (const raw of esc(src).split("\n")) {
@@ -3558,6 +3570,25 @@ function renderMd(src) {
       continue;
     }
     if (quote) { out.push("</blockquote>"); quote = false; }
+
+    // Bảng Markdown. Thiếu nhánh này thì câu trả lời so sánh nhiều bài hiện ra
+    // nguyên dấu gạch đứng và hàng `|---|---|` — mà `prompts.py` lại BẢO model
+    // dùng bảng khi so từ ba bài trở lên, nên đây là đường hay đi. `svMd` bên
+    // kho survey đã dựng bảng đúng từ đầu; chỗ này bị sót.
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (/^[\s|:\-]+$/.test(line)) continue;        // hàng kẻ phân cách
+      const cells = line.trim().slice(1, -1).split("|").map((c) => mdInline(c.trim()));
+      if (!table) {
+        if (list) { out.push(`</${list}>`); list = null; }
+        out.push('<div class="mdtable"><table><thead><tr>'
+          + cells.map((c) => `<th>${c}</th>`).join("") + "</tr></thead><tbody>");
+        table = true;
+      } else {
+        out.push("<tr>" + cells.map((c) => `<td>${c}</td>`).join("") + "</tr>");
+      }
+      continue;
+    }
+    if (table) { out.push("</tbody></table></div>"); table = false; }
 
     const li = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
     if (li) {

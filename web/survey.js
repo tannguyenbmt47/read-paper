@@ -76,8 +76,15 @@ function svMd(src) {
   const lines = esc(src).split("\n");
   const out = [];
   let inList = false, inTable = false;
+  /* Chỉ số trên/dưới. Đoạn trích lấy thẳng từ `parser.py` nên mang dạng lưu
+     `^{…}` / `_{…}`; thiếu hai dòng này thì câu trả lời hiện ra `d_{i}` thô.
+     `_SUBSCRIPTISH` (khai ở `app.js`) lo dạng không ngoặc model hay viết —
+     luật hẹp, `snake_case` không bị chạm. */
   const inline = (s) => s
+    .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
+    .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(_SUBSCRIPTISH, "$1<sub>$2</sub>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|\W)\*([^*\n]+)\*/g, "$1<em>$2</em>")
     .replace(/\[([A-Za-z0-9]{3,40})\]/g, '<a class="sv-cite" data-cite="$1">[$1]</a>');

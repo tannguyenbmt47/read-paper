@@ -1229,6 +1229,34 @@ Docker gọn không có docling. Mọi phép đo về chất lượng bóc phả
 đâu, nếu không hai lần đo cùng một PDF ra hai kết quả khác hẳn mà không hiểu vì
 sao.
 
+### Hai bộ dựng Markdown cho cột trả lời
+
+`renderMd()` bên `web/app.js` dựng câu trả lời của khung *Hỏi về bài này*;
+`svMd()` bên `web/survey.js` dựng câu trả lời của kho survey. **Hai đoạn code
+khác nhau cho cùng một loại nội dung**, cùng họ với cặp `renderSlide()` /
+`_export_slides_html` — sửa một bên phải soát bên kia.
+
+Đã lệch thật: `svMd` dựng bảng từ đầu, `renderMd` thì không, nên câu trả lời so
+sánh nhiều bài hiện ra nguyên `| Thí nghiệm | Input |` và hàng `|---|---|` —
+đúng khuôn mà prompt bảo model dùng khi so từ ba nguồn trở lên. Ngược lại,
+`svMd` lại không dựng dạng lưu `^{…}` / `_{…}`, nên đoạn trích từ `parser.py`
+hiện ra `d_{i}` thô.
+
+Bảng phải cuộn **ngang trong khung riêng** (`.mdtable`), không đẩy phình ô chat.
+Và hàng tiêu đề phân biệt bằng **nét kẻ, không bằng nền**: bong bóng trả lời vốn
+đã là `--surface-2`, tô cùng token thì tiêu đề chìm hẳn.
+
+**`_SUBSCRIPTISH` là luật hẹp, và phải giữ hẹp.** Model viết chỉ số dưới không
+ngoặc (`x_t`, `z_t`, `X_t+H`) nên luật `_{…}` không bắt được. Nhưng `snake_case`
+trông y hệt, nên gốc phải là **một chữ cái duy nhất** và chỉ số dài 1–2 ký tự —
+nhờ đó `source_block_ids`, `paper_id`, `t_max` không bị chạm. Nới ra là mọi tên
+biến trong câu trả lời hoá thành công thức.
+
+Nó khai ở `app.js` và `survey.js` **dùng nhờ** (cùng lối với `esc`, và `app.js`
+nạp trước). Xoá khai báo là `survey.js` ném `ReferenceError` lúc dựng, tức mọi
+câu trả lời trong kho thành ô trắng **không có lỗi nào hiện lên màn**.
+`test_hai_bo_dung_markdown_deu_dung_bang_va_chi_so` canh cả ba chỗ này.
+
 ### Các quy ước nhỏ dễ vấp
 
 - `store.py` chỉ là mặt tiền mỏng của `db.py`, giữ tên hàm cũ thời còn lưu JSON.

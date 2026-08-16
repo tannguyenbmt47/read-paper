@@ -1356,3 +1356,19 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   .topbar-actions { flex-wrap: wrap; }
   .topbar-title { flex-basis: 100%; order: -1; }
 }
+
+/* Bảng trong câu trả lời hỏi đáp — xem nhánh bảng của `renderMd()`.
+
+   Thiếu nó thì câu trả lời so sánh nhiều bài hiện nguyên dấu gạch đứng và hàng
+   `|---|---|`. Cuộn NGANG trong khung riêng chứ không đẩy cả khung chat: bảng
+   ba cột chữ tiếng Việt dễ rộng hơn ô chat. */
+.msg.bot { min-width: 0; }   /* thiếu là bảng rộng đẩy phình cả ô chat */
+.mdtable { overflow-x: auto; margin: .5rem 0; }
+.mdtable table { border-collapse: collapse; font-size: .92em; min-width: 100%; }
+.mdtable th, .mdtable td {
+  border: 1px solid var(--line); padding: .3rem .5rem; text-align: left;
+  vertical-align: top;
+}
+/* Hàng tiêu đề phân biệt bằng NÉT KẺ, không bằng nền: bong bóng trả lời vốn
+   đã là `--surface-2`, tô cùng màu thì tiêu đề chìm hẳn vào nền. */
+.mdtable th { border-bottom-width: 2px; font-weight: 650; white-space: nowrap; }

@@ -545,3 +545,35 @@ def test_hoi_dap_trong_bai_khong_vo_vi_pham_vi_bien(app_client):
     # và không được khai lại bên trong khối try
     assert not re.search(r"let\s+buf\s*=\s*\"\"\s*,\s*answer", body), \
         "`answer` lại bị khai trong khối try"
+
+
+def test_hai_bo_dung_markdown_deu_dung_bang_va_chi_so():
+    """Cột trả lời có HAI bộ dựng Markdown khác nhau — `renderMd()` bên
+    `app.js` cho khung hỏi-về-bài-này, `svMd()` bên `survey.js` cho hỏi đáp
+    trên kho. Bên kho dựng bảng đúng từ đầu, bên đọc thì **sót**: câu trả lời
+    so sánh nhiều bài hiện ra nguyên dấu gạch đứng và hàng `|---|---|`, mà
+    prompt lại bảo model dùng bảng khi so từ ba nguồn trở lên.
+
+    Và `_SUBSCRIPTISH` khai ở `app.js` nhưng `survey.js` **dùng nhờ**. Xoá bên
+    này thì bên kia ném `ReferenceError` lúc dựng — tức mọi câu trả lời trong
+    kho thành ô trắng, không lỗi nào hiện lên màn. Đúng loại hỏng chỉ phép kiểm
+    cấu trúc mới giữ được.
+    """
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    app_js = (web / "app.js").read_text()
+    survey_js = (web / "survey.js").read_text()
+    css = (web / "style.css").read_text()
+
+    assert "const _SUBSCRIPTISH" in app_js, "app.js mất khai báo _SUBSCRIPTISH"
+    assert "_SUBSCRIPTISH" in survey_js, "survey.js thôi dùng chung — kiểm lại"
+
+    # cả hai phải có nhánh bảng, và bảng phải nằm trong khung cuộn ngang riêng
+    assert 'class="mdtable"' in app_js, "renderMd() thiếu nhánh bảng"
+    assert 'class="sv-tablewrap"' in survey_js, "svMd() thiếu nhánh bảng"
+    assert ".mdtable { overflow-x: auto" in css, "bảng thiếu khung cuộn ngang"
+
+    # và cả hai phải dựng dạng lưu ^{…} / _{…}
+    for ten, src in (("app.js", app_js), ("survey.js", survey_js)):
+        assert "<sup>$1</sup>" in src and "<sub>$1</sub>" in src, \
+            f"{ten} không dựng ^{{…}} / _{{…}}"
