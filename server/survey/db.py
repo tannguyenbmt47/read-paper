@@ -1069,12 +1069,19 @@ def corpus_fingerprint(survey_id: str) -> str:
     """Vân tay của kho: đổi khi thêm/bớt bài hoặc bóc lại phiếu.
 
     Dùng làm một nửa khoá của `qcache` — hỏi lại câu cũ mà kho chưa đổi thì trả
-    lại kết quả cũ, đổi rồi thì hỏi lại thật.
+    lại kết quả cũ, đổi rồi thì hỏi lại thật. Cũng là thứ `synth_stale` so.
+
+    Kèm cả `prompts.DIGEST_V`: **hình dạng phiếu đổi cũng là kho đổi.** Bản tổng
+    hợp và câu trả lời cũ dựng từ digest thiếu `novelty` / `problem` /
+    `contribution_type` thì không còn đúng nữa, mà nếu chỉ soi danh sách bài thì
+    chúng vẫn hiện ra như còn mới.
     """
     rows = conn().execute(
         "SELECT id, updated_at, status FROM paper WHERE survey_id = ? ORDER BY id",
         (check_id(survey_id),)).fetchall()
-    return db.sha("|".join(f"{r['id']}:{r['updated_at']}:{r['status']}" for r in rows))
+    from .prompts import DIGEST_V      # nạp muộn: prompts không import db
+    return db.sha(f"v{DIGEST_V}|"
+                  + "|".join(f"{r['id']}:{r['updated_at']}:{r['status']}" for r in rows))
 
 
 def qcache_key(survey_id: str, question: str) -> str:

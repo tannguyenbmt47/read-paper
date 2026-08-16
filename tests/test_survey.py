@@ -1092,3 +1092,58 @@ def test_di_het_co_che_khong_dem_hu_tu():
                         "nhờ đó bỏ được triple mâu thuẫn, dẫn đến tập nhất quán"]}
     assert not pipeline._walks_mechanism(hu_tu)
     assert pipeline._walks_mechanism(that)
+
+
+def test_digest_mang_du_moi_truong_phieu_da_boc():
+    """Phiếu bóc trường nào thì `corpus_digest` phải mang trường ấy.
+
+    Bản đầu bỏ rơi `problem`, `novelty`, `contribution_type` và cắt `results`
+    còn 4 — tức đã trả tiền cho model bóc rồi vứt đi. Đo trên kho thật: 1.238
+    ký tự bị bỏ trên 6.855, và 3 trên 4 phiếu mất đúng một kết quả vì bị cắt.
+
+    Chỗ bỏ đi lại đúng là chỗ `SYNTH_SYSTEM` cần — nó đòi "chia thành mấy
+    hướng" và "cái gì thật sự mới", trong khi `novelty` và `contribution_type`
+    không hề được đưa vào. Bản tổng hợp ra chung chung vì thiếu dữ liệu, không
+    phải vì prompt tổng hợp viết dở.
+    """
+    from server.survey import prompts
+
+    # dấu riêng cho từng trường, để biết chính xác trường nào rơi
+    card = {
+        "title_vi": "DAUtitle", "tldr_vi": "DAUtldr", "task": "DAUtask",
+        "domain": "DAUdomain", "problem": "DAUproblem", "gap": "DAUgap",
+        "idea": "DAUidea", "method": "DAUmethod",
+        "datasets": ["DAUds"], "metrics": ["DAUmt"], "baselines": ["DAUbl"],
+        "results": [{"claim": f"DAUclaim{i}", "number": f"{i}.5", "chunk": "p1c1"}
+                    for i in range(5)],
+        "limitations": "DAUlim", "novelty": "DAUnovelty",
+        "contribution_type": "DAUloai", "keywords_en": ["DAUkw"],
+        "code_url": "https://example.invalid/DAUcode",
+    }
+    d = prompts.corpus_digest([{"id": "p1", "title": "x", "year": 2024,
+                                "venue": "V", "card": card}])
+
+    # `code_url` cố ý KHÔNG vào digest: bản tổng hợp không dùng tới URL mã nguồn,
+    # và nó chỉ tổ làm model chép link vào câu trả lời.
+    dau = {"title_vi": "DAUtitle", "tldr_vi": "DAUtldr", "task": "DAUtask",
+           "domain": "DAUdomain", "problem": "DAUproblem", "gap": "DAUgap",
+           "idea": "DAUidea", "method": "DAUmethod", "datasets": "DAUds",
+           "metrics": "DAUmt", "baselines": "DAUbl", "results": "DAUclaim0",
+           "limitations": "DAUlim", "novelty": "DAUnovelty",
+           "contribution_type": "DAUloai", "keywords_en": "DAUkw"}
+    # và khuôn phiếu trong CHÍNH prompt phải khớp — thêm trường mới vào
+    # `CARD_SYSTEM` mà quên digest thì lỗi cũ lặp lại y nguyên
+    import re
+    khuon = re.search(r"\{\n(.*?)\n\}", prompts.CARD_SYSTEM, re.S).group(1)
+    # đúng hai dấu cách: khoá cấp ngoài. `number`/`chunk` lồng trong `results[]`
+    trong_prompt = set(re.findall(r'^  "([a-z_]+)":', khuon, re.M))
+    assert trong_prompt == set(card), (
+        f"khuôn phiếu và phép kiểm lệch nhau: "
+        f"prompt thừa {trong_prompt - set(card)}, thiếu {set(card) - trong_prompt}")
+    assert set(dau) | {"code_url"} == set(card)
+    roi = [k for k, v in dau.items() if v not in d]
+    assert not roi, f"phiếu bóc rồi mà digest bỏ: {roi}"
+
+    # và kết quả không bị cắt dưới 5 — phiếu thật thường có đúng 5
+    for i in range(5):
+        assert f"DAUclaim{i}" in d, f"kết quả thứ {i} bị cắt mất"

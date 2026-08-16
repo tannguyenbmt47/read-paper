@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.12.3
+
+**The corpus digest threw away 18% of what the cards had paid to extract.**
+`corpus_digest()` never carried `problem`, `novelty`, `contribution_type` or
+`domain`, and truncated `results` to four. Measured on the real corpus: 1,238
+characters dropped out of 6,855, and three of four cards lost a result to the
+cut. The dropped fields are exactly the ones the synthesis prompt needs — it
+asks the model to sort the papers into directions and say what is genuinely new,
+while `novelty`, the field that asks that question outright, and
+`contribution_type`, the label that sorts them, were never shown to it. The
+synthesis read as generic because it was working from less than the tool had
+already bought, not because the prompt was weak. Only `code_url` stays out, on
+purpose: a synthesis has no use for a repository link and will copy it into the
+answer if given one.
+
+`prompts.DIGEST_V` now feeds `corpus_fingerprint`, so a change to the digest's
+shape marks existing syntheses stale and misses `qcache` once, instead of
+letting work built from the thinner digest keep looking current.
+
+`test_digest_mang_du_moi_truong_phieu_da_boc` reads the JSON template out of
+`CARD_SYSTEM` itself and checks every top-level key reaches the digest, so
+adding a field to the card and forgetting the digest fails the suite rather
+than quietly repeating this.
+
 ## 1.12.2
 
 **Answers containing a table showed the raw pipes.** The reader has its own

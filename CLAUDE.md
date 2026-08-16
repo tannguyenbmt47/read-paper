@@ -851,6 +851,32 @@ hỏi → lập kế hoạch → tìm → đọc → chấm thiếu → tìm ti�
    hỏi tra cứu chi tiết thì vector thường **hơn** đồ thị (F1 64,8 vs 63,0), hỏi
    bắc cầu thì đồ thị hơn (70,3 vs 67,0).
 
+### Phiếu bóc trường nào thì digest phải mang trường ấy
+
+Bản đầu của `corpus_digest` bỏ rơi `problem`, `novelty`, `contribution_type`,
+`domain` và cắt `results` còn 4 — tức **đã trả tiền cho model bóc rồi vứt đi**.
+Đo trên kho thật: 1.238 ký tự bị bỏ trên 6.855 (**18%**), và 3 trên 4 phiếu mất
+đúng một kết quả vì bị cắt.
+
+Chỗ bỏ đi lại đúng là chỗ `SYNTH_SYSTEM` cần: nó đòi *"chia thành mấy hướng"* và
+*"cái gì thật sự mới"*, trong khi `novelty` — trường hỏi thẳng câu đó — và
+`contribution_type` — nhãn để chia hướng — không hề được đưa vào. **Bản tổng hợp
+ra chung chung vì thiếu dữ liệu, không phải vì prompt tổng hợp viết dở**; đi sửa
+prompt là sửa nhầm chỗ.
+
+Chỉ `code_url` cố ý đứng ngoài: bản tổng hợp không dùng URL mã nguồn, đưa vào
+chỉ tổ làm model chép link vào câu trả lời.
+
+`test_digest_mang_du_moi_truong_phieu_da_boc` đọc thẳng khuôn JSON trong
+`CARD_SYSTEM` rồi đối chiếu, nên thêm trường mới vào phiếu mà quên digest là bị
+bắt ngay — chứ không phải lặp lại đúng lỗi cũ sau vài tháng.
+
+**Đổi hình dạng digest là đổi `prompts.DIGEST_V`.** `corpus_fingerprint` nhét số
+đó vào vân tay kho, nên bản tổng hợp cũ tự gắn cờ `synth_stale` và `qcache`
+trượt đúng một lần. Thiếu bước này thì bản tổng hợp dựng từ digest thiếu trường
+vẫn hiện ra như còn mới — mà vân tay chỉ soi danh sách bài thì không cách nào
+biết được.
+
 ### Bất biến quan trọng nhất: `corpus_digest`
 
 `prompts.corpus_digest(papers)` ghép phiếu của cả kho thành một khối phải

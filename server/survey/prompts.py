@@ -403,6 +403,13 @@ def paper_labels(papers: list[dict]) -> dict[str, str]:
             for i, p in enumerate(sorted(papers, key=lambda x: x["id"]))}
 
 
+# Đổi số này mỗi khi `corpus_digest` đổi hình dạng. `corpus_fingerprint` nhét nó
+# vào vân tay kho, nên bản tổng hợp cũ tự gắn cờ `synth_stale` và `qcache` trượt
+# đúng một lần. Không có nó thì bản tổng hợp dựng từ digest thiếu trường vẫn
+# hiện ra như còn mới, mà đó chính là thứ vừa phải đi sửa.
+DIGEST_V = 2
+
+
 def corpus_digest(papers: list[dict]) -> str:
     """Phiếu của cả kho, ghép thành một khối **cố định byte giữa mọi câu hỏi**.
 
@@ -412,6 +419,16 @@ def corpus_digest(papers: list[dict]) -> str:
 
     Bài xếp theo `id` chứ không theo thời gian cập nhật: xếp theo thời gian thì
     mở lại một bài cũng đảo thứ tự và cache trượt sạch.
+
+    **Phiếu bóc ra trường nào thì digest phải mang trường ấy.** Bản đầu bỏ rơi
+    `problem`, `novelty`, `contribution_type` và cắt `results` còn 4 — tức đã
+    trả tiền bóc rồi vứt đi. Đo trên kho thật: **1.238 ký tự bị bỏ trên 6.855,
+    tức 18%**, và 3 trên 4 phiếu mất đúng một kết quả vì bị cắt.
+
+    Chỗ bỏ đi lại đúng là chỗ `SYNTH_SYSTEM` cần: nó đòi "chia thành mấy hướng"
+    và "cái gì thật sự mới", trong khi `novelty` — trường hỏi thẳng câu đó — và
+    `contribution_type` — nhãn để chia hướng — không hề được đưa vào. Đây là gốc
+    của việc bản tổng hợp ra chung chung, không phải lỗi của prompt tổng hợp.
     """
     lab = paper_labels(papers)
     rows = []
@@ -419,18 +436,22 @@ def corpus_digest(papers: list[dict]) -> str:
         card = p.get("card") or {}
         if not card:
             continue
+        loai = card.get("contribution_type") or ""
         bits = [f"[{lab[p['id']]}] {card.get('title_vi') or p.get('title') or ''}"
-                f" ({p.get('year') or 'n.d.'}{', ' + p['venue'] if p.get('venue') else ''})"]
-        for key, label in (("tldr_vi", "Chốt"), ("task", "Bài toán"), ("idea", "Ý tưởng"),
+                f" ({p.get('year') or 'n.d.'}{', ' + p['venue'] if p.get('venue') else ''}"
+                f"{'; ' + loai if loai else ''})"]
+        for key, label in (("tldr_vi", "Chốt"), ("task", "Bài toán"),
+                           ("domain", "Lĩnh vực"),
+                           ("problem", "Vấn đề"), ("idea", "Ý tưởng"),
                            ("method", "Cách làm"), ("gap", "Khoảng trống"),
-                           ("limitations", "Giới hạn")):
+                           ("novelty", "Mới ở đâu"), ("limitations", "Giới hạn")):
             if card.get(key):
                 bits.append(f"  {label}: {card[key]}")
         for key, label in (("datasets", "Dữ liệu"), ("metrics", "Đo bằng"),
                            ("baselines", "So với"), ("keywords_en", "Từ khoá")):
             if card.get(key):
                 bits.append(f"  {label}: {', '.join(str(x) for x in card[key][:12])}")
-        for r in (card.get("results") or [])[:4]:
+        for r in (card.get("results") or [])[:6]:
             num = f" ({r['number']})" if r.get("number") else ""
             bits.append(f"  Kết quả{num}: {r.get('claim','')} [{r.get('chunk','')}]")
         rows.append("\n".join(bits))
