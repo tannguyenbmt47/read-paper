@@ -851,3 +851,20 @@ def test_cau_truoc_da_ket_thuc_thi_khong_danh_dau_cont():
           _B("b2", "equation", "x = y"),
           _B("b3", "para", "trong đó y là số khung hình.")]
     assert mark_continuations(bs) == 0
+
+
+def test_giai_thich_tung_doan_khong_bat_model_nghi_tham():
+    """Đo thật một lượt: **145,7 giây** cho 1.383 token đầu ra với
+    `{"effort":"low"}`, và **14,4 giây** sau khi tắt hẳn — cùng chi phí, cùng
+    chất lượng ghi chú.
+
+    Cùng cái bẫy đã ghi ở `survey/lecture.py`: độ sâu đến từ CẤU TRÚC bắt buộc
+    trong prompt (`gist`/`role`/`link_back`/`unpack`/`analogy`/`caution`/
+    `check`), không đến từ token nghĩ thầm — mỗi trường đã hỏi đúng một câu cụ
+    thể nên model không cần tự bày dàn ý.
+    """
+    import inspect
+    from server import pipeline
+    src = inspect.getsource(pipeline.explain_block)
+    assert "reasoning=NO_REASONING" in src, "explain lại bật nghĩ thầm"
+    assert "max_tokens=2500" in src, "trần đầu ra lại bị nới quá tay"

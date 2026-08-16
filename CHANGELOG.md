@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.12.1
+
+**Asking a question about the paper was completely broken.** `paint()` was
+defined outside the `try` block while `answer` was declared with `let` inside
+it — different scopes — so every animation frame threw
+`ReferenceError: answer is not defined` and the panel showed only
+"Lỗi: answer is not defined". The variable now lives in the same scope as the
+function that reads it.
+
+**Explaining a block took 145 seconds; it now takes 14.** Measured on one call:
+`{"effort":"low"}` spent almost all of that time thinking rather than writing,
+for 1,383 tokens of output. Turning reasoning off gives the same cost and the
+same note — all eight fields, a concrete example drawn from the paper, a valid
+diagram — in a tenth of the time. The depth comes from the required structure of
+the prompt, where each field asks one specific question, not from thinking
+tokens. This is the trap already documented for the lecture pass, where the same
+setting produced empty strings after 76 seconds. The output ceiling also came
+down from 8,000 to 2,500, since real output is under 1,400.
+
 ## 1.12.0
 
 Two more audits — how well the tool actually teaches, and the interface as a

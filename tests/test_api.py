@@ -522,3 +522,26 @@ def test_chon_chu_bi_khoa_theo_cot(app_client):
     # cả khối luật phải kết thúc bằng `user-select: none`
     i = css.index(".doc.sel-en")
     assert "user-select: none" in css[i:css.index("}", i) + 1]
+
+
+def test_hoi_dap_trong_bai_khong_vo_vi_pham_vi_bien(app_client):
+    """`Uncaught ReferenceError: answer is not defined` — cả phần Hỏi về bài này
+    chết ngay khung hình đầu tiên.
+
+    `paint()` được định nghĩa ngoài khối `try`, còn `answer` khai bằng `let` bên
+    TRONG khối đó: hai phạm vi khác nhau. Mỗi lần `requestAnimationFrame(paint)`
+    chạy là ném lỗi, và người dùng chỉ thấy "Lỗi: answer is not defined".
+    """
+    import re
+    from pathlib import Path
+    js = Path(__file__).resolve().parents[1].joinpath("web/app.js").read_text()
+    i = js.index("async function sendQuestion()")
+    body = js[i:i + 2600]
+
+    # `answer` phải khai TRƯỚC `paint`, cùng phạm vi hàm
+    khai = body.index("let answer")
+    dung = body.index("renderMd(answer)")
+    assert khai < dung, "`answer` khai sau chỗ dùng"
+    # và không được khai lại bên trong khối try
+    assert not re.search(r"let\s+buf\s*=\s*\"\"\s*,\s*answer", body), \
+        "`answer` lại bị khai trong khối try"

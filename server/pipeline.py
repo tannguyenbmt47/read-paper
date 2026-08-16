@@ -716,9 +716,21 @@ async def explain_block(doc_id: str, block_id: str) -> tuple[dict, dict, dict]:
         ],
         model=doc["model"],
         session_id=doc_id,
-        max_tokens=8000,
+        # Đo thật một lượt: **145,7 giây** cho 1.383 token đầu ra. Phần lớn thời
+        # gian đi vào nghĩ thầm, không vào phần viết — cùng cái bẫy đã ghi ở
+        # `survey/lecture.py`, nơi `{"effort":"low"}` làm hai mẻ trên bốn chạy
+        # 76 giây rồi trả về chuỗi RỖNG.
+        #
+        # Độ sâu của ghi chú đến từ CẤU TRÚC bắt buộc trong `EXPLAIN_SYSTEM`
+        # (`gist` / `role` / `link_back` / `unpack` / `analogy` / `caution` /
+        # `check`) chứ không đến từ token nghĩ thầm — mỗi trường đã hỏi đúng một
+        # câu cụ thể, model không cần tự bày ra dàn ý nữa.
+        #
+        # `max_tokens` hạ từ 8000: đầu ra đo được là 1.383 token, để trần gấp
+        # sáu lần chỉ mời model viết dài và nghĩ lâu.
+        max_tokens=2500,
         temperature=0.4,
-        reasoning=LOW_REASONING,
+        reasoning=NO_REASONING,
     )
     note = llm.extract_json(raw)
     doc = store.load(doc_id)

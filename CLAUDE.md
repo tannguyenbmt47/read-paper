@@ -764,6 +764,24 @@ loại.
 
 ### Model suy luận
 
+**Tắt hẳn nghĩ thầm ở pass giải thích từng đoạn.** Đo thật một lượt trên bài
+LAPA: `{"effort":"low"}` cho **145,7 giây** với 1.383 token đầu ra; tắt hẳn cho
+**14,4 giây**, cùng chi phí ($0,0036), cùng chất lượng — ghi chú vẫn đủ tám
+trường, `analogy` vẫn lấy ví dụ thật trong bài, sơ đồ Mermaid vẫn hợp lệ.
+
+Lý do giống hệt `survey/lecture.py`: độ sâu đến từ **cấu trúc bắt buộc** của
+`EXPLAIN_SYSTEM` (`gist` / `role` / `link_back` / `unpack` / `analogy` /
+`caution` / `check`) — mỗi trường đã hỏi đúng một câu cụ thể nên model không cần
+tự bày dàn ý. `max_tokens` cũng hạ 8000 → 2500: đầu ra thật là 1.383 token, để
+trần gấp sáu lần chỉ mời model viết dài và nghĩ lâu.
+
+Lượt đo ấy còn lộ một chuyện khác: `cached_tokens = 0` trên 23.836 token prompt.
+Pass này đi sau `cached_prefix` nên **đáng lẽ** gần như miễn phí, nhưng người
+đọc bấm 💡 hàng chục phút sau lần dịch, lúc prefix đã rơi khỏi cửa sổ cache. Mỗi
+lần bấm là đọc lại cả bài ở giá đầy đủ.
+
+
+
 `pipeline.NO_REASONING` cho các lượt dịch, `LOW_REASONING` cho brief, explain và
 slide.
 Để mặc định thì DeepSeek V4 / GPT-5.x tiêu sạch `max_tokens` vào phần nghĩ thầm

@@ -3590,7 +3590,13 @@ async function sendQuestion() {
 
   // Dựng lại Markdown mỗi khung hình chứ không mỗi token — câu trả lời dài thì
   // dựng theo từng token vừa tốn vừa giật.
+  //
+  // `answer` phải khai Ở ĐÂY, cùng phạm vi với `paint`. Bản trước khai nó bằng
+  // `let` bên TRONG khối `try`, mà `paint` được định nghĩa bên ngoài — hai phạm
+  // vi khác nhau, nên mỗi khung hình `paint` chạy là ném
+  // `ReferenceError: answer is not defined`, và cả phần hỏi đáp trong bài chết.
   let painting = false;
+  let answer = "";
   const paint = () => {
     painting = false;
     bot.innerHTML = renderMd(answer);
@@ -3605,7 +3611,7 @@ async function sendQuestion() {
     });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
-    let buf = "", answer = "";
+    let buf = "";
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
