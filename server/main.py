@@ -622,6 +622,173 @@ async def page_image(doc_id: str, pno: int, dpi: int = 110):
     })
 
 
+# Macro TeX → ký tự thật. **Bản sao của `TEX` bên `web/app.js`** — bản đang đọc
+# trên màn hình và file xuất ra là hai đoạn code dựng cùng một nội dung, nên hai
+# bảng phải khớp từng khoá. `test_bang_macro_tex_khop_nhau_giua_app_va_export`
+# canh chỗ này; đừng sửa một bên.
+_TEX = {
+    "alpha": "α",
+    "beta": "β",
+    "gamma": "γ",
+    "delta": "δ",
+    "epsilon": "ε",
+    "varepsilon": "ε",
+    "zeta": "ζ",
+    "eta": "η",
+    "theta": "θ",
+    "vartheta": "ϑ",
+    "iota": "ι",
+    "kappa": "κ",
+    "lambda": "λ",
+    "mu": "μ",
+    "nu": "ν",
+    "xi": "ξ",
+    "pi": "π",
+    "rho": "ρ",
+    "sigma": "σ",
+    "tau": "τ",
+    "upsilon": "υ",
+    "phi": "φ",
+    "varphi": "φ",
+    "chi": "χ",
+    "psi": "ψ",
+    "omega": "ω",
+    "Gamma": "Γ",
+    "Delta": "Δ",
+    "Theta": "Θ",
+    "Lambda": "Λ",
+    "Xi": "Ξ",
+    "Pi": "Π",
+    "Sigma": "Σ",
+    "Phi": "Φ",
+    "Psi": "Ψ",
+    "Omega": "Ω",
+    "in": "∈",
+    "notin": "∉",
+    "ni": "∋",
+    "subset": "⊂",
+    "subseteq": "⊆",
+    "supset": "⊃",
+    "supseteq": "⊇",
+    "cup": "∪",
+    "cap": "∩",
+    "emptyset": "∅",
+    "setminus": "∖",
+    "leq": "≤",
+    "le": "≤",
+    "geq": "≥",
+    "ge": "≥",
+    "neq": "≠",
+    "ne": "≠",
+    "approx": "≈",
+    "sim": "∼",
+    "simeq": "≃",
+    "equiv": "≡",
+    "propto": "∝",
+    "ll": "≪",
+    "gg": "≫",
+    "to": "→",
+    "rightarrow": "→",
+    "Rightarrow": "⇒",
+    "leftarrow": "←",
+    "Leftarrow": "⇐",
+    "leftrightarrow": "↔",
+    "mapsto": "↦",
+    "implies": "⇒",
+    "iff": "⇔",
+    "times": "×",
+    "div": "÷",
+    "cdot": "·",
+    "cdots": "⋯",
+    "ldots": "…",
+    "dots": "…",
+    "pm": "±",
+    "mp": "∓",
+    "ast": "∗",
+    "star": "⋆",
+    "circ": "∘",
+    "bullet": "∙",
+    "sum": "∑",
+    "prod": "∏",
+    "int": "∫",
+    "partial": "∂",
+    "nabla": "∇",
+    "infty": "∞",
+    "forall": "∀",
+    "exists": "∃",
+    "neg": "¬",
+    "lnot": "¬",
+    "land": "∧",
+    "lor": "∨",
+    "wedge": "∧",
+    "vee": "∨",
+    "oplus": "⊕",
+    "otimes": "⊗",
+    "perp": "⊥",
+    "angle": "∠",
+    "sqrt": "√",
+    "top": "⊤",
+    "bot": "⊥",
+    "mid": "|",
+    "parallel": "∥",
+    "langle": "⟨",
+    "rangle": "⟩",
+    "lVert": "‖",
+    "rVert": "‖",
+    "quad": " ",
+    "qquad": "  ",
+    ",": " ",
+    ";": " ",
+    ":": " ",
+    "!": "",
+}
+
+_TEX_ACCENT = {
+    "hat": "\u0302",
+    "tilde": "\u0303",
+    "bar": "\u0304",
+    "overline": "\u0304",
+    "dot": "\u0307",
+    "ddot": "\u0308",
+    "vec": "\u20D7",
+    "check": "\u030C",
+}
+
+
+def _math_tex(s: str) -> str:
+    """LaTeX nội dòng → chữ thường + `<sup>`/`<sub>`. Nhận chuỗi ĐÃ escape.
+
+    Bản sao của `mathTeX()` bên `web/app.js`, phải khớp từng luật và đúng thứ tự.
+    """
+    out = re.sub(r"\\(?:text|mathrm|mathit|mathbf|mathcal|mathbb|operatorname)\s*\{([^{}]*)\}",
+                 r"\1", s)
+    out = re.sub(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"(\1)/(\2)", out)
+    out = re.sub(r"\\([A-Za-z]+)\s*\{([^{}]*)\}",
+                 lambda m: m.group(2) + _TEX_ACCENT[m.group(1)]
+                 if m.group(1) in _TEX_ACCENT else m.group(0), out)
+    out = re.sub(r"\\([{}|])", r"\1", out)
+    out = re.sub(r"\\([A-Za-z]+)",
+                 lambda m: _TEX.get(m.group(1), m.group(0)), out)
+    out = re.sub(r"\\([,;:!])", lambda m: _TEX.get(m.group(1), " "), out)
+    out = re.sub(r"\\\s", " ", out)
+    # Chỉ số dạng ngoặc, LẶP từ trong ra ngoài: `[^{}]*` chỉ khớp lớp trong cùng,
+    # nên `a^{(g_{DOC})}` làm một lượt thì `_{DOC}` bị ăn trước và ngoặc ngoài
+    # không còn khớp — để lại nguyên dấu ngoặc giữa câu.
+    for _ in range(4):
+        truoc = out
+        out = re.sub(r"\^\{([^{}]*)\}", r"<sup>\1</sup>", out)
+        out = re.sub(r"_\{([^{}]*)\}", r"<sub>\1</sub>", out)
+        if out == truoc:
+            break
+    out = re.sub(r"\^([A-Za-z0-9])", r"<sup>\1</sup>", out)
+    out = re.sub(r"_([A-Za-z0-9])", r"<sub>\1</sub>", out)
+    # Vét cuối cho chỉ số LỒNG: `a^{(g^\star)}` thì luật ngoặc ăn cả cục nên dấu
+    # `^` bên trong còn nguyên. Chỉ chạy trong công thức.
+    out = re.sub(r"\^([^\s{}<])", r"<sup>\1</sup>", out)
+    out = re.sub(r"_([^\s{}<])", r"<sub>\1</sub>", out)
+    return out.strip()
+
+
 def _png_size(data: bytes) -> tuple[int, int]:
     """Bề ngang/cao của một PNG, đọc thẳng từ IHDR — không cần thư viện ảnh."""
     if len(data) < 24 or data[12:16] != b"IHDR":

@@ -1394,3 +1394,9 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
 /* Hàng tiêu đề phân biệt bằng NÉT KẺ, không bằng nền: bong bóng trả lời vốn
    đã là `--surface-2`, tô cùng màu thì tiêu đề chìm hẳn vào nền. */
 .mdtable th { border-bottom-width: 2px; font-weight: 650; white-space: nowrap; }
+
+/* Công thức nội dòng dựng từ LaTeX (xem `mathTeX`). Không bọc `<code>`: nền xám
+   và font mono cắt câu thành từng mảnh, mà đây là ký hiệu ĐANG nằm trong câu
+   tiếng Việt. Chỉ nghiêng nhẹ phần chữ cái, đúng lối in toán. */
+.imath { font-style: italic; white-space: nowrap; }
+.imath sub, .imath sup { font-style: normal; }

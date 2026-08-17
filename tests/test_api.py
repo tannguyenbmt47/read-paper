@@ -729,3 +729,65 @@ def test_chot_chan_ro_he_chu_khong_bat_oan_ky_hieu_toan():
     assert script_leak("띠ᥕᥕᥲᥕᥱ", "bao toan")
     # so với bản gốc: bài trích tiếng Trung thật thì không bị bắt
     assert not script_leak("nguyên văn 深度学习 giữ lại", "trich 深度学习 trong bai")
+
+
+def _tex_table_js(ten: str) -> dict:
+    """Bóc một bảng macro trong `web/app.js` ra dict, để đối chiếu với bản Python."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1] / "web/app.js").read_text()
+    khoi = re.search(rf"const {ten} = \{{(.*?)\n?\}};", js, re.S)
+    assert khoi, f"không thấy bảng {ten} trong app.js"
+    out = {}
+    for m in re.finditer(r'(?:"([^"]+)"|([A-Za-z]+))\s*:\s*"((?:[^"\\]|\\.)*)"',
+                         khoi.group(1)):
+        # Chỉ giải mã đúng dạng `\uXXXX`: `unicode_escape` trên cả chuỗi sẽ đọc
+        # ký tự UTF-8 như latin-1 và biến "α" thành "Î±".
+        out[m.group(1) or m.group(2)] = re.sub(
+            r"\\u([0-9a-fA-F]{4})", lambda h: chr(int(h.group(1), 16)), m.group(3))
+    return out
+
+
+def test_bang_macro_tex_khop_nhau_giua_app_va_export():
+    """`TEX` bên `app.js` và `_TEX` bên `main.py` phải khớp từng khoá.
+
+    Bản đang đọc trên màn hình và file xuất ra là **hai đoạn code dựng cùng một
+    nội dung** — cùng họ với cặp `renderSlide()` / `_export_slides_html` và cặp
+    `renderMd()` / `svMd()`. Lệch một khoá thì công thức trong file xuất ra khác
+    công thức trên màn hình, mà chỉ lộ ra lúc người dùng mở file đã tải về.
+    """
+    from server import main
+    for ten_js, bang_py in (("TEX", main._TEX), ("TEX_ACCENT", main._TEX_ACCENT)):
+        bang_js = _tex_table_js(ten_js)
+        thieu = set(bang_js) - set(bang_py)
+        thua = set(bang_py) - set(bang_js)
+        assert not thieu and not thua, (
+            f"{ten_js}: app.js có thêm {sorted(thieu)}, main.py có thêm {sorted(thua)}")
+        lech = {k: (bang_js[k], bang_py[k]) for k in bang_js if bang_js[k] != bang_py[k]}
+        assert not lech, f"{ten_js} lệch giá trị: {lech}"
+
+
+def test_dung_latex_noi_dong_thanh_ky_hieu_that():
+    """`\\(…\\)` phải thành ký hiệu thật, không hiện thô giữa câu tiếng Việt.
+
+    Dạng lưu của công cụ là `^{…}` / `_{…}`, nhưng model vẫn viết LaTeX. Đo trên
+    dữ liệu thật: 13 ô, toàn dạng `\\(…\\)` (không có `$…$`, không `\\[`), với
+    các macro `\\in \\tau \\tilde \\hat \\cdot \\theta \\star \\rightarrow`.
+    Người đọc thấy nguyên `\\(Suf(a) \\in \\{0, 1\\}\\)` giữa câu.
+    """
+    from server.main import _math_tex
+
+    assert _math_tex(r"Suf(a) \in \{0, 1\}") == "Suf(a) ∈ {0, 1}"
+    assert _math_tex(r"g \in G") == "g ∈ G"
+    assert _math_tex(r"\pi_T(\cdot \mid x, I)") == "π<sub>T</sub>(· | x, I)"
+    assert _math_tex(r"\tilde{T}_t \rightarrow \hat{x}") == "T̃<sub>t</sub> → x̂"
+    assert _math_tex(r"\frac{\alpha}{\beta}") == "(α)/(β)"
+    assert _math_tex(r"\text{Suf}(a)") == "Suf(a)"
+
+    # Chỉ số LỒNG: `[^{}]*` chỉ khớp lớp trong cùng nên phải lặp từ trong ra
+    # ngoài. Làm một lượt thì `_{DOC}` bị ăn trước và ngoặc ngoài còn nguyên.
+    assert _math_tex(r"a^{(g_{DOC})}") == "a<sup>(g<sub>DOC</sub>)</sup>"
+    assert _math_tex(r"a^{(g^\star)}") == "a<sup>(g<sup>⋆</sup>)</sup>"
+
+    # macro lạ thì để nguyên, không được ăn mất chữ
+    assert "\\khongcomacronay" in _math_tex(r"\khongcomacronay x")

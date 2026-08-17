@@ -21,6 +21,10 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
    Luật ở đây phải khớp từng cái với `rich()` bên `server/main.py`, nếu không
    bản xuất ra khác bản đang đọc. */
 const sci = (s) => refs(esc(s)
+  // LaTeX nội dòng TRƯỚC: `\(a^{(g)}\)` phải đi qua `mathTeX` cả cục, nếu để
+  // luật `^{…}` chung xử lý thì mấy macro `\in`, `\tilde` còn nguyên dấu chéo
+  // giữa câu tiếng Việt. Đã thấy đúng vậy: `\(Suf(a) \in \{0, 1\}\)`.
+  .replace(/\\\((.+?)\\\)/gs, (_, m) => `<span class="imath">${mathTeX(m)}</span>`)
   .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
   .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
   .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>"));
@@ -3668,13 +3672,78 @@ async function redoBlock(id) {
 
 /** Dọn ký hiệu LaTeX thuần trình bày. Cố ý không dựng công thức — cả tool này
     vốn giữ công thức ở dạng chữ, không render LaTeX. */
+/* Macro TeX → ký tự thật. Dạng lưu của công cụ này là `^{…}` / `_{…}`, nhưng
+   model vẫn hay viết LaTeX kèm `\(…\)`; đo trên dữ liệu thật: 13 ô, toàn dạng
+   `\(…\)` (không có `$…$`, không `\[`), với các macro `\in \tau \tilde \hat
+   \cdot \theta \star \rightarrow \xi \pi \mid`. Không dựng thì người đọc
+   thấy nguyên `\(Suf(a) \in \{0, 1\}\)` giữa câu tiếng Việt.
+
+   Bảng này phải KHỚP với `_TEX` bên `server/main.py` — bản đang đọc trên màn
+   hình và file xuất ra là hai đoạn code dựng cùng một nội dung.
+   `test_bang_macro_tex_khop_nhau_giua_app_va_export` canh chỗ đó. */
+const TEX = {
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε",
+  zeta: "ζ", eta: "η", theta: "θ", vartheta: "ϑ", iota: "ι", kappa: "κ",
+  lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ",
+  tau: "τ", upsilon: "υ", phi: "φ", varphi: "φ", chi: "χ", psi: "ψ", omega: "ω",
+  Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π",
+  Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  in: "∈", notin: "∉", ni: "∋", subset: "⊂", subseteq: "⊆", supset: "⊃",
+  supseteq: "⊇", cup: "∪", cap: "∩", emptyset: "∅", setminus: "∖",
+  leq: "≤", le: "≤", geq: "≥", ge: "≥", neq: "≠", ne: "≠", approx: "≈",
+  sim: "∼", simeq: "≃", equiv: "≡", propto: "∝", ll: "≪", gg: "≫",
+  to: "→", rightarrow: "→", Rightarrow: "⇒", leftarrow: "←", Leftarrow: "⇐",
+  leftrightarrow: "↔", mapsto: "↦", implies: "⇒", iff: "⇔",
+  times: "×", div: "÷", cdot: "·", cdots: "⋯", ldots: "…", dots: "…",
+  pm: "±", mp: "∓", ast: "∗", star: "⋆", circ: "∘", bullet: "∙",
+  sum: "∑", prod: "∏", int: "∫", partial: "∂", nabla: "∇", infty: "∞",
+  forall: "∀", exists: "∃", neg: "¬", lnot: "¬", land: "∧", lor: "∨",
+  wedge: "∧", vee: "∨", oplus: "⊕", otimes: "⊗", perp: "⊥", angle: "∠",
+  sqrt: "√", top: "⊤", bot: "⊥",
+  mid: "|", parallel: "∥", langle: "⟨", rangle: "⟩", lVert: "‖", rVert: "‖",
+  quad: " ", qquad: "  ", ",": " ", ";": " ", ":": " ", "!": "",
+};
+
+/* Dấu phụ đặt bằng ký tự tổ hợp, đứng SAU chữ — cùng cơ chế `_join_accents()`
+   bên `parser.py` dùng để gộp dấu mũ rời của TeX. */
+const TEX_ACCENT = { hat: "\u0302", tilde: "\u0303", bar: "\u0304", overline: "\u0304",
+                     dot: "\u0307", ddot: "\u0308", vec: "\u20D7", check: "\u030C" };
+
+/** LaTeX nội dòng → chữ thường + `<sup>`/`<sub>`. Nhận chuỗi ĐÃ escape. */
+function mathTeX(s) {
+  let out = s
+    .replace(/\\(?:text|mathrm|mathit|mathbf|mathcal|mathbb|operatorname)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "($1)/($2)")
+    // dấu phụ trước khi đổi macro, vì `\hat{x}` cần biết cả phần trong ngoặc
+    .replace(/\\([A-Za-z]+)\s*\{([^{}]*)\}/g,
+             (m, ten, arg) => (TEX_ACCENT[ten] ? arg + TEX_ACCENT[ten] : m))
+    .replace(/\\([{}|])/g, "$1")
+    .replace(/\\([A-Za-z]+)/g, (m, ten) => (ten in TEX ? TEX[ten] : m))
+    .replace(/\\([,;:!])/g, (m, k) => TEX[k] ?? " ")
+    .replace(/\\\s/g, " ");
+  // Chỉ số dạng ngoặc, LẶP từ trong ra ngoài: `[^{}]*` chỉ khớp được lớp trong
+  // cùng, nên `a^{(g_{DOC})}` mà làm một lượt thì `_{DOC}` bị ăn trước và ngoặc
+  // ngoài không còn khớp — để lại `a^{(g<sub>DOC</sub>)}` nguyên dấu ngoặc.
+  for (let i = 0; i < 4; i++) {
+    const truoc = out;
+    out = out
+      .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
+      .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>");
+    if (out === truoc) break;
+  }
+  out = out
+    .replace(/\^([A-Za-z0-9])/g, "<sup>$1</sup>")
+    .replace(/_([A-Za-z0-9])/g, "<sub>$1</sub>")
+    // Vét cuối cho chỉ số LỒNG: `a^{(g^\star)}` thì luật ngoặc ăn cả cục nên
+    // dấu `^` bên trong còn nguyên giữa câu. Chỉ chạy trong công thức, nên nhận
+    // cả ký hiệu vừa đổi ra (`^⋆`) chứ không riêng chữ và số.
+    .replace(/\^([^\s{}<])/g, "<sup>$1</sup>")
+    .replace(/_([^\s{}<])/g, "<sub>$1</sub>");
+  return out.trim();
+}
+
 function tidyMath(s) {
-  return s
-    .replace(/\\text\s*\{([^{}]*)\}/g, "$1")
-    .replace(/\\mathrm\s*\{([^{}]*)\}/g, "$1")
-    .replace(/\\[,;:!]/g, " ")
-    .replace(/\\\s/g, " ")
-    .trim();
+  return mathTeX(s);
 }
 
 /* Chỉ số dưới KHÔNG ngoặc, chỉ ở cột trả lời. Model viết `x_t`, `z_t`, `X_t+H`
@@ -3695,7 +3764,7 @@ function mdInline(s) {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
     .replace(/(?<![*\w])\*([^*\n]+)\*(?!\w)/g, "<i>$1</i>")
-    .replace(/\\\((.+?)\\\)/g, (_, m) => `<code>${tidyMath(m)}</code>`)
+    .replace(/\\\((.+?)\\\)/g, (_, m) => `<span class="imath">${mathTeX(m)}</span>`)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
              '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }

@@ -405,7 +405,16 @@ Quy tắc định dạng:
 - Không bỏ sót block nào, không thêm block không được giao, giữ đúng thứ tự.
 - Không viết bất kỳ lời dẫn, ghi chú, hay giải thích nào ngoài bản dịch.
 - Block loại `heading` chỉ dịch tên mục, không thêm gì.
-- Block loại `caption` dịch bình thường nhưng giữ nguyên "Figure 3" → "Hình 3"."""
+- Block loại `caption` dịch bình thường nhưng giữ nguyên "Figure 3" → "Hình 3".
+
+Ký hiệu toán — **không dùng LaTeX**:
+- Chỉ số trên viết `^{…}`, chỉ số dưới viết `_{…}`. Đó là dạng bản gốc đưa cho
+  bạn, và cũng là dạng công cụ hiển thị được.
+- **Tuyệt đối không bọc `\\(…\\)`, `$…$` hay `\\[…\\]`**, và không dùng macro
+  (`\\in`, `\\tilde`, `\\rightarrow`, `\\cdot`, `\\alpha`…). Viết thẳng ký tự:
+  ∈ ⊆ → ≤ ≥ ≠ · × α β θ τ π, và dấu mũ thì đặt luôn trên chữ (τ̃, x̂).
+- Ví dụ: viết `Suf(a) ∈ {0, 1}` chứ **không** viết `\\(Suf(a) \\in \\{0, 1\\}\\)`;
+  viết `M_{R}(x, C^{(g)}, I^{(g)})` chứ không bọc thêm dấu gì."""
 
 
 # ------------------------------------------------- cột diễn giải (tuỳ chọn)
@@ -493,6 +502,11 @@ chúng. Cũng cấm kết thúc bằng công thức lặp kiểu "Đoạn này �
 
 Phần "vai trò trong bài" cũng đừng biến thành câu kết dán sẵn — chỉ nói khi nó
 thật sự thêm thông tin, và nói bằng lời khác nhau mỗi lần.
+
+Ký hiệu toán ở cột này cũng theo đúng luật của cột dịch: **không LaTeX**, không
+`\\(…\\)`, không macro. Chỉ số trên `^{…}`, chỉ số dưới `_{…}`, còn lại viết thẳng
+ký tự (∈ → ≤ · × α τ). Cột này là văn xuôi giải thích, một cục LaTeX giữa câu là
+đúng thứ làm nó khó đọc hơn cả bản gốc.
 
 ### Không dùng markdown
 Viết văn xuôi thuần. **Không** dùng `**in đậm**`, `*nghiêng*`, `#` tiêu đề, hay

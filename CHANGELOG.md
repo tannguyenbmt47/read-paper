@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.15.0
+
+**Inline LaTeX showed up raw in the middle of Vietnamese sentences.** The storage
+form for maths in this tool is `^{…}` / `_{…}`, and `sci()` renders that, but the
+model also writes `\(…\)` — and nothing rendered those, so a paragraph read
+`\(Suf(a) \in \{0, 1\}\)` where it should have read `Suf(a) ∈ {0, 1}`.
+Measured across the whole database: 13 cells, all of them `\(…\)` — no `$…$`, no
+`\[`, no `\begin{}` — using `\in \tau \tilde \hat \cdot \theta \star
+\rightarrow \xi \pi \mid`.
+
+Fixed at both ends, because either alone is insufficient. `TRANSLATE_TASK` and the
+explanation-column prompt now forbid LaTeX outright and give the substitution
+explicitly, which stops new translations producing it; and `mathTeX()` renders
+what is already stored, which repairs the existing 13 cells for free rather than
+charging to retranslate them. The prohibition lives in the `*_TASK` strings, not
+in `TRANSLATION_RULES`, so `cached_prefix` stays byte-identical and no already-
+translated paper loses its cache.
+
+The macro table exists in two languages — `TEX` in `app.js` for the screen, `_TEX`
+in `main.py` for exports — and
+`test_bang_macro_tex_khop_nhau_giua_app_va_export` holds them to the same keys and
+values, the same way the slide renderers are held together. A drift there would
+only surface when someone opened a downloaded file.
+
+Two traps inside the renderer itself. Nested indices need the brace rules applied
+repeatedly, innermost first: `[^{}]*` only matches the innermost layer, so a
+single pass over `a^{(g_{DOC})}` consumes `_{DOC}` and leaves the outer braces
+sitting in the sentence. And the result is not wrapped in `<code>` — a grey
+monospace block chops the sentence up, when the symbol is part of that sentence;
+`.imath` italicises the letters the way maths is set, and returns `sub`/`sup` to
+upright.
+
 ## 1.14.0
 
 **A block whose translation came back as garbage could only be retyped by hand.**

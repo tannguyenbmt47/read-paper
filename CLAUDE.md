@@ -318,6 +318,33 @@ kết thúc một block, `_{i=1}, the objective…` mở đầu block sau. `_sti
 mốc nhận biết là block sau mở đầu bằng `_{` hoặc `^{`: chỉ số không bao giờ mở đầu
 một đoạn văn. Nối **không chèn khoảng trắng**.
 
+**Model vẫn viết LaTeX, nên tầng hiển thị phải dựng được nó.** Dạng lưu là
+`^{…}` / `_{…}`, prompt nói rõ như vậy, nhưng đầu ra thật vẫn có `\(…\)`. Đo trên
+dữ liệu thật: **13 ô**, toàn dạng `\(…\)` — không có `$…$`, không `\[`, không
+`\begin{}` — với các macro `\in \tau \tilde \hat \cdot \theta \star
+\rightarrow \xi \pi \mid`. Không dựng thì người đọc thấy nguyên
+`\(Suf(a) \in \{0, 1\}\)` giữa câu tiếng Việt.
+
+Chữa ở **hai đầu**, và cần cả hai: `TRANSLATE_TASK` + `_PLAIN_BODY` cấm hẳn LaTeX
+(chặn từ nay), còn `mathTeX()` dựng những gì đã có (chữa 13 ô cũ, miễn phí — dịch
+lại chúng thì tốn tiền). Luật cấm nằm ở `*_TASK` chứ **không** ở
+`TRANSLATION_RULES`: `cached_prefix` phải giữ nguyên byte, nhét vào đó là hỏng
+cache của mọi bài đã dịch.
+
+Bảng macro có **ba** bản: `TEX` bên `app.js`, `_TEX` bên `main.py` (file xuất ra),
+và `TEX_ACCENT` / `_TEX_ACCENT` cho dấu phụ. Cùng họ với cặp `renderSlide()` /
+`_export_slides_html` — `test_bang_macro_tex_khop_nhau_giua_app_va_export` giữ
+chúng khớp từng khoá, vì lệch một khoá thì file tải về khác bản trên màn hình mà
+chỉ lộ ra lúc người dùng mở nó.
+
+Hai bẫy trong chính bộ dựng:
+- **Chỉ số lồng phải LẶP từ trong ra ngoài.** `[^{}]*` chỉ khớp lớp trong cùng,
+  nên `a^{(g_{DOC})}` làm một lượt thì `_{DOC}` bị ăn trước và ngoặc ngoài không
+  còn khớp — để lại `a^{(g<sub>DOC</sub>)}` nguyên dấu ngoặc giữa câu.
+- **Đừng bọc `<code>`.** Nền xám và font mono cắt câu thành từng mảnh, mà đây là
+  ký hiệu đang nằm *trong* câu tiếng Việt. `.imath` chỉ nghiêng phần chữ cái, đúng
+  lối in toán — và trả `font-style: normal` cho `sub`/`sup`.
+
 **`^{…}` / `_{…}` là dạng lưu và dạng gửi cho model, không phải dạng để nhìn.**
 Mọi chỗ hiển thị phải đi qua bộ dựng: `sci()` bên `web/app.js` và `rich()` bên
 `_export_html`. Cả hai escape trước rồi mới chèn `<sup>`/`<sub>`.
