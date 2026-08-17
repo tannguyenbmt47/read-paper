@@ -2750,6 +2750,12 @@ const pdfv = { page: -1, pages: 0, zoom: 100 };
 async function togglePdf(open) {
   $("#pdfPane").classList.toggle("hidden", !open);
   if (!open) return;
+  // Ghim lại bề rộng đã lưu ĐÚNG LÚC MỞ. Lúc nối dây thì khung còn ẩn, nên
+  // `pdfClamp` đo trên một hàng chưa có nó và trần tính ra rộng hơn thật — đo
+  // được 720px lọt qua trong khi chỗ còn chỉ đủ 698, và cột văn bản bị bóp
+  // xuống dưới mức tối thiểu.
+  const luu = pref("pdfw", "");
+  if (luu) pdfSetWidth(+luu, false);
   if (!pdfv.pages) {
     try {
       pdfv.pages = (await fetch(`/api/doc/${state.doc.id}/pdfinfo`).then((r) => r.json())).pages || 0;
@@ -2777,6 +2783,42 @@ function pdfZoom(step) {
   $("#pdfStage").style.setProperty("--pdf-zoom", pdfv.zoom + "%");
 }
 
+/* Bề rộng khung PDF: chỗ ít nhất phải chừa lại cho cột văn bản, và khoảng
+   rộng cho phép của chính khung PDF. Phóng ảnh trong khung KHÔNG thay được việc
+   nới khung — bài hai cột chụp cả trang thì phóng lên chỉ thấy một mảnh, mà đối
+   chiếu với bản gốc mới là lý do người ta mở khung này. Cùng bài học với nút ⤢
+   của ô xem trước hình. */
+const PDF_MIN = 300;
+const DOC_MIN = 360;
+
+/** Ghim bề rộng vào khoảng dùng được, theo chỗ CÒN LẠI ở hàng hiện tại.
+
+    Phải trừ cả cột trái, không chỉ lấy bề ngang màn hình: đo trên khung 1440px
+    có cột trái đang mở, tính theo màn hình thì trần là 1080px, kéo tới đó là cột
+    văn bản còn **51px** — chữ rơi xuống mỗi dòng một từ. Cột trái đóng lại được
+    nên số này đổi theo lúc đo, vì thế đo mỗi lần chứ không nhớ sẵn. */
+function pdfClamp(px) {
+  const hang = $("#pdfPane").parentElement;
+  const trai = $("#side");
+  const rong = (hang ? hang.clientWidth : 0) || window.innerWidth;
+  const chiem = trai && trai.offsetParent !== null ? trai.getBoundingClientRect().width : 0;
+  const tran = Math.max(PDF_MIN, rong - chiem - DOC_MIN);
+  return Math.round(Math.max(PDF_MIN, Math.min(px, tran)));
+}
+
+function pdfSetWidth(px, luu = true) {
+  const w = pdfClamp(px);
+  $("#pdfPane").style.setProperty("--pdf-w", w + "px");
+  if (luu) setPref("pdfw", w);
+  return w;
+}
+
+/** Trả lại bề rộng mặc định 40% — bỏ hẳn sở thích đã lưu, không ghi đè bằng số. */
+function pdfResetWidth() {
+  $("#pdfPane").style.removeProperty("--pdf-w");
+  localStorage.removeItem(PREF + "pdfw");
+}
+
 function wirePdfPane() {
   $("#pdfBtn").onclick = () => togglePdf($("#pdfPane").classList.contains("hidden"));
   $("#pdfClose").onclick = () => togglePdf(false);
@@ -2784,6 +2826,58 @@ function wirePdfPane() {
   $("#pdfNext").onclick = () => pdfGo(pdfv.page + 1);
   $("#pdfZoomIn").onclick = () => pdfZoom(25);
   $("#pdfZoomOut").onclick = () => pdfZoom(-25);
+
+  const luu = pref("pdfw", "");
+  if (luu) pdfSetWidth(+luu, false);   // ghim lại: màn hình lần này có thể hẹp hơn
+
+  /* Kéo bằng Pointer Events chứ không phải mouse: `setPointerCapture` giữ được
+     sự kiện cả khi con trỏ chạy ra ngoài cửa sổ, nên kéo mạnh một cái không làm
+     vách tuột mất giữa chừng. Và nó nhận cả bút lẫn cảm ứng, miễn phí. */
+  const grip = $("#pdfGrip");
+  let x0 = 0, w0 = 0;
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button) return;
+    x0 = e.clientX;
+    w0 = $("#pdfPane").getBoundingClientRect().width;
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add("is-drag");
+    document.body.classList.add("is-resizing");
+    e.preventDefault();
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!grip.classList.contains("is-drag")) return;
+    pdfSetWidth(w0 - (e.clientX - x0), false);   // kéo sang trái là nới rộng ra
+  });
+  const xong = (e) => {
+    if (!grip.classList.contains("is-drag")) return;
+    grip.classList.remove("is-drag");
+    document.body.classList.remove("is-resizing");
+    try { grip.releasePointerCapture(e.pointerId); } catch { /* đã nhả rồi */ }
+    setPref("pdfw", Math.round($("#pdfPane").getBoundingClientRect().width));
+  };
+  grip.addEventListener("pointerup", xong);
+  grip.addEventListener("pointercancel", xong);
+  grip.ondblclick = pdfResetWidth;
+
+  // Bàn phím: vách là `role="separator"` có `tabindex`, nên phải kéo được bằng
+  // mũi tên — chuột không phải đường duy nhất vào một điều khiển.
+  grip.addEventListener("keydown", (e) => {
+    const buoc = e.shiftKey ? 64 : 16;
+    if (e.key === "ArrowLeft") pdfSetWidth($("#pdfPane").getBoundingClientRect().width + buoc);
+    else if (e.key === "ArrowRight") pdfSetWidth($("#pdfPane").getBoundingClientRect().width - buoc);
+    else if (e.key === "Home" || e.key === "Escape") pdfResetWidth();
+    else return;
+    e.preventDefault();
+  });
+
+  // Thu cửa sổ nhỏ lại thì bề rộng đã lưu có thể vượt chỗ còn. Ghim lại từ
+  // GIÁ TRỊ ĐÃ LƯU chứ không từ bề rộng hiện tại, và không ghi đè sở thích:
+  // đo lại từ hiện tại thì mỗi lần thu nhỏ là mất một ít, nới cửa sổ ra khung
+  // không bao giờ to lại như cũ.
+  window.addEventListener("resize", () => {
+    const luu = pref("pdfw", "");
+    if (luu) pdfSetWidth(+luu, false);
+  });
 }
 
 /** Lật khung PDF theo chỗ đang đọc, nếu người dùng để chế độ bám theo. */

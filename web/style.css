@@ -658,9 +658,28 @@ sub { bottom: -.22em; }
 
 /* --------------------------------------------- khung PDF gốc để đối chiếu */
 .pdfpane {
-  width: 40%; min-width: 300px; flex: none; display: flex; flex-direction: column;
+  /* Bề ngang qua biến, KHÔNG đặt inline: khung này chuyển sang `position: fixed`
+     ở màn hẹp (xem media query dưới), và luật `width: auto` ở đó phải thắng được.
+     Đặt inline thì nó không thắng nổi và khung PDF tràn màn hình. */
+  width: var(--pdf-w, 40%); min-width: 300px; flex: none;
+  display: flex; flex-direction: column; position: relative;
   border-left: 1px solid var(--line); background: var(--surface-2); min-height: 0;
 }
+/* Vách kéo. Rộng 5px nhưng vùng bắt chuột nới ra hai bên bằng `::before` —
+   vách đủ hẹp để không chiếm chỗ thì lại quá hẹp để nhắm chuột vào. */
+.pane-grip {
+  position: absolute; left: -3px; top: 0; bottom: 0; width: 5px; z-index: 3;
+  cursor: col-resize; background: transparent;
+}
+.pane-grip::before {
+  content: ""; position: absolute; left: -3px; right: -3px; top: 0; bottom: 0;
+}
+.pane-grip:hover, .pane-grip:focus-visible, .pane-grip.is-drag {
+  background: var(--accent); outline: none;
+}
+/* Trong lúc kéo phải tắt chọn chữ trên cả trang: con trỏ đi qua cột văn bản là
+   bôi đen cả đoạn, và vùng chọn đó còn nằm lại sau khi thả. */
+body.is-resizing { user-select: none; cursor: col-resize; }
 .pdf-bar {
   display: flex; align-items: center; gap: .3rem; flex: none;
   padding: .3rem .5rem; border-bottom: 1px solid var(--line); background: var(--surface);
@@ -973,6 +992,9 @@ sub { bottom: -.22em; }
   .doc.view-both .en { padding-bottom: .3rem; border-bottom: 1px dashed var(--line); margin-bottom: .5rem; }
   /* màn hình hẹp không đủ chỗ cho hai cột — cho khung PDF phủ lên trên */
   .pdfpane { position: fixed; inset: 0; z-index: 46; width: auto; }
+  /* Ở khổ này khung PDF phủ kín màn hình nên không còn gì để kéo, mà vách vẫn
+     bắt chuột thì nó chặn mất mép trái của chính khung. */
+  .pane-grip { display: none; }
 }
 @media (min-width: 1001px) { .side-veil { display: none; } }
 

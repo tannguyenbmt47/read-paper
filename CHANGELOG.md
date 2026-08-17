@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.13.1
+
+**The PDF pane is now drag-resizable.** It was fixed at 40% of the window, which
+is the wrong width for a two-column paper — zooming inside the pane only shows a
+fragment, and comparing against the original is the whole reason the pane exists.
+The same lesson the figure-preview window already learned with its ⤢ button:
+magnifying the picture does not substitute for enlarging the frame.
+
+Drag the left edge, double-click it to return to the default, or move it with the
+arrow keys when it has focus. The width lives in `localStorage` under
+`docdoc:pdfw`, since it belongs to the machine you are sitting at rather than to
+the paper.
+
+Four things measured in the browser rather than guessed. The width travels through
+a `--pdf-w` custom property instead of an inline style, because on narrow screens
+the pane becomes `position: fixed; width: auto` to cover the viewport, and a media
+query can outrank the base rule but not an inline style. The clamp subtracts the
+left sidebar, not just the viewport: computing it from window width alone gave a
+1,080px ceiling on a 1,440px window, and dragging that far left the text column at
+51 pixels — one word per line. The stored width is re-clamped when the pane opens,
+not only when the handler is wired, because at wiring time the pane is still
+hidden and the row it measures does not include it: 720px slipped through where
+only 698 fit. And shrinking the window re-clamps from the *stored* value rather
+than the current width, or every shrink would shave a little off and widening the
+window again would never bring the pane back.
+
 ## 1.13.0
 
 **Figures extracted before the resolution fix stayed blurry, and there was no

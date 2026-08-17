@@ -665,6 +665,41 @@ Hai chỗ dễ quên:
   rộng 44pt chỉ ra 245px. Đó là 400dpi thật, không phải lỗi — đừng nới trần để
   chữa một con số trông nhỏ.
 
+### Vách kéo bề rộng khung PDF
+
+Phóng ảnh trong khung **không thay được việc nới khung** — cùng bài học với nút ⤢
+của ô xem trước hình. Bài hai cột chụp cả trang thì phóng lên chỉ thấy một mảnh,
+mà đối chiếu với bản gốc mới là lý do người ta mở khung này.
+
+`#pdfGrip` nằm **trong** `#pdfPane`, không phải phần tử em bên cạnh: khung bật/tắt
+bằng lớp `hidden`, để vách ra ngoài thì phải nhớ ẩn cả hai chỗ.
+
+Bốn chỗ đã vấp khi soát bằng trình duyệt:
+
+- **Bề rộng đi qua biến `--pdf-w`, không đặt inline.** Ở màn ≤1000px `.pdfpane`
+  thành `position: fixed; width: auto` để phủ kín màn hình; luật trong media query
+  thắng được `width: var(--pdf-w, 40%)` ở khối gốc nhưng **không** thắng được
+  `style="width:…"`. Đặt inline là khung PDF tràn màn hình ở mọi máy hẹp.
+- **Chốt bề rộng phải trừ cả cột trái.** Tính trần theo bề ngang màn hình thì đo
+  trên khung 1440px có cột trái đang mở cho trần 1080px — kéo tới đó là cột văn
+  bản còn **51px**, mỗi dòng một từ. Cột trái đóng được nên phải đo mỗi lần.
+- **Ghim lại đúng lúc MỞ khung, không chỉ lúc nối dây.** Lúc nối dây khung còn
+  ẩn nên `pdfClamp` đo trên một hàng chưa có nó, trần tính ra rộng hơn thật: đo
+  được 720px lọt qua trong khi chỗ còn chỉ đủ 698.
+- **Thu cửa sổ thì ghim từ GIÁ TRỊ ĐÃ LƯU, không từ bề rộng hiện tại.** Đo lại
+  từ hiện tại thì mỗi lần thu nhỏ mất một ít, và nới cửa sổ ra khung không bao
+  giờ to lại như cũ. Sở thích đã lưu cũng không bị ghi đè vì lý do đó.
+
+Kéo bằng Pointer Events chứ không phải mouse: `setPointerCapture` giữ được sự kiện
+khi con trỏ chạy ra ngoài cửa sổ, nên kéo mạnh một cái không làm vách tuột giữa
+chừng. Trong lúc kéo phải `user-select: none` trên `body` — con trỏ đi qua cột văn
+bản là bôi đen cả đoạn, và vùng chọn đó còn nằm lại sau khi thả.
+
+Vách là `role="separator"` có `tabindex` nên phải kéo được bằng ←/→ (Shift cho
+bước lớn, Home/Esc về mặc định): chuột không được là đường duy nhất vào một điều
+khiển. Bề rộng lưu ở `localStorage` khoá `docdoc:pdfw` — thuộc về máy đang ngồi,
+không phải thuộc tính của bài.
+
 ### Ô xem trước hình: kéo và phóng
 
 Bấm vào chữ *"Figure 3"* trong bài mở `#figPeek` — cửa sổ nhỏ cho biết chỗ đó

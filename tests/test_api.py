@@ -645,3 +645,35 @@ def test_cat_lai_anh_bao_loi_ro_khi_khong_the(app_client, doc):
     assert r.status_code == 400
     assert "PDF" in r.json()["detail"]
     assert app_client.post("/api/doc/khongcobai/recrop").status_code == 404
+
+
+def test_vach_keo_khung_pdf_dat_be_rong_qua_bien():
+    """Bề rộng khung PDF phải đi qua biến `--pdf-w`, **không** đặt inline.
+
+    Ở màn hẹp `.pdfpane` chuyển sang `position: fixed; width: auto` để phủ kín
+    màn hình. Luật trong media query thắng được luật `width: var(--pdf-w, 40%)`
+    ở khối gốc, nhưng **không** thắng được `style="width:…"` đặt inline — đặt
+    inline thì khung PDF tràn màn hình ở mọi máy hẹp.
+
+    Và vách kéo phải nằm TRONG `#pdfPane`: khung này bật/tắt bằng lớp `hidden`,
+    để vách ra ngoài thì phải nhớ ẩn cả hai chỗ.
+    """
+    import re
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    app_js = (web / "app.js").read_text()
+    css = (web / "style.css").read_text()
+    html = (web / "index.html").read_text()
+
+    assert "--pdf-w" in css and "var(--pdf-w" in css, "CSS không dùng biến --pdf-w"
+    assert not re.search(r'#pdfPane"\)\.style\.width', app_js), \
+        "đặt width inline: media query màn hẹp không thắng được"
+    assert ".pane-grip { display: none; }" in css, "màn hẹp phải ẩn vách kéo"
+
+    pane = re.search(r'<aside id="pdfPane".*?</aside>', html, re.S)
+    assert pane, "không thấy #pdfPane"
+    assert 'id="pdfGrip"' in pane.group(0), "vách kéo phải nằm trong #pdfPane"
+    # kéo được bằng bàn phím, không chỉ bằng chuột
+    for thuoc in ('role="separator"', "tabindex=", "aria-label="):
+        assert thuoc in pane.group(0), f"vách kéo thiếu {thuoc}"
+    assert "ArrowLeft" in app_js and "ArrowRight" in app_js, "vách kéo thiếu đường bàn phím"

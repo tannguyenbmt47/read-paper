@@ -327,6 +327,11 @@
 
     <!-- ---------------------- cột phải: PDF gốc để đối chiếu ---------------- -->
     <aside id="pdfPane" class="pdfpane hidden">
+      <!-- Vách kéo nằm TRONG khung, không phải phần tử em bên cạnh: khung này
+           bị bật/tắt bằng lớp `hidden`, để ngoài thì phải nhớ ẩn cả hai chỗ. -->
+      <div id="pdfGrip" class="pane-grip" role="separator" tabindex="0"
+           aria-label="Kéo để đổi bề rộng khung PDF"
+           title="Kéo để đổi bề rộng · bấm đúp để về mặc định · mũi tên ←→ khi đang chọn"></div>
       <header class="pdf-bar">
         <button id="pdfPrev" class="icon-btn" title="Trang trước">◀</button>
         <span id="pdfPageLbl" class="muted small">—</span>
