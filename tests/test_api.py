@@ -677,3 +677,55 @@ def test_vach_keo_khung_pdf_dat_be_rong_qua_bien():
     for thuoc in ('role="separator"', "tabindex=", "aria-label="):
         assert thuoc in pane.group(0), f"vách kéo thiếu {thuoc}"
     assert "ArrowLeft" in app_js and "ArrowRight" in app_js, "vách kéo thiếu đường bàn phím"
+
+
+def test_dich_lai_mot_khoi_bao_loi_ro(app_client, doc):
+    """Đường dịch lại một khối phải nói rõ khi không làm được.
+
+    Tồn tại vì cảnh báo rò hệ chữ của `stream_chunk` đã bảo người dùng *"dịch
+    lại khối đó"* mà trước bản này không có đường nào làm việc ấy — chỉ còn cách
+    gõ tay cả đoạn hoặc dịch lại cả mẻ. Gặp thật trên bài CIRAG: khối `b41` ở
+    **cột giải thích** ra `либо thiếu thông tin để suy luận, либо nhận quá nhiều
+    nhiễu`, chữ Cyrillic thay cho "hoặc".
+
+    Không gọi model ở đây (test phải miễn phí), chỉ soát các nhánh chặn.
+    """
+    did = doc["id"]
+    assert app_client.post(f"/api/doc/{did}/retranslate/khongcokhoi").status_code == 404
+    assert app_client.post("/api/doc/khongcobai/retranslate/b1").status_code == 404
+    r = app_client.post(f"/api/doc/{did}/retranslate/b1", json={"mode": "xyz"})
+    assert r.status_code == 400 and "mode" in r.json()["detail"]
+
+
+def test_tm_drop_bo_duoc_ban_dich_cu():
+    """`db.tm_drop` phải bỏ hẳn mục cũ, nếu không lượt dịch lại nhận đúng cái rác.
+
+    Đây là chỗ dễ bỏ sót nhất của đường dịch lại: bộ nhớ dịch trả về trước khi
+    model được gọi, nên không bỏ thì người dùng trả tiền cho một lượt trả lại y
+    nguyên bản họ vừa bấm để thay.
+    """
+    from server import db
+    src, mo = "Mot doan van de thu bo nho dich.", "test/model"
+    db.tm_put([(src, "Bản dịch rác", "")], mo)
+    assert db.tm_get([src], mo).get(src, {}).get("vi") == "Bản dịch rác"
+    assert db.tm_drop([src], mo) == 1
+    assert not db.tm_get([src], mo)
+    assert db.tm_drop([src], mo) == 0      # bỏ lần hai không nổ
+    assert db.tm_drop([], mo) == 0
+
+
+def test_chot_chan_ro_he_chu_khong_bat_oan_ky_hieu_toan():
+    """`script_leak` phải cho qua ký hiệu toán, và vẫn bắt hệ chữ lạ.
+
+    Bắt oan ở đây tốn tiền thật: bản dịch sạch bị giữ ngoài `tm` nên mọi bài sau
+    có đoạn y hệt đều phải dịch lại. Đã bắt oan `⟨⟩` (U+27E8/27E9) — ngoặc nhọn
+    toán học dùng cho tích trong và dãy — trên bài SONIC.
+    """
+    from server.pipeline import script_leak
+    assert not script_leak("tích trong ⟨a, b⟩, tổng ⨁, và ⩽ với ⟦x⟧", "nguon")
+    assert not script_leak("Đoạn này mô tả ưu, nhược điểm ữ ộ ế của α và β", "nguon")
+    # nhưng hệ chữ lạ thì vẫn phải bắt, kể cả hệ chưa ai gặp
+    assert script_leak("hệ thống либо thiếu thông tin", "he thong thieu")
+    assert script_leak("띠ᥕᥕᥲᥕᥱ", "bao toan")
+    # so với bản gốc: bài trích tiếng Trung thật thì không bị bắt
+    assert not script_leak("nguyên văn 深度学习 giữ lại", "trich 深度学习 trong bai")

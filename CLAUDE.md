@@ -758,6 +758,30 @@ sửa lại nhân thêm một lớp thẻ và `^{…}` gốc mất luôn. Cùng 
 Bản sửa ghi cả vào `tm`, nên nó theo đoạn văn chứ không theo bài: đoạn y hệt ở
 bài khác, hoặc chính bài này sau khi bóc lại, lấy đúng bản người dùng đã sửa.
 
+**Rác trong `doc` thì phải có nút dịch lại, không chỉ nút sửa tay.** Cảnh báo
+của `stream_chunk` đã bảo người dùng *"sửa tay bằng nút ✎ hoặc dịch lại khối đó"*
+trong khi đường thứ hai **không tồn tại** — chỉ còn cách gõ tay cả đoạn hoặc dịch
+lại cả mẻ. Gặp thật trên bài CIRAG: khối `b41` ở **cột giải thích** ra `либо thiếu
+thông tin để suy luận, либо nhận quá nhiều nhiễu`, chữ Cyrillic thay cho "hoặc".
+
+`pipeline.retranslate_block()` (nút ↻) dịch lại đúng một khối. Hai chỗ bắt buộc:
+
+- **Bỏ mục `tm` của đoạn TRƯỚC khi gọi model** (`db.tm_drop`). Bộ nhớ dịch trả về
+  trước khi model được gọi, nên không bỏ thì người dùng trả tiền cho một lượt trả
+  lại y nguyên bản họ vừa bấm để thay.
+- **Nhiệt độ cao hơn lượt đầu** (0,4 rồi 0,6). Cùng prompt cùng nhiệt độ thì hay
+  ra cùng kết quả, tức một lượt không đổi gì.
+
+Nó cũng xoá vệt bôi của khối, cùng lý do với `_forget()`. Và giá phải nói theo
+thực tế: đo trên CIRAG **$0,0266** cho `mode=both` khi prefix đã rơi khỏi cache —
+đừng ghi một con số nhỏ trên nút rồi để người dùng thấy hoá đơn khác.
+
+**Chốt chặn bắt oan thì cũng tốn tiền.** `_OK_SCRIPT` thiếu ba dải toán
+(U+27C0–27EF, U+2980–29FF, U+2A00–2AFF) nên bắt oan `⟨⟩` — ngoặc nhọn toán học
+dùng cho tích trong và dãy — trên bài SONIC. Bản dịch sạch bị giữ ngoài `tm` nghĩa
+là mọi bài sau có đoạn y hệt đều phải dịch lại. Nới dải toán thì `либо` và Limbu
+vẫn bị bắt như cũ, vì đây là danh sách **cho phép**.
+
 **`script_leak()` là chốt chặn của pass dịch, và pass dịch trước đây không có
 cái nào.** `cjk_leak` chỉ biết CJK/Hangul, mà đã gặp bản dịch chứa `띠ᥕᥕᥲᥕᥱ` thay
 cho chữ "bảo toàn" — `ᥕᥲᥱ` là chữ Limbu, ngoài mọi dải nó biết. Liệt kê hệ chữ

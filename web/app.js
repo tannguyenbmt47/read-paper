@@ -3116,7 +3116,8 @@ function pairHTML(b, vi, note, inFlow = false) {
        ${b.type === "para" || b.type === "caption" ? `
          <button data-act="explain" title="Giải thích — đoạn này đang làm gì trong lập luận của bài?">💡</button>
          <button data-act="copy" title="Chép bản dịch">⧉</button>
-         <button data-act="edit" title="Sửa tay bản dịch. Miễn phí, và bản sửa được ghi vào bộ nhớ dịch nên đoạn y hệt ở bài khác cũng dùng bản của bạn.">✎</button>` : ""}
+         <button data-act="edit" title="Sửa tay bản dịch. Miễn phí, và bản sửa được ghi vào bộ nhớ dịch nên đoạn y hệt ở bài khác cũng dùng bản của bạn.">✎</button>
+         <button data-act="redo" title="Dịch lại đoạn này. Tốn một lượt gọi model: rẻ nếu bài vừa dịch xong (toàn văn còn trong cache), tới khoảng $0,03 nếu đã lâu vì phải đọc lại cả bài. Bản cũ bị bỏ khỏi bộ nhớ dịch nên không quay lại, và lượt mới chạy ở nhiệt độ cao hơn để không ra đúng kết quả cũ.">↻</button>` : ""}
        ${b.hidden
          ? `<button data-act="unhide" title="Đưa khối này trở lại mạch đọc">↩</button>`
          : `<button data-act="hide" title="Ẩn khối này khỏi mạch đọc (giữ nguyên bản dịch, hiện lại được)">⊘</button>`}
@@ -3258,6 +3259,7 @@ function wirePairs() {
       if (act === "unhide") return setBlockHidden(el.dataset.id, false);
       if (act === "explain") return explainBlock(el.dataset.id);
       if (act === "edit") return editCell(el, "vi");
+      if (act === "redo") return redoBlock(el.dataset.id);
       if (act === "copy") {
         navigator.clipboard.writeText($("[data-vi]", el).textContent.trim());
         e.target.textContent = "✓";
@@ -3608,6 +3610,50 @@ async function explainBlock(id) {
   } catch (e) {
     $(".note[data-loading]", pair).innerHTML =
       `<h4>Giải thích lập luận</h4><p class="err">${esc(e.message)}</p>`;
+  }
+}
+
+/** Dịch lại một khối. Tốn một lượt gọi model nhỏ, nên phải hỏi và nói rõ giá.
+
+    Có nút này vì cảnh báo rò hệ chữ đã bảo người dùng "dịch lại khối đó" mà
+    không có đường nào làm việc ấy. Gặp thật trên bài CIRAG: một đoạn ra
+    `либо thiếu thông tin để suy luận, либо nhận quá nhiều nhiễu` — chữ Cyrillic
+    thay cho "hoặc" — và cách duy nhất là gõ tay lại cả đoạn. */
+async function redoBlock(id) {
+  const pair = $(`#p-${CSS.escape(id)}`);
+  const cell = $("[data-vi]", pair);
+  if (!cell) return;
+  if (!confirm("Dịch lại đoạn này?\n\n"
+    + "Tốn một lượt gọi model. Rẻ nếu bài vừa dịch xong — toàn văn còn trong "
+    + "cache; nhưng nếu đã lâu thì phải đọc lại cả bài, đo thật khoảng $0,03.\n\n"
+    + "Bản dịch cũ của đoạn bị bỏ khỏi bộ nhớ dịch nên không quay lại nữa, và "
+    + "lượt mới chạy ở nhiệt độ cao hơn để không ra đúng kết quả cũ.\n\n"
+    + "Vệt bôi vàng trên đoạn này sẽ bị xoá — khoảng ký tự cũ không còn khớp "
+    + "bản dịch mới.")) return;
+  const cu = cell.innerHTML;
+  cell.innerHTML = `<span class="pending"><span class="spin">◐</span> đang dịch lại…</span>`;
+  try {
+    // `colMode()` quyết cột nào đang bật, nên không sinh ra cột người dùng đã
+    // tắt — tức không trả tiền cho nó. Cùng luật với `streamChunk`.
+    const r = await fetch(`/api/doc/${state.doc.id}/retranslate/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: colMode() }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || "lỗi");
+    const res = await r.json();
+    if (res.vi) state.doc.translations[id] = res.vi;
+    if (res.plain) (state.doc.plain ||= {})[id] = res.plain;
+    delete (state.doc.highlights || {})[id];
+    cell.innerHTML = res.vi ? sci(res.vi) : `<span class="pending">chưa dịch</span>`;
+    const gl = $("[data-gl]", pair);
+    if (gl && res.plain) gl.innerHTML = renderMd(res.plain);
+    paintHighlights(pair);
+    reportCost("Dịch lại xong", res.run, res.usage);
+    if (res.warn) status("⚠ " + res.warn);
+  } catch (e) {
+    cell.innerHTML = cu;
+    status("Lỗi: " + e.message);
   }
 }
 

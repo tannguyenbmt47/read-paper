@@ -267,6 +267,22 @@ def tm_put(entries: list[tuple[str, str, str]], model: str) -> None:
             [(tm_key(src, model), norm(src), model, vi, pl, now) for src, vi, pl in rows])
 
 
+def tm_drop(texts: list[str], model: str) -> int:
+    """Bỏ hẳn mấy mục bộ nhớ dịch của những đoạn này.
+
+    Cần cho đường **dịch lại một khối**: nếu không bỏ, lượt dịch lại lấy ngay
+    bản cũ trong `tm` và trả về đúng cái rác người dùng vừa bấm để thay. Và bản
+    rác nằm trong `tm` thì quay lại mãi mãi — mọi bài sau có đoạn y hệt đều nhận
+    lại nó, miễn phí và im lặng (xem `pipeline.script_leak`).
+    """
+    keys = [tm_key(t, model) for t in texts if t]
+    if not keys:
+        return 0
+    with conn() as c:
+        cur = c.execute(f"DELETE FROM tm WHERE key IN ({','.join('?' * len(keys))})", keys)
+    return cur.rowcount or 0
+
+
 def stats() -> dict:
     c = conn()
     one = lambda q: c.execute(q).fetchone()[0]  # noqa: E731

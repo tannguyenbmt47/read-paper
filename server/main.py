@@ -1038,6 +1038,27 @@ async def explain(doc_id: str, block_id: str):
         raise HTTPException(502, f"{type(e).__name__}: {e}")
 
 
+@app.post("/api/doc/{doc_id}/retranslate/{block_id}")
+async def retranslate(doc_id: str, block_id: str, body: dict = Body(default={})):
+    """Dịch lại một khối. Tốn một lượt gọi model nhỏ.
+
+    Có endpoint riêng vì cảnh báo rò hệ chữ của `stream_chunk` đã bảo người dùng
+    *"dịch lại khối đó"* mà không có đường nào làm việc ấy — chỉ còn cách gõ tay
+    cả đoạn hoặc dịch lại cả mẻ.
+    """
+    mode = body.get("mode") or "vi"
+    if mode not in ("vi", "plain", "both"):
+        raise HTTPException(400, "mode phải là vi, plain hoặc both")
+    try:
+        return await pipeline.retranslate_block(doc_id, block_id, mode)
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy đoạn này")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"{type(e).__name__}: {e}")
+
+
 # --------------------------------------------------------------- highlight
 
 

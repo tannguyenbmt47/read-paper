@@ -61,6 +61,13 @@ _OK_SCRIPT = re.compile(
     "\\u20A0-\\u20CF"      # tiền tệ
     "\\u2100-\\u23FF"      # ký hiệu chữ, mũi tên, toán, kỹ thuật
     "\\u25A0-\\u26FF"      # hình học, ký hiệu khác
+    # Ba dải toán còn lại. Thiếu chúng là chốt chặn bắt OAN, và bắt oan ở đây
+    # tốn tiền thật: bản dịch sạch bị giữ ngoài `tm` nên mọi bài sau có đoạn y hệt
+    # đều phải dịch lại. Đã bắt oan `⟨⟩` (U+27E8/27E9) — ngoặc nhọn toán học,
+    # dùng cho tích trong và dãy, có mặt trong bài SONIC.
+    "\\u27C0-\\u27EF"      # ký hiệu toán A (⟨ ⟩ ⟦ ⟧)
+    "\\u2980-\\u29FF"      # ký hiệu toán B
+    "\\u2A00-\\u2AFF"      # toán tử toán bổ sung (⨁ ⩽)
     "\\uFB00-\\uFB4F"      # ligature
     "]")
 
@@ -675,6 +682,95 @@ async def stream_chunk(
 
 
 # --------------------------------------------------- pass 3: giải thích đoạn
+
+
+async def retranslate_block(doc_id: str, block_id: str, mode: str = "vi") -> dict:
+    """Dịch lại ĐÚNG MỘT khối, bỏ qua bộ nhớ dịch.
+
+    `script_leak()` chặn rác **không cho vào `tm`** nhưng cố ý để nó nằm trong
+    `doc`, vì người đọc thấy thì sửa được — và chính cảnh báo của `stream_chunk`
+    bảo *"sửa tay bằng nút ✎ hoặc dịch lại khối đó"*. Nhưng trước bản này không
+    có đường dịch lại một khối: hoặc gõ tay cả đoạn, hoặc dịch lại cả mẻ. Đã gặp
+    thật trên bài CIRAG — một đoạn ra `либо thiếu thông tin để suy luận, либо
+    nhận quá nhiều nhiễu`, chữ Cyrillic thay cho "hoặc".
+
+    Hai chỗ bắt buộc:
+
+    - **Bỏ mục `tm` của đoạn này TRƯỚC khi gọi model.** Không bỏ thì lượt dịch
+      lại lấy ngay bản cũ và trả về đúng cái rác người dùng vừa bấm để thay.
+    - **Nhiệt độ cao hơn lượt đầu.** Dịch lại ở đúng nhiệt độ cũ với đúng prompt
+      cũ thì hay ra đúng kết quả cũ, tức người dùng trả tiền cho một lượt không
+      đổi gì. Lượt hai (khi lượt một vẫn rò) nhích thêm lần nữa.
+
+    Trả về `{vi, plain, warn, run, usage}`. Không chặn: nếu cả hai lượt vẫn rò
+    hệ chữ thì vẫn trả bản mới nhất kèm `warn`, còn `tm` thì để trống — cùng
+    triết lý "cảnh báo chứ không chặn" của `check_slides` / `check_answer`, vì
+    người đọc có nút ✎ để tự sửa nốt.
+    """
+    doc = store.load(doc_id)
+    blk = next((b for b in doc["blocks"] if b["id"] == block_id), None)
+    if blk is None:
+        raise KeyError(block_id)
+    src = blk.get("text") or ""
+    if not src.strip():
+        raise ValueError("khối này không có chữ để dịch")
+
+    # Bỏ bản cũ trong bộ nhớ dịch, nếu không lượt sau lại nhận đúng nó.
+    db.tm_drop([src], doc["model"])
+
+    item = {"id": block_id, "text": src, "type": blk.get("type", "para")}
+    want_ids = [block_id, block_id + "_g"]
+    prefix = cached_prefix(doc)
+    if mode == "plain":
+        task = prompts.PLAIN_ONLY_TASK
+    else:
+        task = prompts.TRANSLATE_TASK + (prompts.PLAIN_TASK if mode == "both" else "")
+    sysmsg = llm.system_message(prefix, task, model=doc["model"])
+
+    tong = llm.Usage()
+    vi = pl = ""
+    bad: set[str] = set()
+    for lan in range(2):
+        raw, ru = await llm.complete(
+            [sysmsg, {"role": "user", "content": prompts.translate_user([item])}],
+            model=doc["model"],
+            session_id=doc_id,
+            max_tokens=4000,
+            temperature=0.4 + 0.2 * lan,
+            reasoning=NO_REASONING,
+        )
+        tong.add(ru)
+        parsed = _parse_labeled(raw, want_ids)
+        # Model dịch một khối lẻ hay bỏ luôn nhãn — chỉ có một khối nên không
+        # lẫn vào đâu được, lấy cả phần thân làm bản dịch.
+        vi = parsed.get(block_id) or ("" if parsed else raw.strip())
+        pl = strip_md(parsed.get(block_id + "_g", ""))
+        bad = script_leak(f"{vi} {pl}", src)
+        if not bad:
+            break
+
+    doc = store.load(doc_id)
+    if vi:
+        doc["translations"][block_id] = vi
+    if pl:
+        doc.setdefault("plain", {})[block_id] = pl
+    # Vệt bôi neo theo khoảng ký tự trong bản dịch cũ — bản mới dài khác thì
+    # khoảng đó trỏ vào chỗ khác. Cùng lý do với `_forget()`.
+    (doc.get("highlights") or {}).pop(block_id, None)
+    store.save(doc)
+
+    if not bad and (vi or pl):
+        db.tm_put([(src, vi, pl)], doc["model"])
+
+    return {
+        "vi": vi,
+        "plain": pl,
+        "warn": ("Bản dịch mới vẫn lẫn ký tự thuộc hệ chữ lạ ("
+                 + "".join(sorted(bad))[:12] + ") — chưa ghi vào bộ nhớ dịch. "
+                 "Sửa tay bằng nút ✎, hoặc đổi model rồi dịch lại." if bad else ""),
+        "run": tong.dict(),
+        "usage": _bump_usage(doc_id, json.dumps(tong.dict())),
+    }
 
 
 async def explain_block(doc_id: str, block_id: str) -> tuple[dict, dict, dict]:

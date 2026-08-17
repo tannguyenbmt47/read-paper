@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.14.0
+
+**A block whose translation came back as garbage could only be retyped by hand.**
+The script-leak guard tells the reader to "fix it with ✎ or retranslate that
+block", but the second option did not exist — the only real alternative was
+retranslating the whole batch. Found on CIRAG: block `b41`, in the explanation
+column, read `либо thiếu thông tin để suy luận, либо nhận quá nhiều nhiễu`, with
+Cyrillic standing in for the Vietnamese "hoặc".
+
+The new ↻ button on each paragraph retranslates just that block. It drops the
+block's translation-memory entry *before* calling the model — memory answers
+first, so without that step the user would pay for a turn that hands back exactly
+the text they clicked to replace — and it runs hotter than the first pass (0.4,
+then 0.6 on the retry), since the same prompt at the same temperature tends to
+produce the same output. Highlights on the block are cleared, as `_forget` does,
+because their character offsets no longer match. Verified on the real block: the
+Cyrillic is gone, nothing flagged, $0.0266 for both columns with a cold prefix —
+which is what the button now says, rather than a cheerier number.
+
+**The guard was also crying wolf over real mathematics.** `_OK_SCRIPT` covered
+math symbols only up to U+23FF, so `⟨⟩` — the angle brackets used for inner
+products and sequences, present in SONIC — counted as a foreign script. A false
+positive costs money here: a clean translation is withheld from the memory, so
+every later paper containing that paragraph pays to translate it again. Three
+math ranges are now allowed. Cyrillic and Limbu are still caught, because the
+list names what is permitted rather than what is banned.
+
 ## 1.13.1
 
 **The PDF pane is now drag-resizable.** It was fixed at 40% of the window, which
