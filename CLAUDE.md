@@ -633,6 +633,38 @@ quét khai node, không thì `|"thiếu"|` bị đọc thành node tên `u` và 
 Công thức dựng bằng `baseline` ở mức run (`_rich_runs`), không cần OMML — vì
 `^{…}` / `_{…}` vốn đã là dạng lưu.
 
+### Cắt lại ảnh mà không bóc lại bài
+
+`POST /api/doc/{id}/recrop` vẽ lại mọi ảnh từ PDF gốc theo đúng `figure_page` +
+`figure_rect` **đã lưu**. Khối không đổi một chữ, nên bản dịch, ghi chú, vệt bôi
+và `source_block_ids` của slide đều không bị chạm. Miễn phí.
+
+Nó **không phải** `reparse`, và ranh giới đó là lý do nó tồn tại: bóc lại dựng
+lại cả danh sách khối nên kéo theo mọi rủi ro của việc đó — nhất là rơi về đường
+lùi heuristic khi thiếu docling, vốn đã làm bài SONIC tụt từ 8 công thức có ảnh
+xuống 3 và không ảnh nào. Muốn ảnh nét hơn thì không có lý do gì phải nhận rủi ro
+ấy.
+
+Vì sao cần đường riêng: `dpi_for` nhắm 1600px ngang, nhưng bài nạp **trước** bản
+đó cắt ở DPI cứng nên khung hẹp chỉ ra vài trăm pixel. `parse_cache` khoá theo
+SHA của file PDF nên nạp lại cùng file **không** cắt lại (xem mục bẫy cache), và
+trước bản này không có đường nào chữa. Đo trên năm bài thật: CIRAG 514 → 1120px,
+Theia 796 → 1504, SONIC 1091 → 1601 — mỗi ảnh nét hơn 2–3 lần.
+
+Nó vá luôn ca **mất hẳn file ảnh**: mã khối trôi qua các lần bóc lại thì PNG trên
+đĩa còn tên cũ, khối mới trỏ vào file không tồn tại và người đọc thấy ô trống. Đo
+trên CIRAG: 7 khối như vậy. Vẽ lại theo khung đã lưu là làm file khớp lại với
+khối, nên hàm cũng **gán lại `figure = id`**.
+
+Hai chỗ dễ quên:
+- **Trình duyệt còn giữ ảnh cũ dưới đúng URL cũ.** Cắt lại xong phải đổi URL
+  (`?v=<thời điểm>`) mới thấy bản mới — cùng cái bẫy đã ghi cho CSS/JS ở
+  `_asset_tag`, và ở đây còn dễ vấp hơn vì mọi phép đo phía server đều nói "nét
+  hơn rồi".
+- **Khung hẹp không nét thêm được nữa.** `DPI_HI = 400` là trần, nên công thức lẻ
+  rộng 44pt chỉ ra 245px. Đó là 400dpi thật, không phải lỗi — đừng nới trần để
+  chữa một con số trông nhỏ.
+
 ### Ô xem trước hình: kéo và phóng
 
 Bấm vào chữ *"Figure 3"* trong bài mở `#figPeek` — cửa sổ nhỏ cho biết chỗ đó

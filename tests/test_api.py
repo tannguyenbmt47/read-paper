@@ -577,3 +577,71 @@ def test_hai_bo_dung_markdown_deu_dung_bang_va_chi_so():
     for ten, src in (("app.js", app_js), ("survey.js", survey_js)):
         assert "<sup>$1</sup>" in src and "<sub>$1</sub>" in src, \
             f"{ten} không dựng ^{{…}} / _{{…}}"
+
+
+@pytest.fixture(scope="module")
+def doc_pdf(app_client):
+    """Một bài nạp từ PDF dựng tại chỗ — cần cho đường cắt lại ảnh."""
+    import io
+    fitz = pytest.importorskip("fitz")
+    d = fitz.open()
+    page = d.new_page()
+    page.insert_text((72, 100), "Tieu de bai thu", fontsize=18)
+    page.insert_text((72, 140), "Figure 1: so do khoi cua he thong", fontsize=10)
+    page.insert_text((72, 200), "Doan van than bai de bo boc co viec ma lam.", fontsize=11)
+    page.draw_rect(fitz.Rect(72, 230, 400, 380), color=(0, 0, 0), fill=(0.8, 0.8, 0.9))
+    buf = io.BytesIO(d.tobytes())
+    d.close()
+    r = app_client.post("/api/import",
+                        files={"file": ("thu.pdf", buf.getvalue(), "application/pdf")},
+                        data={"model": "test/model"})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_cat_lai_anh_giu_nguyen_khoi_va_ban_dich(app_client, doc_pdf):
+    """`POST …/recrop` vẽ lại pixel, KHÔNG dựng lại khối.
+
+    Ảnh cắt trước bản `parser.dpi_for` dùng DPI cứng, nên khung hẹp chỉ ra vài
+    trăm pixel — phóng lên là mờ nhoè, mà đọc được con số trên biểu đồ mới đúng
+    là lý do người ta phóng. `parse_cache` khoá theo SHA của file PDF nên nạp lại
+    cùng file **không** cắt lại; trước bản này không có đường nào chữa ngoài bóc
+    lại cả bài, mà bóc lại thì mang theo rủi ro rơi về đường lùi heuristic.
+
+    Đo trên bài CIRAG thật: bề ngang trung bình 514 → 1120px, cả 29 ảnh nét hơn.
+    """
+    did = doc_pdf["id"]
+    blk = doc_pdf["blocks"][0]["id"]
+
+    # dựng một ảnh bằng đường cắt tay, để bài chắc chắn có khung đã lưu
+    r = app_client.post(f"/api/doc/{did}/crop/{blk}",
+                        json={"page": 0, "rect": [72, 225, 400, 385]})
+    assert r.status_code == 200, r.text
+
+    truoc = app_client.get(f"/api/doc/{did}").json()
+    r = app_client.post(f"/api/doc/{did}/recrop")
+    assert r.status_code == 200, r.text
+    st = r.json()["stats"]
+    assert st["images"] >= 1
+    assert not st["failed"]
+    assert st["px_after"] >= st["px_before"]
+
+    # khối không được đổi một chữ, và mọi khối có hình phải có file thật
+    sau = r.json()["doc"]
+    assert [b["id"] for b in sau["blocks"]] == [b["id"] for b in truoc["blocks"]]
+    assert [b["text"] for b in sau["blocks"]] == [b["text"] for b in truoc["blocks"]]
+    assert sau["translations"] == truoc["translations"]
+    for b in sau["blocks"]:
+        if b.get("figure"):
+            assert b["figure"] == b["id"], "figure phải trỏ đúng mã khối"
+            assert app_client.get(f"/api/doc/{did}/img/{b['figure']}.png").status_code == 200
+    # và `_with_chunks` phải chạy, nếu không frontend dịch lại từ đầu
+    assert "chunk_ids" in sau
+
+
+def test_cat_lai_anh_bao_loi_ro_khi_khong_the(app_client, doc):
+    """Bài dán từ văn bản thì không có PDF gốc, và phải nói ra chứ không im lặng."""
+    r = app_client.post(f"/api/doc/{doc['id']}/recrop")
+    assert r.status_code == 400
+    assert "PDF" in r.json()["detail"]
+    assert app_client.post("/api/doc/khongcobai/recrop").status_code == 404

@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.13.0
+
+**Figures extracted before the resolution fix stayed blurry, and there was no
+way to redo them short of reparsing the whole paper.** `dpi_for` aims for 1,600
+pixels across, but papers loaded before it cropped at a fixed DPI, so a narrow
+region came out a few hundred pixels wide — and reading a number off a chart is
+the whole reason anyone zooms. `parse_cache` is keyed on the PDF's SHA, so
+reloading the same file skips the crop step entirely.
+
+`POST /api/doc/{id}/recrop` re-renders every figure from the stored
+`figure_page` and `figure_rect`. The block list is not rebuilt, so translations,
+notes, highlights and slide provenance are untouched; this matters because
+`reparse` carries the risk of falling back to the heuristic parser, which on
+SONIC took eight formula images down to three and then to none. Measured across
+five papers: CIRAG 514 → 1,120 px average width, Theia 796 → 1,504, SONIC
+1,091 → 1,601, every image sharper.
+
+It also repairs figures whose file had gone missing. Block ids drift across
+reparses while the PNGs on disk keep their old names, leaving a block pointing at
+a file that does not exist and the reader showing an empty box — seven such
+blocks on CIRAG. Re-rendering from the stored rect makes the files agree with the
+blocks again, and `figure` is reset to the block id.
+
+The button sends the images' URLs a fresh `?v=` stamp afterwards. Without it the
+browser keeps serving the old picture from cache under the same URL while every
+server-side measurement reports success — the same trap already documented for
+CSS and JS.
+
 ## 1.12.3
 
 **The corpus digest threw away 18% of what the cards had paid to extract.**

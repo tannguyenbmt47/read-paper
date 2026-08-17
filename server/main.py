@@ -622,6 +622,99 @@ async def page_image(doc_id: str, pno: int, dpi: int = 110):
     })
 
 
+def _png_size(data: bytes) -> tuple[int, int]:
+    """Bề ngang/cao của một PNG, đọc thẳng từ IHDR — không cần thư viện ảnh."""
+    if len(data) < 24 or data[12:16] != b"IHDR":
+        return (0, 0)
+    return (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+
+
+@app.post("/api/doc/{doc_id}/recrop")
+async def recrop(doc_id: str):
+    """Vẽ lại mọi ảnh đã cắt từ PDF gốc, theo đúng khung đã lưu. MIỄN PHÍ.
+
+    Đây **không phải** `reparse`. Bóc lại thì dựng lại cả danh sách khối, nên nó
+    kéo theo mọi rủi ro của việc đó — nhất là đường lùi heuristic khi thiếu
+    docling, vốn đã làm bài SONIC tụt từ 8 công thức có ảnh xuống 3 và không ảnh
+    nào. Ở đây khối **không đổi một chữ**: chỉ lấy `figure_page` + `figure_rect`
+    đã lưu rồi vẽ lại pixel. Bản dịch, ghi chú, vệt bôi, `source_block_ids` của
+    slide đều không bị chạm tới.
+
+    Vì sao cần: `parser.dpi_for` nhắm 1600px ngang, nhưng bài nạp trước bản đó
+    cắt ở DPI cứng nên khung hẹp chỉ ra vài trăm pixel — phóng lên là mờ nhoè,
+    mà đọc được con số trên biểu đồ mới đúng là lý do người ta phóng. `parse_cache`
+    khoá theo SHA của file PDF nên nạp lại cùng file **không** cắt lại; trước bản
+    này không có đường nào chữa ngoài bóc lại cả bài.
+
+    Nó cũng vá luôn ca ảnh **mất hẳn file**: mã khối trôi qua các lần bóc lại thì
+    PNG trên đĩa còn tên cũ, khối mới trỏ vào file không tồn tại và người đọc
+    thấy một ô trống. Vẽ lại theo khung đã lưu là làm file khớp lại với khối.
+    """
+    try:
+        doc = store.load(doc_id)
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    p = store.pdf_path(doc_id)
+    if p is None:
+        raise HTTPException(400, "Bài này không có file PDF gốc, không cắt lại được")
+
+    khung = [b for b in doc["blocks"]
+             if b.get("figure") and b.get("figure_rect") and b.get("figure_page") is not None]
+    if not khung:
+        raise HTTPException(400, "Bài này không có ảnh nào cắt từ PDF")
+
+    def work() -> tuple[dict[str, bytes], list[dict], list[str]]:
+        import fitz
+
+        pngs: dict[str, bytes] = {}
+        do: list[dict] = []
+        loi: list[str] = []
+        with fitz.open(p) as d:
+            for b in khung:
+                try:
+                    page = d[int(b["figure_page"])]
+                    r = fitz.Rect(*b["figure_rect"]) & page.rect
+                    if r.is_empty or r.width < 4 or r.height < 4:
+                        loi.append(b["id"])
+                        continue
+                    png = parser.render_rect(page, r)
+                except (IndexError, ValueError, TypeError):
+                    loi.append(b["id"])
+                    continue
+                cu = store.image_path(doc_id, b["figure"])
+                truoc = _png_size(cu.read_bytes()) if cu else (0, 0)
+                pngs[b["id"]] = png
+                do.append({"id": b["id"], "truoc": truoc[0], "sau": _png_size(png)[0]})
+        return pngs, do, loi
+
+    try:
+        pngs, do, loi = await asyncio.get_running_loop().run_in_executor(None, work)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Không cắt lại được: {e}")
+
+    store.save_images(doc_id, pngs)
+    # Mã khối có thể đã trôi so với tên file: gắn lại cho khớp.
+    for b in khung:
+        if b["id"] in pngs:
+            b["figure"] = b["id"]
+    store.save(doc)
+
+    thieu = [d["id"] for d in do if not d["truoc"]]
+    ro_hon = [d for d in do if d["truoc"] and d["sau"] > d["truoc"] * 1.2]
+    return {
+        "doc": _with_chunks(doc),
+        "stats": {
+            "images": len(pngs),
+            "sharper": len(ro_hon),
+            "restored": len(thieu),
+            "failed": loi,
+            "px_before": round(sum(d["truoc"] for d in do if d["truoc"])
+                               / max(1, len([d for d in do if d["truoc"]]))),
+            "px_after": round(sum(d["sau"] for d in do) / max(1, len(do))),
+        },
+    }
+
+
 @app.post("/api/doc/{doc_id}/crop/{block_id}")
 async def crop(doc_id: str, block_id: str, body: dict = Body(...)):
     """Cắt lại hình theo khung người dùng tự kéo. Toạ độ tính bằng point của PDF."""

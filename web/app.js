@@ -1035,6 +1035,41 @@ function wireReader() {
     }
   };
 
+  /* Cắt lại ảnh. Khác `reparse` ở chỗ nó KHÔNG dựng lại danh sách khối, nên
+     không mang theo rủi ro rơi về đường lùi heuristic. Miễn phí, và không mất
+     gì — nên chỉ cần một câu xác nhận nhẹ. */
+  $("#recropBtn").onclick = async () => {
+    const btn = $("#recropBtn");
+    if (!confirm("Vẽ lại mọi ảnh đã cắt, từ file PDF gốc?\n\n"
+      + "Miễn phí, không gọi model. Khối, bản dịch, ghi chú và vệt bôi không bị "
+      + "chạm tới — chỉ pixel của ảnh được vẽ lại, theo đúng khung đã lưu.")) return;
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = "Đang cắt lại…";
+    try {
+      const r = await fetch(`/api/doc/${state.doc.id}/recrop`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json()).detail || "không cắt lại được");
+      const res = await r.json();
+      mountDoc(res.doc);
+      const st = res.stats;
+      // Ảnh cũ còn trong cache của trình duyệt dưới đúng URL cũ, nên phải đổi
+      // URL mới thấy bản mới — cùng cái bẫy đã ghi cho CSS/JS ở `_asset_tag`.
+      const v = Date.now();
+      $$("img[src*='/img/']").forEach((im) => {
+        im.src = im.src.split("?")[0] + "?v=" + v;
+      });
+      status(`Cắt lại xong: ${st.images} ảnh · bề ngang ${st.px_before} → ${st.px_after}px`
+        + (st.sharper ? ` · ${st.sharper} ảnh nét hơn` : "")
+        + (st.restored ? ` · ${st.restored} ảnh trước đây bị mất file` : "")
+        + (st.failed.length ? ` · ${st.failed.length} khung không cắt được` : ""));
+    } catch (e) {
+      status("Lỗi: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  };
+
   $("#rebriefBtn").onclick = async () => {
     const btn = $("#rebriefBtn");
     if (!confirm("Đọc lại toàn bài để chốt lại bảng thuật ngữ?\n\n" +
