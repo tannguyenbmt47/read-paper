@@ -5,8 +5,9 @@
 # của PyMuPDF — chậm hơn về chất lượng khung hình chứ không hỏng. Cần bố cục
 # chính xác thì build lại với `--build-arg WITH_LAYOUT=1`.
 #
-#   docker compose up -d --build          # bản gọn
-#   WITH_LAYOUT=1 docker compose build     # bản có mô hình bố cục
+#   docker compose up -d --build                    # bản gọn, ~400MB
+#   WITH_LAYOUT=1 docker compose build              # kèm MinerU (GPU)
+#   WITH_LAYOUT=1 TORCH_CPU=1 docker compose build  # kèm MinerU (CPU, gọn hơn ~2,7GB)
 #
 # Có mô hình rồi thì chọn backend bằng `LAYOUT_BACKEND=mineru|docling`. MinerU
 # bắt công thức hiển thị tốt hơn hẳn (xem `server/layout.py`); trọng số của nó
@@ -16,6 +17,7 @@
 FROM python:3.12-slim
 
 ARG WITH_LAYOUT=0
+ARG TORCH_CPU=0
 
 # fonts-liberation KHÔNG phải để hiển thị: `server/slide_fit.py` dùng nó để đo
 # bề rộng chữ bằng metric thật (tương thích Arial) rồi tính xem slide có tràn
@@ -28,14 +30,46 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-# Bỏ hai backend bố cục khỏi danh sách trừ khi được yêu cầu rõ ràng — cả hai
-# đều kéo theo torch và bộ trọng số, đẩy ảnh từ ~400MB lên nhiều GB.
-RUN if [ "$WITH_LAYOUT" = "1" ]; then \
-        cp requirements.txt /tmp/req.txt; \
-    else \
-        grep -v '^docling' requirements.txt | grep -v '^mineru' > /tmp/req.txt; \
+# Chọn backend bố cục nào được cài. Cả hai đều kéo theo torch nên đẩy ảnh từ
+# ~400MB lên nhiều GB — vì thế mặc định không cài cái nào.
+#
+#   0        không cài gì (mặc định)
+#   1|mineru chỉ MinerU — nhanh hơn docling ~30 lần và bắt công thức tốt hơn,
+#            nên đây là lựa chọn đúng cho gần như mọi trường hợp
+#   docling  chỉ docling
+#   all      cả hai
+RUN case "$WITH_LAYOUT" in \
+        1|mineru) grep -v '^docling' requirements.txt > /tmp/req.txt ;; \
+        docling)  grep -v '^mineru'  requirements.txt > /tmp/req.txt ;; \
+        all)      cp requirements.txt /tmp/req.txt ;; \
+        *)        grep -v '^docling' requirements.txt | grep -v '^mineru' > /tmp/req.txt ;; \
+    esac \
+    # torch bản CUDA kéo theo ~2,7GB thư viện nvidia. Đo trên bài 36 trang: GPU
+    # 21,2s so với CPU 35,2s — tức trả 2,7GB cho 14 giây mỗi bài. Đáng khi có
+    # GPU và đã cấp cho container, còn lại thì `TORCH_CPU=1` cho ảnh gọn hơn hẳn.
+    && if [ "$TORCH_CPU" = "1" ]; then \
+        pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+            torch torchvision; \
     fi \
     && pip install --no-cache-dir -r /tmp/req.txt
+
+# MinerU kéo theo `opencv-python`, bản này liên kết với thư viện X của máy để
+# bật cửa sổ xem ảnh — thứ một container server không bao giờ có. Thiếu chúng
+# thì `import` chết với `ImportError: libxcb.so.1: cannot open shared object
+# file`, mà `blocks_from_layout` lại bắt Exception rồi **im lặng** rơi về
+# heuristic: người dùng nạp bài thấy "xong" trong 1,3 giây, công thức mất sạch,
+# và không có dấu hiệu nào ngoài một dòng log.
+#
+# Bản `headless` cùng module `cv2`, chỉ bỏ phần giao diện. Đặt ở lớp RUN riêng
+# để sửa chỗ này không phải dựng lại toàn bộ lớp pip phía trên.
+#
+# `six` thì MinerU **dùng mà không khai**. Trên máy dev nó có sẵn vì docling kéo
+# `rapidocr` về, nên lỗi chỉ lộ ra trong container gọn — và lộ theo kiểu tệ nhất:
+# rơi về heuristic im lặng, đúng như ca opencv ở trên.
+RUN if [ "$WITH_LAYOUT" != "0" ]; then \
+        pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null || true; \
+        pip install --no-cache-dir opencv-python-headless six; \
+    fi
 
 COPY server/ ./server/
 COPY web/ ./web/

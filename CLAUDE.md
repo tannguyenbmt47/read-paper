@@ -401,6 +401,31 @@ Bốn chỗ phải làm đúng:
   hai hình khác nhau cách 371pt) **và không gộp qua caption** — caption chen giữa
   nghĩa là hai hình khác nhau. Sau khi gộp: 28 → 9 vùng, ảnh hẹp nhất 1062px.
 
+**Dựng ảnh Docker kèm MinerU — bốn cái bẫy, cả bốn đều hỏng câm.** Mỗi lần
+container vẫn trả HTTP 200 kèm "xong" trong 1–2 giây, công thức mất sạch, và dấu
+hiệu duy nhất nằm trong log server:
+
+- **`opencv-python` cần thư viện X.** MinerU kéo nó về, còn ảnh `python:slim` thì
+  không có `libxcb.so.1`. Dùng `opencv-python-headless` (cùng module `cv2`, bỏ
+  phần giao diện) thay vì lôi cả stack X/GL vào.
+- **MinerU dùng `six` mà không khai.** Trên máy dev nó có sẵn vì docling kéo
+  `rapidocr` về, nên lỗi **chỉ lộ ra trong container gọn**.
+- **`--gpus` không dùng được với docker bản snap**, nó từ chối thẳng: *"invoking
+  the NVIDIA Container Runtime Hook directly … is not supported"*. Phải
+  `runtime: nvidia` + `NVIDIA_VISIBLE_DEVICES`.
+- **`~` trong volume của compose KHÔNG nở ra home của bạn.** Docker chạy dưới
+  snap nên `~/.cache/huggingface` thành `~/snap/docker/<rev>/.cache/huggingface`,
+  và container nhận một thư mục **rỗng** trong khi `docker compose config` trông
+  vẫn hợp lệ. Phải dùng đường dẫn tuyệt đối.
+
+Và bẫy thứ năm không phải của Docker: **`parse_cache` khoá theo SHA của file**,
+nên nạp lại đúng file PDF đó để thử lại thì nhận bản heuristic đã cache — hai lần
+đo liên tiếp ra cùng kết quả sai vì lý do hoàn toàn khác nhau.
+
+Vì cả bốn đều hỏng câm, đường **nạp bài** giờ đẩy lý do rơi về đường lùi qua SSE
+chứ không chỉ ghi log — `reparse` vốn đã báo (`layout_used` / `fallback_why`),
+đường nạp thì chưa.
+
 GPU chỉ là món phụ ở đây: đo trên bài này, **CUDA 21,2s so với CPU 35,2s**, đỉnh
 **669 MB VRAM**. Có thì dùng (`_mineru_device`), không có cũng đừng đi tìm.
 

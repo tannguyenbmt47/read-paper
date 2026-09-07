@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.16.1
+
+**The Docker image can now carry the layout model.** `WITH_LAYOUT` takes
+`0 | 1|mineru | docling | all`, where `1` installs MinerU alone — the faster and
+more accurate of the two — and `TORCH_CPU=1` drops the CUDA libraries for an
+image about 2.7 GB smaller, at a measured cost of 14 seconds per paper. The
+image goes from 387 MB to 6.8 GB with GPU support. Model weights live in a
+mounted volume rather than baked into the image, so rebuilding does not
+re-download them.
+
+Getting there turned up four traps, and every one of them failed silently: the
+container returned HTTP 200 and "done" in a second or two, with the formulas gone
+and nothing but a server log line to say why. MinerU pulls `opencv-python`, which
+links against X libraries a headless image does not have; it also imports `six`
+without declaring it, which only shows up in a slim container because the dev
+machine gets `six` for free from docling. Snap's docker refuses the `--gpus`
+flag outright and requires `runtime: nvidia`. And `~` in a compose volume does
+not expand to your home directory under snap confinement — it becomes
+`~/snap/docker/<rev>/...`, so the container mounts an empty directory while
+`docker compose config` still looks correct.
+
+A fifth trap was not Docker's: `parse_cache` is keyed on the file's SHA, so
+re-uploading the same PDF to check the fix returned the cached heuristic parse.
+Two consecutive measurements gave the same wrong answer for entirely different
+reasons.
+
+Because all of them fail quietly, the **ingest** path now pushes the fallback
+reason through its progress stream instead of only logging it. `reparse` has
+reported this since it was written; ingest had not.
+
 ## 1.16.0
 
 **Display equations were being lost entirely, and now they are not.** Checking a

@@ -1124,7 +1124,21 @@ async def import_doc(
                 imgs.update(better)
             layout_used = True
         except Exception as e:  # noqa: BLE001
+            # Rơi về đường lùi phải NÓI RA, không chỉ ghi log. `reparse` đã báo
+            # từ lâu (`layout_used` / `fallback_why`) nhưng đường NẠP BÀI thì
+            # chưa, nên người dùng nạp xong thấy "xong" mà công thức mất sạch và
+            # dấu hiệu duy nhất nằm trong log server.
+            #
+            # Đã vấp đúng vậy ba lần liên tiếp khi dựng ảnh Docker kèm MinerU:
+            # thiếu `libxcb.so.1`, rồi thiếu `six`, rồi `parse_cache` trả lại
+            # bản heuristic cũ. Mỗi lần đều "thành công" trong 1–2 giây.
             print(f"[layout] bỏ qua, dùng heuristic: {type(e).__name__}: {e}")
+            _say(job, "⚠ Không dùng được mô hình bố cục",
+                 f"{type(e).__name__}: {e} — bóc bằng đường lùi, "
+                 "công thức sẽ không được cắt thành ảnh")
+
+    if not layout_used and layout.available():
+        _say(job, "⚠ Bóc bằng đường lùi", "mô hình bố cục không chạy được")
 
     _say(job, "Cắt hình và bảng", f"{len(imgs)} ảnh", 85)
     doc = pipeline.build_doc(store.new_id(), title or t, blocks, source, model)

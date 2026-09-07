@@ -3,8 +3,12 @@ services:
     build:
       context: .
       args:
-        # 1 = kèm docling (mô hình bố cục). Ảnh phình lên nhiều GB vì torch.
+        # 0 | 1|mineru | docling | all — xem đầu Dockerfile. Kèm mô hình bố cục
+        # thì ảnh phình từ ~400MB lên nhiều GB vì torch.
         WITH_LAYOUT: ${WITH_LAYOUT:-0}
+        # 1 = dùng torch bản CPU, nhẹ hơn ~2,7GB. Đo trên bài 36 trang: CPU
+        # 35,2s so với GPU 21,2s.
+        TORCH_CPU: ${TORCH_CPU:-0}
     image: loupe
     ports:
       - "${PORT:-8010}:8010"
@@ -18,6 +22,17 @@ services:
       LAYOUT_BACKEND: ${LAYOUT_BACKEND:-off}
       # `cuda` nếu đã cấp GPU cho container, ngược lại để trống cho nó tự dò.
       MINERU_DEVICE: ${MINERU_DEVICE:-}
+      # Trọng số mô hình nằm ở volume chứ không nướng vào ảnh: PP-DocLayoutV2
+      # chỉ 205MB nhưng dựng lại ảnh mà phải tải lại từ đầu thì rất phiền.
+      HF_HOME: /models
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    # GPU cho container. **Phải là `runtime: nvidia`, không phải `--gpus`** —
+    # bản docker này (snap) từ chối thẳng: "invoking the NVIDIA Container Runtime
+    # Hook directly (e.g. specifying the docker --gpus flag) is not supported".
+    # Mặc định `runc` để máy chưa cài nvidia-container-toolkit vẫn chạy được;
+    # bật bằng cách thêm `DOCKER_RUNTIME=nvidia` vào .env.
+    runtime: ${DOCKER_RUNTIME:-runc}
     # Chạy bằng đúng uid/gid của người dùng trên máy chủ. Không có dòng này thì
     # container (uid 10001) không ghi nổi vào ./data của máy chủ (uid 1000) và
     # SQLite chết ngay với "unable to open database file".
@@ -38,4 +53,13 @@ services:
       # `:ro` để container không ghi bậy vào mã nguồn.
       - ./web:/app/web:ro
       - ./server:/app/server:ro
+      # Trọng số mô hình bố cục (PP-DocLayoutV2, 205MB). Để ở volume chứ không
+      # nướng vào ảnh: dựng lại ảnh mà phải tải lại từ đầu thì rất phiền.
+      #
+      # Mặc định là thư mục TRONG dự án, cố ý. `~` ở đây KHÔNG nở ra home của
+      # bạn: docker chạy dưới snap nên nó thành `~/snap/docker/<rev>/.cache/…`,
+      # và container nhận một thư mục rỗng trong khi mọi thứ trông vẫn đúng.
+      # Muốn dùng chung cache sẵn có với bản chạy native thì đặt đường dẫn
+      # TUYỆT ĐỐI:  echo "HF_CACHE=$HOME/.cache/huggingface" >> .env
+      - ${HF_CACHE:-./data/models}:/models
     restart: unless-stopped
