@@ -868,3 +868,113 @@ def test_giai_thich_tung_doan_khong_bat_model_nghi_tham():
     src = inspect.getsource(pipeline.explain_block)
     assert "reasoning=NO_REASONING" in src, "explain lại bật nghĩ thầm"
     assert "max_tokens=2500" in src, "trần đầu ra lại bị nới quá tay"
+
+
+# ---------------------------------------------------- backend bố cục MinerU
+
+def test_gop_o_con_cua_cung_mot_hinh():
+    """`layout._gop_vung` gộp ô con thành một hình, và KHÔNG gộp qua caption.
+
+    PP-DocLayoutV2 dò từng **ô** chứ không dò cả hình: hình băng ngang đầu bài
+    arXiv:2602.15922 ra **28 vùng** riêng. Để nguyên thì `apply_layout` ghép
+    caption với ô gần nhất và người đọc nhận đúng một ô con thay cho cả hình —
+    đo được ảnh hẹp nhất còn 445px; sau khi gộp là 1062px.
+    """
+    from server import layout
+
+    # ba ô dính nhau theo hàng ngang -> phải thành một
+    r = [{"page": 0, "kind": "figure", "bbox": [10, 100, 110, 200], "caption": ""},
+         {"page": 0, "kind": "figure", "bbox": [111, 100, 210, 200], "caption": ""},
+         {"page": 0, "kind": "figure", "bbox": [212, 100, 310, 200], "caption": ""}]
+    g = layout._gop_vung([dict(x) for x in r], [])
+    assert len(g) == 1
+    assert g[0]["bbox"] == [10, 100, 310, 200]
+
+    # cách xa nhau -> giữ nguyên hai hình
+    xa = [{"page": 0, "kind": "figure", "bbox": [10, 100, 110, 200], "caption": ""},
+          {"page": 0, "kind": "figure", "bbox": [10, 600, 110, 700], "caption": ""}]
+    assert len(layout._gop_vung([dict(x) for x in xa], [])) == 2
+
+    # gần nhau NHƯNG có caption chen giữa -> là hai hình khác nhau, không gộp
+    cap = [{"page": 0, "kind": "caption", "bbox": [10, 201, 310, 209]}]
+    assert len(layout._gop_vung([dict(x) for x in r[:1]] +
+                                [{"page": 0, "kind": "figure",
+                                  "bbox": [10, 215, 110, 300], "caption": ""}], cap)) == 2
+
+    # hai loại khác nhau thì không gộp: bảng nằm sát dưới hình vẫn là hai thứ
+    khac = [{"page": 0, "kind": "figure", "bbox": [10, 100, 110, 200], "caption": ""},
+            {"page": 0, "kind": "table", "bbox": [10, 205, 110, 300], "caption": ""}]
+    assert len(layout._gop_vung([dict(x) for x in khac], [])) == 2
+
+
+def test_nhan_mineru_bo_cong_thuc_noi_dong():
+    """`inline_formula` phải nằm ngoài `MINERU_LABELS`, và đó là chủ ý.
+
+    Nó là vùng con nằm **trong** một dòng chữ. Đưa vào `items` thì `assign_spans`
+    gán glyph theo khung nhỏ nhất chứa tâm span, tức mọi ký hiệu toán giữa câu bị
+    bốc khỏi đoạn văn và đoạn bị xé vụn — 13 vùng như vậy chỉ riêng trang 6 của
+    arXiv:2602.15922. Cùng lý do với `reference` (khung bao của cả danh sách,
+    trong khi `reference_content` mới là từng mục).
+    """
+    from server import layout
+
+    for nhan in ("inline_formula", "reference", "header", "footer", "number",
+                 "formula_number"):
+        assert nhan not in layout.MINERU_LABELS, f"{nhan} không được thành khối"
+        assert nhan in layout.MINERU_NOISE, f"{nhan} phải nằm trong danh sách bỏ có chủ ý"
+
+    # còn công thức HIỂN THỊ thì phải thành khối equation để được cắt thành ảnh
+    assert layout.MINERU_LABELS["display_formula"] == "equation"
+    assert layout.MINERU_LABELS["algorithm"] == "equation"
+    assert layout.MINERU_LABELS["reference_content"] == "reference"
+    # hình/bảng đi vào `regions`, không vào `items`
+    assert set(layout.MINERU_REGIONS) == {"image", "chart", "table"}
+    assert not (set(layout.MINERU_REGIONS) & set(layout.MINERU_LABELS))
+
+
+def test_chon_backend_bo_cuc_theo_bien_moi_truong(monkeypatch):
+    """`LAYOUT_BACKEND` đặt tên tường minh thì thắng, kể cả khi gói kia có mặt.
+
+    Hai lần đo cùng một PDF ra hai kết quả khác nhau vì máy này có mineru còn máy
+    kia có docling là chuyện đủ khó chịu để đáng có một biến chốt lại — cùng bài
+    học với `LAYOUT_BACKEND=off` của bản Docker gọn.
+    """
+    from server import layout
+
+    for tat in ("off", "none", "0", "heuristic", "OFF"):
+        monkeypatch.setenv("LAYOUT_BACKEND", tat)
+        assert layout.backend() == "off"
+    for ten in ("mineru", "docling", "MinerU"):
+        monkeypatch.setenv("LAYOUT_BACKEND", ten)
+        assert layout.backend() == ten.lower()
+
+
+def test_dau_hai_cham_van_la_doan_bi_cong_thuc_chen():
+    """"…defined as:" → công thức → "where…" phải được nhận là MỘT đoạn.
+
+    `_SENT_END` coi ":" là kết câu — đúng cho `_stitch_runon`, vốn thật sự **nối
+    chữ** lại — nhưng `mark_continuations` chỉ gắn cờ hiển thị, và dấu hai chấm
+    ngay trước một công thức chính là dấu dẫn vào nó. Đo trên arXiv:2602.15922:
+    cả 3 ứng viên của bài đều bị loại đúng vì lý do này.
+    """
+    from server.parser import Block, mark_continuations
+
+    def blk(i, kind, text):
+        return Block(i, kind, text, "", 0, 0, kind == "para")
+
+    bs = [blk("b1", "para", "Our model denoises the latents, defined as:"),
+          blk("b2", "equation", "z = t z_1 + (1 - t) z_0"),
+          blk("b3", "para", "where z_0 is Gaussian noise and z_1 is the clean latent.")]
+    assert mark_continuations(bs) == 1
+    assert bs[2].cont is True
+
+    # câu đã kết thúc hẳn bằng dấu chấm thì KHÔNG phải đoạn bị chen
+    bs2 = [blk("b1", "para", "We train with flow matching."),
+           blk("b2", "equation", "L = E[...]"),
+           blk("b3", "para", "where w is a weight function.")]
+    assert mark_continuations(bs2) == 0
+
+    # không có công thức chen vào thì cũng không
+    bs3 = [blk("b1", "para", "Our model denoises the latents, defined as:"),
+           blk("b2", "para", "where z_0 is Gaussian noise.")]
+    assert mark_continuations(bs3) == 0

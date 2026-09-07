@@ -7,6 +7,11 @@
 #
 #   docker compose up -d --build          # bản gọn
 #   WITH_LAYOUT=1 docker compose build     # bản có mô hình bố cục
+#
+# Có mô hình rồi thì chọn backend bằng `LAYOUT_BACKEND=mineru|docling`. MinerU
+# bắt công thức hiển thị tốt hơn hẳn (xem `server/layout.py`); trọng số của nó
+# tải về lần chạy đầu nên hãy mount `~/.cache/huggingface` vào container, không
+# thì mỗi lần dựng lại ảnh là tải lại từ đầu.
 
 FROM python:3.12-slim
 
@@ -23,11 +28,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-# Bỏ docling khỏi danh sách trừ khi được yêu cầu rõ ràng
+# Bỏ hai backend bố cục khỏi danh sách trừ khi được yêu cầu rõ ràng — cả hai
+# đều kéo theo torch và bộ trọng số, đẩy ảnh từ ~400MB lên nhiều GB.
 RUN if [ "$WITH_LAYOUT" = "1" ]; then \
         cp requirements.txt /tmp/req.txt; \
     else \
-        grep -v '^docling' requirements.txt > /tmp/req.txt; \
+        grep -v '^docling' requirements.txt | grep -v '^mineru' > /tmp/req.txt; \
     fi \
     && pip install --no-cache-dir -r /tmp/req.txt
 

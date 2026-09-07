@@ -1733,8 +1733,15 @@ def mark_continuations(blocks: list[Block]) -> int:
         if j == i - 1 or j < 0:          # không có công thức chen vào
             continue
         prev = blocks[j]
+        # Dấu HAI CHẤM là ngoại lệ, và là ca phổ biến nhất: "…defined as:" →
+        # công thức → "where z^{k}_{0} ∼ N(0, I)…". `_SENT_END` coi ":" là kết
+        # câu (đúng cho `_stitch_runon`, vốn NỐI chữ lại), nhưng ở đây ta chỉ
+        # gắn cờ hiển thị, và dấu hai chấm ngay trước một công thức chính là dấu
+        # dẫn vào nó. Đo trên arXiv:2602.15922: cả 3 ứng viên đều bị loại vì lý
+        # do này, tức 100% số ca của bài.
+        duoi = prev.text.rstrip()
         if (prev.type == "para" and prev.text.strip()
-                and not _SENT_END.search(prev.text.rstrip())):
+                and (duoi.endswith(":") or not _SENT_END.search(duoi))):
             b.cont = True
             n += 1
     return n

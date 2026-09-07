@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.16.0
+
+**Display equations were being lost entirely, and now they are not.** Checking a
+freshly loaded paper (arXiv:2602.15922, 36 pages) turned up six numbered display
+equations in the PDF and **zero** of them extracted as images: the five blocks
+labelled `equation` were mostly algorithm pseudocode, the formula between two
+paragraphs on page 6 had vanished outright, and one paragraph began with the
+shattered tail `[︃_{tk}]; C^{k}, c, q^{k}, t^{k}) − v^{k} 2 ]︃` glued onto the
+prose. The cause was the layout model being off, which is the documented slim-
+Docker default.
+
+MinerU's PP-DocLayoutV2 is now a second layout backend, selected with
+`LAYOUT_BACKEND=mineru`. On that paper it finds all seven display formulas and
+crops every one, in **6.2 seconds** — about thirty times faster than docling,
+because only the layout stage runs: no OCR, no table reconstruction, no LaTeX
+recognition. It also separates `display_formula` from `inline_formula`, which
+docling merges, and leads OmniDocBench v1.5 on formula recognition (CDM 88.46%).
+
+Four things the integration has to get right, each found by measuring rather than
+reading. Coordinates come back in pixels of the rendered page and must be scaled
+to points. `inline_formula` must never become a block — it is a sub-region inside
+a line of text, and admitting it would let `assign_spans` pull every mid-sentence
+symbol out of its paragraph; page 6 alone has thirteen. Equation numbers are
+merged into the formula on their row, since dropping them leaves the "(3)" glyphs
+belonging to no box, to be recovered later as a text block containing only "(3)".
+And sub-panels have to be merged: the model detects individual panels, not whole
+figures, so the banner figure came back as twenty-eight regions and the caption
+paired with one panel — the narrowest crop was 445px, and is now 1062px. Merging
+stops at a caption, because a caption between two panels means two figures.
+
+GPU is a minor factor here: 21.2s versus 35.2s on CPU, peaking at 669 MB. Worth
+using, not worth chasing.
+
+**A colon before a formula still introduces it.** `mark_continuations` skipped the
+"…defined as:" → formula → "where…" pattern because `_SENT_END` counts a colon as
+the end of a sentence. That is right for `_stitch_runon`, which actually joins the
+text, but this function only sets a display flag. All three candidates in the
+paper were being rejected for that reason.
+
 ## 1.15.0
 
 **Inline LaTeX showed up raw in the middle of Vietnamese sentences.** The storage

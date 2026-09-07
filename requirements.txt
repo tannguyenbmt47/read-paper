@@ -7,6 +7,12 @@ python-dotenv>=1.0
 python-multipart>=0.0.9
 python-pptx>=1.0        # xuất bộ slide ra .pptx sửa được
 docling>=2.0   # tuỳ chọn: mô hình phát hiện bố cục, xem README
+# Backend bố cục thứ hai. PP-DocLayoutV2 phân biệt `display_formula` với
+# `inline_formula` — docling gộp làm một — nên bắt được công thức hiển thị mà
+# đường heuristic bỏ sót hoàn toàn. Ta chỉ dùng tầng dò bố cục, không dùng OCR /
+# bảng / nhận dạng LaTeX của nó, nên `[pipeline]` là đủ và bỏ được gradio.
+# Đo trên arXiv:2602.15922 (36 trang): 6,2 giây, 7/7 công thức có ảnh.
+mineru[pipeline]
 
 # Kho survey. `numpy` là bắt buộc (trộn vector); `torch` + `transformers` chỉ cần
 # khi bật tìm kiếm ngữ nghĩa — docling đã kéo cả hai về, nên cài docling là có

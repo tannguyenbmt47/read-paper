@@ -249,6 +249,12 @@ thức được cắt thành **ảnh** và phải nằm GIỮA hai nửa. Nối 
 xuống sau cả đoạn — mạch đọc hỏng nặng hơn là để nguyên. Bốn ca như vậy trên
 GCR, đều để nguyên, và đó là quyết định chứ không phải sót.
 
+**Dấu hai chấm vẫn là đoạn bị chen.** `_SENT_END` coi `:` là kết câu — đúng cho
+`_stitch_runon`, vốn thật sự **nối chữ** lại — nhưng `mark_continuations` chỉ gắn
+cờ hiển thị, và dấu hai chấm ngay trước một công thức chính là dấu dẫn vào nó
+(*"…defined as:"* → công thức → *"where…"*). Đo trên arXiv:2602.15922: **cả 3
+ứng viên của bài đều bị loại đúng vì lý do này**, tức 100% số ca.
+
 **`mark_continuations()` — đoạn bị CÔNG THỨC chen vào giữa.** Mẫu kinh điển của
 bài phương pháp: *"Let the timestamps be sorted as"* → công thức hiển thị →
 *"where T_V is the video duration"*. Trong bản in đó là **một đoạn**; ở đây là ba
@@ -351,6 +357,58 @@ Mọi chỗ hiển thị phải đi qua bộ dựng: `sci()` bên `web/app.js` v
 
 Cẩn thận: `rich()` **chỉ** dùng cho thân bài. Mã Mermaid, thuộc tính `alt` và thẻ
 `<title>` phải giữ `esc()` thuần — chèn thẻ vào đó là hỏng sơ đồ và hỏng HTML.
+
+### Hai backend bố cục: docling và MinerU
+
+`LAYOUT_BACKEND` chọn: `docling` · `mineru` · `off`. Không đặt thì tự dò, ưu tiên
+MinerU. Đặt tên tường minh vẫn thắng — hai lần đo cùng một PDF ra hai kết quả
+khác nhau vì máy này có gói kia là chuyện đủ khó chịu để đáng có một biến chốt.
+
+**Vì sao thêm MinerU: công thức hiển thị.** Đo trên bài arXiv:2602.15922 (36
+trang, 6 công thức đánh số):
+
+| | công thức có ảnh | ảnh tổng | thời gian |
+|---|---|---|---|
+| heuristic (không mô hình) | **0** | 22 | 2,8s |
+| docling | 8 | 31 | ~196s |
+| MinerU (PP-DocLayoutV2) | **7/7** | 31 | **6,2s** |
+
+Nhanh hơn docling 30 lần vì ta **chỉ chạy tầng dò bố cục** — không OCR, không
+dựng bảng, không nhận dạng LaTeX. MinerU dẫn đầu OmniDocBench v1.5 về công thức
+(CDM 88,46%), trên cả GPT-4o và Gemini-2.5-Pro.
+
+PP-DocLayoutV2 **không trả chữ**, chỉ trả khung. Không sao: phân công vốn đã là
+*"mô hình quyết định khối nào ở đâu, PyMuPDF cấp glyph"*, và `it["text"]` chỉ là
+đường lùi trong `blocks_from_layout`.
+
+Bốn chỗ phải làm đúng:
+
+- **Toạ độ trả về tính bằng pixel của ảnh đã dựng**, phải quy về point
+  (`72 / MINERU_DPI`). Quên là mọi khung lệch đúng theo tỉ lệ đó.
+- **`inline_formula` KHÔNG được thành khối.** Nó là vùng con nằm *trong* một dòng
+  chữ; đưa vào `items` thì `assign_spans` bốc mọi ký hiệu toán giữa câu ra khỏi
+  đoạn văn và đoạn bị xé vụn — 13 vùng như vậy chỉ riêng trang 6. Cùng lý do với
+  `reference` (khung bao của cả danh sách, còn `reference_content` mới là từng
+  mục). `MINERU_NOISE` liệt kê tường minh những nhãn bỏ **có chủ ý**, để nhãn lạ
+  còn hiện ra lúc soát chứ không lẫn vào đó.
+- **`formula_number` gộp vào chính công thức cùng dải ngang.** Bỏ hẳn thì glyph
+  "(3)" không thuộc khung nào, `recover_uncovered` nhặt lên và đẻ ra một khối văn
+  bản chỉ có "(3)".
+- **Phải gộp ô con** (`_gop_vung`). Mô hình dò từng **ô**, không dò cả hình: hình
+  băng ngang đầu bài ra **28 vùng**, và `apply_layout` ghép caption với ô gần
+  nhất nên người đọc nhận một ô con thay cho cả hình — ảnh hẹp nhất 445px. Gộp
+  theo khoảng hở ≤ `MINERU_MERGE_GAP` (12pt; đo được: ô con cách nhau 0,5–6pt,
+  hai hình khác nhau cách 371pt) **và không gộp qua caption** — caption chen giữa
+  nghĩa là hai hình khác nhau. Sau khi gộp: 28 → 9 vùng, ảnh hẹp nhất 1062px.
+
+GPU chỉ là món phụ ở đây: đo trên bài này, **CUDA 21,2s so với CPU 35,2s**, đỉnh
+**669 MB VRAM**. Có thì dùng (`_mineru_device`), không có cũng đừng đi tìm.
+
+Cài: `pip install "mineru[pipeline]"`. Nó **hạ transformers xuống 4.57**, và điều
+đó an toàn: `docling-ibm-models` khai `>=4.42, <6` trên Linux — đã kiểm bằng cách
+chạy lại docling trên cùng PDF sau khi hạ, ra **kết quả y hệt** (360 items, 332
+khối, 8 công thức). Trọng số tải về `~/.cache/huggingface` lần chạy đầu, nên nhớ
+mount thư mục đó vào container.
 
 ### Hai đường bóc tách — mô hình là đường chính
 
