@@ -978,3 +978,54 @@ def test_dau_hai_cham_van_la_doan_bi_cong_thuc_chen():
     bs3 = [blk("b1", "para", "Our model denoises the latents, defined as:"),
            blk("b2", "para", "where z_0 is Gaussian noise.")]
     assert mark_continuations(bs3) == 0
+
+
+# ------------------------------------------- đánh dấu câu đáng nhớ (pass 5)
+
+def test_va_escape_cuu_duoc_json_co_latex():
+    r"""`extract_json` phải sống được với `\(`, `\tilde`, `\{` trong chuỗi.
+
+    Model trích **nguyên văn** một câu có LaTeX thì phải tự escape thành `\\(`,
+    và nhiều model không làm. `json.loads` ném `Invalid \escape` rồi hỏng cả lượt
+    gọi **đã trả tiền**. Đã gặp thật ở pass đánh dấu, trên bài dịch từ trước khi
+    `TRANSLATE_TASK` cấm LaTeX.
+
+    Nó hỏng **theo bài**: bài nào model tình cờ không trích câu có dấu chéo thì
+    chạy trót lọt — nên rất dễ tưởng đã ổn, và đó là lý do phải có test.
+    """
+    from server.llm import extract_json
+
+    d = extract_json(r'{"marks":[{"quote":"ta có \(Suf(a) \in \{0,1\}\)","why":"x"}]}')
+    assert d["marks"][0]["quote"] == r"ta có \(Suf(a) \in \{0,1\}\)"
+
+    # escape HỢP LỆ không được đụng tới
+    d2 = extract_json('{"a":"dòng1\\ndòng2","b":"nháy \\" bên trong","c":"\\u00e9"}')
+    assert d2["a"] == "dòng1\ndòng2"
+    assert d2["b"] == 'nháy " bên trong'
+    assert d2["c"] == "é"
+
+    # và vẫn bóc được khi model bọc trong ``` hoặc thêm lời dẫn
+    assert extract_json('Đây nhé:\n```json\n{"x":1}\n```')["x"] == 1
+
+
+def test_loai_cau_dang_nho_khop_bang_mau_ve_boi():
+    """Năm loại phải ánh xạ đúng năm màu đã có, mỗi màu một loại.
+
+    Màu không chỉ để đẹp: nó là thứ trả lời "vì sao câu này đáng nhớ" ngay khi
+    liếc qua. Hai loại trùng màu là mất luôn thông tin đó, mà không có gì báo.
+    """
+    from server import prompts
+    from server.main import HL_COLORS
+
+    mau = [v[0] for v in prompts.INSIGHT_KINDS.values()]
+    assert len(mau) == len(set(mau)), "hai loại dùng chung một màu"
+    assert set(mau) <= set(HL_COLORS), f"màu lạ: {set(mau) - set(HL_COLORS)}"
+    # hạn mức từng loại phải cộng lại không vượt trần cả bài
+    tran = {"claim": 2, "mechanism": 5, "evidence": 4, "limit": 3, "term": 4}
+    assert set(tran) == set(prompts.INSIGHT_KINDS)
+    assert sum(tran.values()) >= prompts.INSIGHT_MAX
+
+    # Trần phải THƯA. Bài thật có 60–150 đoạn đã dịch; Dunlosky 2013 xếp bôi vàng
+    # vào nhóm lợi ích thấp chính vì người ta bôi quá nhiều, nên nới trần ở đây là
+    # đi ngược lý do tính năng tồn tại.
+    assert prompts.INSIGHT_MAX <= 20

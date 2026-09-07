@@ -1285,3 +1285,101 @@ Cách trả lời:
 - Nếu câu hỏi dựa trên một hiểu nhầm về bài, chỉ ra chỗ hiểu nhầm trước.
 - Viết tiếng Việt tự nhiên, giữ nguyên thuật ngữ tiếng Anh đã quen dùng.
 - Ngắn gọn. Không nhắc lại câu hỏi, không mở đầu bằng lời khách sáo."""
+
+
+# ------------------------------------ pass 5: đánh dấu câu chốt trong bài dịch
+
+# Ngân sách vệt bôi, và đây là **con số có bằng chứng đứng sau, không phải khẩu
+# vị**. Dunlosky và cộng sự (2013) xếp bôi vàng vào nhóm *lợi ích thấp* — nhưng
+# lý do là người học bôi **thụ động và bôi quá nhiều**; ai chỉ đánh dấu một hai
+# câu mỗi đoạn thì hơn hẳn người bôi vàng cả trang. Tức giá trị nằm ở chỗ **thưa**
+# và ở chỗ **ghi lý do**, không nằm ở việc bôi.
+#
+# Bài thật có 60–150 đoạn đã dịch (đo trên 6 bài trong `data/`). Một vệt mỗi đoạn
+# là đúng cái thất bại mà nghiên cứu mô tả, nên trần đặt theo LOẠI chứ không theo
+# số đoạn: tổng 8–18 vệt cho cả bài, tức khoảng một vệt mỗi mười đoạn.
+INSIGHT_MAX = 18
+
+# Năm loại, ánh xạ đúng năm màu đã có (`HL_COLORS`). Có loại thì vệt bôi thôi là
+# một mảng màu vô nghĩa — nó trả lời được câu "vì sao câu này đáng nhớ".
+INSIGHT_KINDS = {
+    "claim":     ("v", "Luận điểm chính"),
+    "mechanism": ("b", "Cơ chế"),
+    "evidence":  ("g", "Số liệu chốt"),
+    "limit":     ("p", "Giới hạn"),
+    "term":      ("y", "Khái niệm then chốt"),
+}
+
+INSIGHT_TASK = """\
+
+## Nhiệm vụ: đánh dấu những câu đáng nhớ trong bản dịch
+
+Toàn văn bài gốc nằm ở trên. Người dùng gửi kèm **bản dịch tiếng Việt** của từng
+khối. Việc của bạn là chọn ra những câu mà một người đọc xong bài **cần nhớ**, và
+với mỗi câu, nói **vì sao nó đáng nhớ**.
+
+### Chọn ít, và đó là điểm mấu chốt
+
+Tối đa **{INSIGHT_MAX} câu cho cả bài**, và bài nào ít ý thì chọn ít hơn. Bài
+điển hình có hơn một trăm đoạn, nên đây là khoảng **một câu mỗi mười đoạn**.
+
+Đánh dấu nhiều là **hỏng hẳn mục đích**, không phải "được thêm": khi mọi thứ đều
+được tô thì không còn gì nổi lên, và người đọc quay lại chỉ thấy một trang vàng
+khè. Nếu phân vân giữa hai câu, chọn một.
+
+### Năm loại, mỗi loại một hạn mức
+
+| loại | chọn câu nào | tối đa |
+|---|---|---|
+| `claim` | điều bài **khẳng định** — luận điểm chính, không phải mô tả chủ đề | 2 |
+| `mechanism` | câu nói **bằng cách nào** nó chạy được, hoặc **vì sao** cách đó hiệu quả | 5 |
+| `evidence` | con số quyết định, kèm điều nó chứng minh | 4 |
+| `limit` | chỗ bài tự nhận không làm được, hoặc điều kiện phải có mới đúng | 3 |
+| `term` | định nghĩa của một khái niệm mà cả bài về sau đều dựa vào | 4 |
+
+### Không đánh dấu
+
+- Câu mở đoạn kiểu *"Trong phần này chúng tôi trình bày…"* — nó là biển chỉ
+  đường, không phải nội dung.
+- Câu nền ai trong ngành cũng biết.
+- Câu nhắc lại điều đã đánh dấu ở chỗ khác. Chọn bản nói rõ nhất, bỏ phần còn lại.
+- Câu chỉ nêu **tên** một cơ chế mà không nói nó làm gì. Phép thử: thay tên riêng
+  bằng một từ vô nghĩa — nếu câu vẫn "đúng" y như cũ thì nó rỗng, đừng đánh dấu.
+
+### Trường `why` — đây mới là phần có giá trị
+
+Bôi vàng suông gần như không giúp gì cho việc nhớ; cái giúp là **nói ra được vì
+sao chỗ đó quan trọng**. Nên `why` phải là **một câu** nói điều mà chính câu được
+trích **không nói ra**: nó đổi điều gì, nó chống lại giả định nào, nó là bản lề
+cho phần nào sau đó. Chép lại ý câu trích là bỏ phí trường này.
+
+### Trích **nguyên văn**, và đây là ràng buộc cứng
+
+`quote` phải là một đoạn **chép đúng từng ký tự** từ bản dịch của khối đó — không
+sửa chính tả, không rút gọn, không thêm dấu ba chấm. Chép sai một ký tự là vệt
+bôi không neo được vào bài và bị bỏ.
+
+Trích **trọn câu**, không cắt giữa chừng. Câu dài quá thì chọn mệnh đề mang thông
+tin, nhưng vẫn phải là một chuỗi liền mạch có thật trong khối.
+
+Chỉ trả lời bằng một object JSON hợp lệ, không kèm lời dẫn, không bọc trong ```.
+
+{"marks": [
+  {"block": "b12",
+   "kind": "mechanism",
+   "quote": "chép nguyên văn một câu trong bản dịch của khối b12",
+   "why": "một câu: vì sao chỗ này đáng nhớ, nói điều mà chính câu đó không nói"}
+]}
+"""
+INSIGHT_TASK = INSIGHT_TASK.replace("{INSIGHT_MAX}", str(INSIGHT_MAX))
+
+
+def insight_user(items: list[dict]) -> str:
+    """Phần thay đổi theo request: bản dịch của từng khối, kèm mã khối.
+
+    Gửi bản dịch **thô như đang lưu** (còn `^{…}` / `_{…}`), không phải bản đã
+    dựng để nhìn. Nhờ vậy `quote` trả về đối chiếu thẳng được với chuỗi trong DB,
+    và tầng hiển thị tự lo phần đổi sang chữ người đọc thấy — xem `mark_insights`.
+    """
+    return ("Bản dịch tiếng Việt của từng khối:\n\n"
+            + "\n\n".join(f"<<<{it['id']}>>>\n{it['vi']}" for it in items))

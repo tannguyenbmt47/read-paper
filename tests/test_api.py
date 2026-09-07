@@ -791,3 +791,42 @@ def test_dung_latex_noi_dong_thanh_ky_hieu_that():
 
     # macro lạ thì để nguyên, không được ăn mất chữ
     assert "\\khongcomacronay" in _math_tex(r"\khongcomacronay x")
+
+
+def test_ghi_nhieu_vet_boi_mot_luot(app_client, doc):
+    """`add_many` ghi cả loạt vệt bôi trong một lượt, và bỏ qua thứ không hợp lệ.
+
+    Pass đánh dấu câu đáng nhớ trả về tới 18 vệt. Gọi đường `add` một-vệt-một-
+    request là 18 lượt `store.save(doc)` ghi lại nguyên cả tài liệu.
+    """
+    did = doc["id"]
+    bid = doc["blocks"][0]["id"]
+    r = app_client.patch(f"/api/doc/{did}/highlights", json={"add_many": [
+        {"block": bid, "col": "vi", "color": "v", "start": 0, "end": 5,
+         "text": "abcde", "note": "Luận điểm chính — vì sao"},
+        {"block": bid, "col": "vi", "color": "g", "start": 6, "end": 9, "text": "fgh"},
+        {"block": "khongcokhoi", "col": "vi", "start": 0, "end": 3},   # khối lạ
+        {"block": bid, "col": "vi", "start": 9, "end": 9},             # khoảng rỗng
+        {"block": bid, "col": "vi", "color": "khongcomau", "start": 20, "end": 25},
+    ]})
+    assert r.status_code == 200, r.text
+    them = r.json()["added"]
+    assert len(them) == 3, "phải bỏ khối lạ và khoảng rỗng, giữ 3 vệt"
+    assert [h["id"] for h in them] == ["h1", "h2", "h3"], "mã vệt phải không trùng"
+    assert them[0]["color"] == "v" and them[0]["note"].startswith("Luận điểm")
+    assert them[2]["color"] == "y", "màu lạ phải rơi về mặc định"
+
+    # ghi tiếp lượt hai: mã mới không được đụng mã cũ
+    r2 = app_client.patch(f"/api/doc/{did}/highlights", json={"add_many": [
+        {"block": bid, "col": "en", "start": 30, "end": 40, "text": "x"}]})
+    assert r2.status_code == 200
+    tat_ca = [h["id"] for lst in r2.json()["highlights"].values() for h in lst]
+    assert len(tat_ca) == len(set(tat_ca)) == 4
+
+
+def test_danh_dau_cau_dang_nho_bao_loi_ro(app_client, doc):
+    """Bài chưa dịch thì nói thẳng, chứ đừng gọi model rồi trả về rỗng."""
+    r = app_client.post(f"/api/doc/{doc['id']}/insights")
+    assert r.status_code == 400
+    assert "dịch" in r.json()["detail"]
+    assert app_client.post("/api/doc/khongcobai/insights").status_code == 404

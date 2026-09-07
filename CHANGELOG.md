@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.17.0
+
+**The reader can now have the paper's key sentences marked for it.** A new button
+reads back the finished translation and highlights the sentences worth
+remembering, each with one line saying *why* it matters. The five kinds map onto
+the five highlight colours that already existed: claim, mechanism, evidence,
+limitation, key term.
+
+The cap of eighteen per paper is deliberate and evidence-backed. Dunlosky et al.
+(2013) rate highlighting *low utility*, but the reason is that students highlight
+passively and highlight too much; those who mark only one or two sentences per
+paragraph do substantially better than those who paint whole pages. The value is
+in being sparse and in writing down why — so the `why` field is the point, and
+the prompt requires it to say something the quoted sentence does not.
+
+The pass deliberately skips `cached_prefix`. That prefix holds the *original* full
+text, while the user message is the *translation* of the same paper — sending both
+sends the paper twice, and the prefix is cold anyway because this button gets
+pressed long after translating. Dropping it and keeping only the brief and
+glossary took the call from 39,477 to 17,867 tokens and from $0.102 to $0.021,
+with no loss in what came back.
+
+The server does not write the highlights and does not compute character offsets.
+Highlights anchor to the *rendered* text of a cell, and `sci()` turns `^{N}` into
+`<sup>N</sup>` — 71 stored characters render as 54. Computing offsets server-side
+would mean porting `sci()` to Python, a second implementation of the same
+rendering. Instead the server returns the quote as stored and the browser runs the
+same `sci()` over it to find the range, which holds even when a sentence spans a
+superscript.
+
+**A JSON bug this uncovered affects every pass that returns JSON.** When a model
+quotes a sentence containing LaTeX verbatim, `\(`, `\tilde` and `\{` are not
+valid JSON escapes, so `json.loads` raises `Invalid \escape` and the whole
+paid-for call is lost. `extract_json` now repairs those backslashes and retries.
+It failed per-paper — papers where the model happened not to quote a backslash
+worked fine — which is exactly the kind of bug that looks fixed when it is not.
+
 ## 1.16.1
 
 **The Docker image can now carry the layout model.** `WITH_LAYOUT` takes

@@ -1074,6 +1074,8 @@ function wireReader() {
     }
   };
 
+  $("#insightBtn").onclick = markInsights;
+
   $("#rebriefBtn").onclick = async () => {
     const btn = $("#rebriefBtn");
     if (!confirm("Đọc lại toàn bài để chốt lại bảng thuật ngữ?\n\n" +
@@ -2048,6 +2050,73 @@ async function makeHighlight(color) {
   } catch (e) {
     status("Lỗi: " + e.message);
   } finally { hlPending = null; }
+}
+
+/** Đánh dấu tự động những câu đáng nhớ trong bản dịch.
+
+    Model chỉ trả về `quote` — chuỗi **thô như đang lưu**. Việc neo phải làm ở
+    đây, vì vệt bôi neo theo khoảng ký tự trong **chữ đã dựng** của một ô, mà
+    `sci()` biến `^{N}` thành `<sup>N</sup>`: đo trên một câu thật, 71 ký tự lưu
+    còn 54 ký tự hiển thị. Cách dò không cần bản Python của `sci()`: chạy chính
+    `sci()` lên `quote` rồi lấy `textContent` — phép biến đổi là cục bộ nên kết
+    quả là một chuỗi con của ô đã dựng. */
+function insightOffsets(cell, quote) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = sci(quote);
+  const can = tmp.textContent;
+  const start = cell.textContent.indexOf(can);
+  return start < 0 ? null : { start, end: start + can.length, text: can };
+}
+
+async function markInsights() {
+  const btn = $("#insightBtn");
+  if (!confirm("Đánh dấu những câu đáng nhớ trong bản dịch?\n\n"
+    + "Tốn một lượt gọi model — đo trên bài 45 nghìn ký tự: khoảng $0,06.\n\n"
+    + "Nó chọn tối đa 18 câu cho cả bài, cố ý THƯA: bôi vàng cả trang thì không "
+    + "còn gì nổi lên. Mỗi câu kèm một dòng nói vì sao chỗ đó đáng nhớ, và màu "
+    + "cho biết loại — tím là luận điểm, xanh dương là cơ chế, xanh lá là số "
+    + "liệu, hồng là giới hạn, vàng là khái niệm.\n\n"
+    + "Vệt bôi bạn tự tô từ trước vẫn giữ nguyên.")) return;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "Đang đọc lại bài…";
+  try {
+    const r = await fetch(`/api/doc/${state.doc.id}/insights`, { method: "POST" });
+    if (!r.ok) throw new Error((await r.json()).detail || "không đánh dấu được");
+    const res = await r.json();
+
+    // Neo từng câu vào đúng ô của nó. Ô chưa dựng (khối đang bị ẩn, hoặc cột
+    // tiếng Việt đang tắt) thì bỏ qua — không có chữ thì không neo được.
+    const add = [];
+    const hut = [];
+    for (const m of res.marks) {
+      const cell = $(`#p-${CSS.escape(m.block)} [data-vi]`);
+      const pos = cell && insightOffsets(cell, m.quote);
+      if (!pos) { hut.push(m.block); continue; }
+      add.push({ block: m.block, col: "vi", color: m.color,
+                 start: pos.start, end: pos.end, text: pos.text,
+                 note: `${m.label} — ${m.why}` });
+    }
+    if (add.length) {
+      const w = await fetch(`/api/doc/${state.doc.id}/highlights`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ add_many: add }),
+      });
+      if (!w.ok) throw new Error((await w.json()).detail || "không lưu được vệt bôi");
+      state.doc.highlights = (await w.json()).highlights;
+      renderDoc();
+    }
+    reportCost(`Đã đánh dấu ${add.length} câu`, res.run, res.usage);
+    // Câu model bịa hoặc chép sai một ký tự thì bị chốt chặn loại — nói ra chứ
+    // đừng im lặng, nếu không người dùng trả tiền mà không biết đã mất gì.
+    const bo = (res.skipped || []).length + hut.length;
+    if (bo) status(`Đã đánh dấu ${add.length} câu · bỏ ${bo} câu không khớp bản dịch`);
+  } catch (e) {
+    status("Lỗi: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 }
 
 /* ---- hộp ghi chú ---- */

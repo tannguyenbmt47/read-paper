@@ -1240,6 +1240,24 @@ async def retranslate(doc_id: str, block_id: str, body: dict = Body(default={}))
         raise HTTPException(502, f"{type(e).__name__}: {e}")
 
 
+@app.post("/api/doc/{doc_id}/insights")
+async def insights(doc_id: str):
+    """Chọn câu đáng nhớ trong bản dịch. Tốn một lượt gọi model.
+
+    Trả về **ứng viên**, không tự ghi vệt bôi: chỉ tầng hiển thị mới neo được
+    (xem `pipeline.mark_insights`). Client dò `quote` trong ô đã dựng rồi gọi
+    `PATCH …/highlights` với `add_many`.
+    """
+    try:
+        return await pipeline.mark_insights(doc_id)
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"{type(e).__name__}: {e}")
+
+
 # --------------------------------------------------------------- highlight
 
 
@@ -1290,6 +1308,36 @@ async def edit_highlights(doc_id: str, body: dict = Body(...)):
         doc["highlights"] = hl
         store.save(doc)
         return {"highlights": hl, "new": item}
+
+    # Ghi NHIỀU vệt trong một lượt. Đường `add` một-vệt-một-request là đúng cho
+    # người dùng tự bôi, nhưng pass đánh dấu tự động trả về tới 18 vệt — gọi 18
+    # lần là 18 lượt `store.save(doc)` ghi lại nguyên cả tài liệu.
+    if (many := body.get("add_many")) is not None:
+        ids = {b["id"] for b in doc["blocks"]}
+        used = {h["id"] for h in _hl_all(doc)}
+        n, them = 1, []
+        for a in (many if isinstance(many, list) else [])[:100]:
+            bid = str(a.get("block") or "")
+            start, end = int(a.get("start", 0)), int(a.get("end", 0))
+            if bid not in ids or end <= start:
+                continue
+            while f"h{n}" in used:
+                n += 1
+            used.add(f"h{n}")
+            item = {"id": f"h{n}",
+                    "col": a.get("col") if a.get("col") in ("en", "vi", "gl") else "vi",
+                    "color": a.get("color") if a.get("color") in HL_COLORS else "y",
+                    "start": start, "end": end,
+                    "text": (a.get("text") or "")[:2000],
+                    "note": (a.get("note") or "")[:4000],
+                    "created_at": time.time()}
+            hl.setdefault(bid, []).append(item)
+            them.append(item)
+        for bid in hl:
+            hl[bid].sort(key=lambda h: (h["col"], h["start"]))
+        doc["highlights"] = hl
+        store.save(doc)
+        return {"highlights": hl, "added": them}
 
     if (up := body.get("update")) is not None:
         hid = str(up.get("id") or "")

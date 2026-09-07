@@ -773,6 +773,116 @@ async def retranslate_block(doc_id: str, block_id: str, mode: str = "vi") -> dic
     }
 
 
+def _insight_context(doc: dict) -> str:
+    """Tóm lược + bảng thuật ngữ, để pass đánh dấu biết bài này tranh luận điều gì.
+
+    Rút từ `doc["brief"]` chứ không gọi lại model. Không có brief thì trả rỗng —
+    pass vẫn chạy được, chỉ là model phải tự suy mạch bài từ bản dịch.
+    """
+    brief = doc.get("brief") or {}
+    if not brief:
+        return ""
+    dong = [
+        "## Bối cảnh bài báo",
+        f"- Chốt lại: {brief.get('one_line', '')}",
+        f"- Bài toán: {brief.get('problem', '')}",
+        f"- Ý tưởng: {brief.get('idea', '')}",
+        f"- Bằng chứng: {brief.get('evidence', '')}",
+    ]
+    chain = brief.get("argument_chain") or []
+    if chain:
+        dong.append("### Mạch lập luận")
+        dong += [f"  {i + 1}. [{s.get('role', '')}] {s.get('step', '')}"
+                 for i, s in enumerate(chain)]
+    return "\n".join(dong) + "\n\n"
+
+
+async def mark_insights(doc_id: str) -> dict:
+    """Chọn ra những câu đáng nhớ trong bản dịch, kèm lý do. Một lượt gọi model.
+
+    Đi sau `cached_prefix(doc)` nên toàn văn bài gốc gần như miễn phí — model cần
+    nó để biết câu nào **quan trọng trong mạch bài**, chứ đọc mỗi bản dịch rời thì
+    câu nào cũng na ná nhau. Phần thay đổi theo request là bản dịch, nằm ở message
+    `user` (đo trên 6 bài thật: 10–21k token).
+
+    **Không tự ghi vệt bôi.** Trả về danh sách ứng viên; tầng hiển thị mới neo
+    được, vì vệt bôi neo theo khoảng ký tự trong **văn bản đã dựng** của một ô,
+    mà `sci()` biến `^{N}` thành `<sup>N</sup>` — đo trên một câu thật: 71 ký tự
+    lưu so với 54 ký tự hiển thị. Server tính `start`/`end` là lệch, và muốn tính
+    đúng thì phải chép `sci()` sang Python — đúng cái bẫy "hai bản dựng cùng một
+    thứ" đã ghi cho `renderMd`/`svMd` và cho ba bộ dựng slide.
+
+    Chốt chặn của pass này: **`quote` phải có mặt nguyên văn trong bản dịch của
+    đúng khối đó**. Model bịa một câu nghe hay nhưng bài không nói thì bị bỏ —
+    cùng họ với ràng buộc số liệu của `check_slides` và `check_answer`.
+    """
+    doc = store.load(doc_id)
+    tr = doc.get("translations") or {}
+    items = [{"id": b["id"], "vi": tr[b["id"]]}
+             for b in doc["blocks"]
+             if b.get("type") in ("para", "caption") and (tr.get(b["id"]) or "").strip()]
+    if not items:
+        raise ValueError("bài này chưa dịch đoạn nào")
+
+    # **Cố ý KHÔNG dùng `cached_prefix`.** Nó chứa toàn văn bài GỐC, mà phần
+    # `user` ở đây đã là bản DỊCH của đúng bài ấy — gửi cả hai là gửi cùng một
+    # bài hai lần. Đo trên CIRAG: prefix 23.722 token + bản dịch 15.755 token,
+    # và `cached_tokens = 0` vì người dùng bấm nút này rất lâu sau lần dịch, lúc
+    # prefix đã rơi khỏi cửa sổ cache — đúng cái bẫy đã ghi cho `explain_block`.
+    #
+    # Giữ lại tóm lược và bảng thuật ngữ (vài trăm token) vì chúng cho model biết
+    # bài này rốt cuộc tranh luận điều gì, tức đúng thứ cần để chọn câu nào đáng
+    # nhớ. Bỏ toàn văn gốc: bản dịch đã mang trọn nội dung đó.
+    msgs = [
+        llm.system_message("", _insight_context(doc) + prompts.INSIGHT_TASK,
+                           model=doc["model"]),
+        {"role": "user", "content": prompts.insight_user(items)},
+    ]
+    raw, usage = await llm.complete(
+        msgs, model=doc["model"], session_id=doc_id,
+        # Tắt hẳn nghĩ thầm, cùng lý do với `explain_block`: độ sâu ở đây đến từ
+        # bảng hạn mức và danh sách "không đánh dấu" trong `INSIGHT_TASK`, không
+        # đến từ token nghĩ thầm — mà nghĩ thầm thì tranh chỗ với phần cần viết.
+        max_tokens=6000, temperature=0.2, reasoning=NO_REASONING)
+
+    data = llm.extract_json(raw)
+    if not isinstance(data, dict):
+        raise ValueError("model không trả về JSON hợp lệ")
+
+    by_id = {it["id"]: it["vi"] for it in items}
+    dem: dict[str, int] = {}
+    marks: list[dict] = []
+    bo: list[str] = []
+    for m in (data.get("marks") or []):
+        bid = str(m.get("block") or "")
+        kind = str(m.get("kind") or "")
+        quote = (m.get("quote") or "").strip()
+        if bid not in by_id or kind not in prompts.INSIGHT_KINDS or not quote:
+            bo.append(f"{bid or '?'}: khối hoặc loại không hợp lệ")
+            continue
+        # chốt chặn: phải là chuỗi có thật trong bản dịch của đúng khối đó
+        if quote not in by_id[bid]:
+            bo.append(f"{bid}: câu trích không có trong bản dịch")
+            continue
+        # hạn mức theo loại — xem bảng trong `INSIGHT_TASK`
+        tran = {"claim": 2, "mechanism": 5, "evidence": 4, "limit": 3, "term": 4}
+        if dem.get(kind, 0) >= tran[kind]:
+            continue
+        dem[kind] = dem.get(kind, 0) + 1
+        color, nhan = prompts.INSIGHT_KINDS[kind]
+        marks.append({"block": bid, "kind": kind, "label": nhan, "color": color,
+                      "quote": quote, "why": (m.get("why") or "").strip()[:400]})
+        if len(marks) >= prompts.INSIGHT_MAX:
+            break
+
+    return {
+        "marks": marks,
+        "skipped": bo,
+        "run": usage.dict(),
+        "usage": _bump_usage(doc_id, json.dumps(usage.dict())),
+    }
+
+
 async def explain_block(doc_id: str, block_id: str) -> tuple[dict, dict, dict]:
     """Trả về (ghi chú, chi phí lượt này, chi phí cộng dồn của bài)."""
     doc = store.load(doc_id)

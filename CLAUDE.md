@@ -919,6 +919,54 @@ sách* mã). Khớp một-một thì khối thứ hai luôn phải mint mã mớ
 lần bóc — đo trên bài thật: 12 khối churn mỗi lượt, và bản dịch của chúng rơi
 theo. Sau khi sửa, bóc lại hai lần liên tiếp cho `kept: 282, new: 0, dropped: 0`.
 
+### Đánh dấu câu đáng nhớ (pass 5)
+
+Nút *Đánh dấu câu đáng nhớ* đọc lại **bản dịch** và bôi vàng những câu người đọc
+cần nhớ, mỗi câu kèm một dòng nói **vì sao**. Năm loại ánh xạ đúng năm màu đã có
+(`INSIGHT_KINDS`): `claim` tím · `mechanism` xanh dương · `evidence` xanh lá ·
+`limit` hồng · `term` vàng. Màu trả lời được câu "vì sao câu này đáng nhớ" ngay
+khi liếc qua, nên hai loại trùng màu là mất thông tin — có test canh.
+
+**`INSIGHT_MAX = 18` là con số có bằng chứng, không phải khẩu vị.** Dunlosky và
+cộng sự (2013) xếp bôi vàng vào nhóm *lợi ích thấp* — nhưng lý do là người học
+bôi **thụ động và bôi quá nhiều**; ai chỉ đánh dấu một hai câu mỗi đoạn thì hơn
+hẳn người bôi vàng cả trang. Giá trị nằm ở chỗ **thưa** và ở chỗ **ghi lý do**,
+không ở việc bôi. Bài thật có 60–150 đoạn đã dịch, nên 18 vệt là khoảng một vệt
+mỗi mười đoạn. **Nới trần là đi ngược lý do tính năng tồn tại.**
+
+Vì thế trường `why` mới là phần có giá trị, và prompt đòi nó nói điều mà **chính
+câu được trích không nói ra** — chép lại ý câu trích là bỏ phí.
+
+**Pass này cố ý KHÔNG dùng `cached_prefix`.** Prefix chứa toàn văn bài *gốc*, mà
+phần `user` đã là bản *dịch* của đúng bài ấy — gửi cả hai là gửi cùng một bài hai
+lần. Đo trên CIRAG: prefix 23.722 token + bản dịch 15.755 token, và
+`cached_tokens = 0` vì người dùng bấm nút này rất lâu sau lần dịch, lúc prefix đã
+rơi khỏi cửa sổ cache (đúng cái bẫy đã ghi cho `explain_block`). Bỏ prefix, giữ
+lại tóm lược + bảng thuật ngữ (`_insight_context`, vài trăm token) vì đó mới là
+thứ cho biết bài tranh luận điều gì: **39.477 → 17.867 token, $0,102 → $0,021**,
+chất lượng không đổi.
+
+**Server KHÔNG tự ghi vệt bôi, và không được tự tính `start`/`end`.** Vệt bôi neo
+theo khoảng ký tự trong **chữ đã dựng** của một ô, mà `sci()` biến `^{N}` thành
+`<sup>N</sup>` — đo trên một câu thật: **71 ký tự lưu, 54 ký tự hiển thị**. Muốn
+tính đúng ở server thì phải chép `sci()` sang Python, tức đẻ thêm một bản dựng
+nữa (xem `renderMd`/`svMd`, và ba bộ dựng slide).
+
+Cách tránh: server trả `quote` **thô như đang lưu**, client chạy chính `sci()` lên
+`quote` rồi lấy `textContent` và `indexOf` trong ô — phép biến đổi là cục bộ nên
+kết quả là chuỗi con của ô đã dựng. Đã kiểm trong trình duyệt: câu cắt qua `¹` vẫn
+neo đúng.
+
+Chốt chặn: **`quote` phải có mặt nguyên văn trong bản dịch của đúng khối đó**,
+nếu không thì bỏ và **nói ra số câu bị bỏ** — người dùng đã trả tiền, im lặng là
+họ không biết mất gì. Đo thật: 13 câu giữ, 1 câu bị loại.
+
+Và một bẫy chung cho **mọi** pass trả JSON: **model trích nguyên văn câu có LaTeX
+thì làm hỏng JSON.** `\(`, `\tilde`, `\{` không phải escape hợp lệ, `json.loads`
+ném `Invalid \escape` và cả lượt gọi đã trả tiền mất trắng. `llm._va_escape` nhân
+đôi những dấu chéo đó rồi thử lại. Nó **hỏng theo bài** — bài nào model tình cờ
+không trích câu có dấu chéo thì chạy trót lọt — nên rất dễ tưởng đã ổn.
+
 ### Bôi vàng và ghi chú
 
 Người đọc bôi một đoạn trong màn `#reader`, vệt bôi lưu ở cột `highlights`, rê

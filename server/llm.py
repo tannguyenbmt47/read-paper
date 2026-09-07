@@ -190,6 +190,25 @@ async def complete(
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
+# Dấu chéo ngược KHÔNG mở đầu một escape hợp lệ của JSON. `\(`, `\tilde`, `\{`
+# — thứ đầy rẫy trong bài báo — đều rơi vào đây.
+_BAD_ESC = re.compile(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})')
+
+
+def _va_escape(text: str) -> str:
+    r"""Nhân đôi những dấu chéo ngược không phải escape hợp lệ.
+
+    Model trích **nguyên văn** một câu có LaTeX (`\(Suf(a) \in \{0,1\}\)`) thì
+    phải tự escape thành `\\(`, và nhiều model không làm. `json.loads` ném
+    `Invalid \escape` rồi hỏng cả lượt gọi đã trả tiền.
+
+    Đã gặp thật ở pass đánh dấu câu đáng nhớ, trên bài dịch từ trước khi
+    `TRANSLATE_TASK` cấm LaTeX. Và nó **hỏng theo bài**: bài nào model tình cờ
+    không trích câu có dấu chéo thì chạy trót lọt, nên rất dễ tưởng đã ổn.
+    """
+    return _BAD_ESC.sub(r"\\\\", text)
+
+
 def extract_json(text: str):
     """Bóc JSON ra khỏi câu trả lời kể cả khi model bọc trong ``` hoặc thêm lời dẫn."""
     text = text.strip()
@@ -201,6 +220,10 @@ def extract_json(text: str):
     # sẽ ném "Invalid control character" rồi hỏng cả lượt gọi.
     try:
         return json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return json.loads(_va_escape(text), strict=False)
     except json.JSONDecodeError:
         pass
     start = min((i for i in (text.find("{"), text.find("[")) if i != -1), default=-1)
@@ -228,7 +251,11 @@ def extract_json(text: str):
         elif c == closer:
             depth -= 1
             if depth == 0:
-                return json.loads(text[start:i + 1], strict=False)
+                cat = text[start:i + 1]
+                try:
+                    return json.loads(cat, strict=False)
+                except json.JSONDecodeError:
+                    return json.loads(_va_escape(cat), strict=False)
     raise ValueError("JSON trong phản hồi bị cắt cụt")
 
 
