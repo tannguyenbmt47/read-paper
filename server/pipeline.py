@@ -797,7 +797,7 @@ def _insight_context(doc: dict) -> str:
     return "\n".join(dong) + "\n\n"
 
 
-async def mark_insights(doc_id: str) -> dict:
+async def mark_insights(doc_id: str, level: str = "") -> dict:
     """Chọn ra những câu đáng nhớ trong bản dịch, kèm lý do. Một lượt gọi model.
 
     Đi sau `cached_prefix(doc)` nên toàn văn bài gốc gần như miễn phí — model cần
@@ -833,8 +833,9 @@ async def mark_insights(doc_id: str) -> dict:
     # Giữ lại tóm lược và bảng thuật ngữ (vài trăm token) vì chúng cho model biết
     # bài này rốt cuộc tranh luận điều gì, tức đúng thứ cần để chọn câu nào đáng
     # nhớ. Bỏ toàn văn gốc: bản dịch đã mang trọn nội dung đó.
+    budget = prompts.insight_budget(len(items), level or prompts.INSIGHT_DEFAULT)
     msgs = [
-        llm.system_message("", _insight_context(doc) + prompts.INSIGHT_TASK,
+        llm.system_message("", _insight_context(doc) + prompts.insight_task(budget),
                            model=doc["model"]),
         {"role": "user", "content": prompts.insight_user(items)},
     ]
@@ -843,7 +844,11 @@ async def mark_insights(doc_id: str) -> dict:
         # Tắt hẳn nghĩ thầm, cùng lý do với `explain_block`: độ sâu ở đây đến từ
         # bảng hạn mức và danh sách "không đánh dấu" trong `INSIGHT_TASK`, không
         # đến từ token nghĩ thầm — mà nghĩ thầm thì tranh chỗ với phần cần viết.
-        max_tokens=6000, temperature=0.2, reasoning=NO_REASONING)
+        # Trần đầu ra co theo ngân sách: mỗi vệt tốn ~90 token (câu trích + lý
+        # do). Mức "dày" trên bài dài ra 74 vệt, tức ~6.700 token — trần cứng
+        # 6.000 của bản đầu sẽ cắt cụt JSON và mất trắng cả lượt gọi.
+        max_tokens=min(24000, 2000 + budget["total"] * 130),
+        temperature=0.2, reasoning=NO_REASONING)
 
     data = llm.extract_json(raw)
     if not isinstance(data, dict):
@@ -851,6 +856,7 @@ async def mark_insights(doc_id: str) -> dict:
 
     by_id = {it["id"]: it["vi"] for it in items}
     dem: dict[str, int] = {}
+    da_lay: dict[str, list[tuple[int, int]]] = {}
     marks: list[dict] = []
     bo: list[str] = []
     for m in (data.get("marks") or []):
@@ -864,20 +870,32 @@ async def mark_insights(doc_id: str) -> dict:
         if quote not in by_id[bid]:
             bo.append(f"{bid}: câu trích không có trong bản dịch")
             continue
-        # hạn mức theo loại — xem bảng trong `INSIGHT_TASK`
-        tran = {"claim": 2, "mechanism": 5, "evidence": 4, "limit": 3, "term": 4}
-        if dem.get(kind, 0) >= tran[kind]:
+        # hạn mức theo loại, co theo độ dài bài — xem `prompts.insight_budget`
+        if dem.get(kind, 0) >= budget["per_kind"][kind]:
             continue
+        # Hai câu trích CHỒNG nhau trong cùng một khối thì `wrapRange` lồng thẻ
+        # `<mark>` vào nhau và vệt bôi hiện ra sai. Ở mức "vừa" trên bài 149 đoạn
+        # đã có 5 khối mang từ hai vệt trở lên, nên đây là chuyện sẽ tới.
+        #
+        # So trên chuỗi THÔ chỉ để phát hiện chồng lấn — không dùng làm toạ độ
+        # vệt bôi, vì toạ độ phải tính trên chữ đã dựng (xem docstring).
+        d0 = by_id[bid].find(quote)
+        d1 = d0 + len(quote)
+        if any(d0 < e and d1 > b for b, e in da_lay.get(bid, [])):
+            bo.append(f"{bid}: câu trích chồng lên một vệt đã chọn")
+            continue
+        da_lay.setdefault(bid, []).append((d0, d1))
         dem[kind] = dem.get(kind, 0) + 1
         color, nhan = prompts.INSIGHT_KINDS[kind]
         marks.append({"block": bid, "kind": kind, "label": nhan, "color": color,
                       "quote": quote, "why": (m.get("why") or "").strip()[:400]})
-        if len(marks) >= prompts.INSIGHT_MAX:
+        if len(marks) >= budget["total"]:
             break
 
     return {
         "marks": marks,
         "skipped": bo,
+        "budget": budget["total"],
         "run": usage.dict(),
         "usage": _bump_usage(doc_id, json.dumps(usage.dict())),
     }

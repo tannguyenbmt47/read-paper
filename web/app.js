@@ -1075,6 +1075,8 @@ function wireReader() {
   };
 
   $("#insightBtn").onclick = markInsights;
+  const lv = $("#insightLevel");
+  if (lv) lv.value = pref("insightlevel", "vua");
 
   $("#rebriefBtn").onclick = async () => {
     const btn = $("#rebriefBtn");
@@ -2070,18 +2072,29 @@ function insightOffsets(cell, quote) {
 
 async function markInsights() {
   const btn = $("#insightBtn");
-  if (!confirm("Đánh dấu những câu đáng nhớ trong bản dịch?\n\n"
-    + "Tốn một lượt gọi model — đo trên bài 45 nghìn ký tự: khoảng $0,06.\n\n"
-    + "Nó chọn tối đa 18 câu cho cả bài, cố ý THƯA: bôi vàng cả trang thì không "
-    + "còn gì nổi lên. Mỗi câu kèm một dòng nói vì sao chỗ đó đáng nhớ, và màu "
-    + "cho biết loại — tím là luận điểm, xanh dương là cơ chế, xanh lá là số "
-    + "liệu, hồng là giới hạn, vàng là khái niệm.\n\n"
-    + "Vệt bôi bạn tự tô từ trước vẫn giữ nguyên.")) return;
+  // Ước lượng số vệt ngay trong câu hỏi, để người dùng biết mình sắp nhận gì —
+  // "bạn có chắc không" mà không kèm con số thì họ không có cơ sở nào để chắc.
+  const moi = { thua: 10, vua: 4, day: 2 }[$("#insightLevel")?.value || "vua"];
+  const nPara = (state.doc.blocks || []).filter(
+    (b) => (b.type === "para" || b.type === "caption")
+        && (state.doc.translations || {})[b.id]).length;
+  const uoc = Math.max(6, Math.min(90, Math.floor(nPara / moi)));
+  if (!confirm(`Đánh dấu những câu đáng nhớ trong bản dịch?\n\n`
+    + `Bài này có ${nPara} đoạn đã dịch, mật độ đang chọn cho ra khoảng `
+    + `${uoc} câu.\n\nTốn một lượt gọi model — đo trên bài 149 đoạn: `
+    + `$0,02 ở mức thưa, $0,08 ở mức vừa, khoảng gấp đôi thế ở mức dày.\n\n`
+    + `Mỗi câu kèm một dòng nói vì sao chỗ đó đáng nhớ, và màu cho biết loại — `
+    + `tím là luận điểm, xanh dương là cơ chế, xanh lá là số liệu, hồng là giới `
+    + `hạn, vàng là khái niệm.\n\nVệt bôi bạn tự tô từ trước vẫn giữ nguyên.`)) return;
   btn.disabled = true;
   const old = btn.textContent;
   btn.textContent = "Đang đọc lại bài…";
   try {
-    const r = await fetch(`/api/doc/${state.doc.id}/insights`, { method: "POST" });
+    const muc = $("#insightLevel")?.value || "vua";
+    setPref("insightlevel", muc);
+    const r = await fetch(
+      `/api/doc/${state.doc.id}/insights?level=${encodeURIComponent(muc)}`,
+      { method: "POST" });
     if (!r.ok) throw new Error((await r.json()).detail || "không đánh dấu được");
     const res = await r.json();
 
@@ -2093,14 +2106,16 @@ async function markInsights() {
       const cell = $(`#p-${CSS.escape(m.block)} [data-vi]`);
       const pos = cell && insightOffsets(cell, m.quote);
       if (!pos) { hut.push(m.block); continue; }
-      add.push({ block: m.block, col: "vi", color: m.color,
+      add.push({ block: m.block, col: "vi", color: m.color, auto: true,
                  start: pos.start, end: pos.end, text: pos.text,
                  note: `${m.label} — ${m.why}` });
     }
     if (add.length) {
       const w = await fetch(`/api/doc/${state.doc.id}/highlights`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ add_many: add }),
+        // `replace_auto`: bấm lần hai thì thay chỗ cũ chứ không cộng dồn.
+        // Vệt người dùng tự tô không mang cờ `auto` nên không bị đụng.
+        body: JSON.stringify({ add_many: add, replace_auto: true }),
       });
       if (!w.ok) throw new Error((await w.json()).detail || "không lưu được vệt bôi");
       state.doc.highlights = (await w.json()).highlights;

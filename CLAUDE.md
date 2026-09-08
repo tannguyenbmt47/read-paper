@@ -927,15 +927,44 @@ cần nhớ, mỗi câu kèm một dòng nói **vì sao**. Năm loại ánh xạ
 `limit` hồng · `term` vàng. Màu trả lời được câu "vì sao câu này đáng nhớ" ngay
 khi liếc qua, nên hai loại trùng màu là mất thông tin — có test canh.
 
-**`INSIGHT_MAX = 18` là con số có bằng chứng, không phải khẩu vị.** Dunlosky và
-cộng sự (2013) xếp bôi vàng vào nhóm *lợi ích thấp* — nhưng lý do là người học
-bôi **thụ động và bôi quá nhiều**; ai chỉ đánh dấu một hai câu mỗi đoạn thì hơn
-hẳn người bôi vàng cả trang. Giá trị nằm ở chỗ **thưa** và ở chỗ **ghi lý do**,
-không ở việc bôi. Bài thật có 60–150 đoạn đã dịch, nên 18 vệt là khoảng một vệt
-mỗi mười đoạn. **Nới trần là đi ngược lý do tính năng tồn tại.**
+**Số vệt co theo độ dài bài, và bản đầu đã đọc sai bằng chứng.** Dunlosky và
+cộng sự (2013) xếp bôi vàng vào nhóm *lợi ích thấp*, nhưng lý do là người học bôi
+**thụ động và bôi quá nhiều**. Trong chính nghiên cứu ấy, mức được đo là **hiệu
+quả** là *một hai câu mỗi đoạn*; cái thất bại là *bôi vàng cả trang*.
+
+Bản đầu lẫn hai chuyện đó: nó lấy "đừng bôi cả trang" rồi suy thành "càng ít càng
+tốt", đặt trần cứng 18 vệt. Trên bài 149 đoạn đã dịch, con số đó ra **một vệt mỗi
+11 đoạn** — thưa hơn mức tốt cả chục lần — và người dùng nói ngay là quá ít. Bài
+học: **trích một nghiên cứu thì phải trích cả chiều nó cảnh báo lẫn chiều nó đo
+được là tốt**, chứ lấy mỗi chiều cảnh báo là siết nhầm.
+
+Nên `insight_budget(n_para, level)` cho **một vệt mỗi N đoạn**, N do người dùng
+chọn: `thua` 10 · `vua` 4 (mặc định) · `day` 2. Đo trên 6 bài trong `data/` (61–149
+đoạn): thưa 6–14 vệt · vừa 15–37 · dày 30–74. `INSIGHT_MIX` chia hạn mức theo
+loại; `mechanism` được phần lớn nhất (34%) vì bài phương pháp có nhiều câu cơ chế
+nhất và đó cũng là thứ người đọc hay bỏ lỡ.
+
+Một bẫy nhỏ của chính phép chia: **làm tròn có thể ăn hụt**. Ở mức dày trên bài
+149 đoạn, hạn mức các loại cộng lại ra 73 trong khi trần là 74 — tức trần không
+bao giờ đạt được. Phần thiếu bù vào loại có tỉ trọng lớn nhất; có test canh.
 
 Vì thế trường `why` mới là phần có giá trị, và prompt đòi nó nói điều mà **chính
 câu được trích không nói ra** — chép lại ý câu trích là bỏ phí.
+
+**Bấm lần hai phải THAY chỗ cũ, không cộng dồn.** Soát bằng trình duyệt thấy đúng
+câu đầu bài hiện ra hai lần. Vệt do máy đặt mang cờ `auto`, và `add_many` kèm
+`replace_auto` chỉ dọn đúng những vệt ấy — **vệt người dùng tự tô không bị đụng**,
+cùng lý do `mark_stale` chỉ gắn cờ chứ không xoá slide đã sửa tay.
+
+**Hai câu trích chồng nhau trong cùng một khối thì bỏ bớt một.** `wrapRange` sẽ
+lồng thẻ `<mark>` vào nhau và vệt hiện ra sai. Ở mức vừa trên bài 149 đoạn đã có
+5 khối mang từ hai vệt trở lên, nên đây là chuyện sẽ tới. So chồng lấn trên chuỗi
+**thô** chỉ để phát hiện — không dùng làm toạ độ, vì toạ độ phải tính trên chữ đã
+dựng (xem dưới).
+
+Trần đầu ra cũng phải co theo: mỗi vệt tốn ~90 token, nên mức dày trên bài dài ra
+~6.700 token và trần cứng 6.000 của bản đầu sẽ **cắt cụt JSON, mất trắng cả lượt
+gọi**.
 
 **Pass này cố ý KHÔNG dùng `cached_prefix`.** Prefix chứa toàn văn bài *gốc*, mà
 phần `user` đã là bản *dịch* của đúng bài ấy — gửi cả hai là gửi cùng một bài hai
@@ -944,7 +973,8 @@ lần. Đo trên CIRAG: prefix 23.722 token + bản dịch 15.755 token, và
 rơi khỏi cửa sổ cache (đúng cái bẫy đã ghi cho `explain_block`). Bỏ prefix, giữ
 lại tóm lược + bảng thuật ngữ (`_insight_context`, vài trăm token) vì đó mới là
 thứ cho biết bài tranh luận điều gì: **39.477 → 17.867 token, $0,102 → $0,021**,
-chất lượng không đổi.
+chất lượng không đổi. (Con số $0,021 là ở mức thưa; mức vừa đo được $0,077 vì
+phần đầu ra nhiều gấp đôi.)
 
 **Server KHÔNG tự ghi vệt bôi, và không được tự tính `start`/`end`.** Vệt bôi neo
 theo khoảng ký tự trong **chữ đã dựng** của một ô, mà `sci()` biến `^{N}` thành
@@ -959,7 +989,7 @@ neo đúng.
 
 Chốt chặn: **`quote` phải có mặt nguyên văn trong bản dịch của đúng khối đó**,
 nếu không thì bỏ và **nói ra số câu bị bỏ** — người dùng đã trả tiền, im lặng là
-họ không biết mất gì. Đo thật: 13 câu giữ, 1 câu bị loại.
+họ không biết mất gì. Đo thật ở mức vừa: 30 câu giữ, 1 câu bị loại.
 
 Và một bẫy chung cho **mọi** pass trả JSON: **model trích nguyên văn câu có LaTeX
 thì làm hỏng JSON.** `\(`, `\tilde`, `\{` không phải escape hợp lệ, `json.loads`

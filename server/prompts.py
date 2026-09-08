@@ -1289,16 +1289,52 @@ Cách trả lời:
 
 # ------------------------------------ pass 5: đánh dấu câu chốt trong bài dịch
 
-# Ngân sách vệt bôi, và đây là **con số có bằng chứng đứng sau, không phải khẩu
-# vị**. Dunlosky và cộng sự (2013) xếp bôi vàng vào nhóm *lợi ích thấp* — nhưng
-# lý do là người học bôi **thụ động và bôi quá nhiều**; ai chỉ đánh dấu một hai
-# câu mỗi đoạn thì hơn hẳn người bôi vàng cả trang. Tức giá trị nằm ở chỗ **thưa**
-# và ở chỗ **ghi lý do**, không nằm ở việc bôi.
+# Mật độ vệt bôi: **một vệt mỗi N đoạn đã dịch**, người dùng chọn.
 #
-# Bài thật có 60–150 đoạn đã dịch (đo trên 6 bài trong `data/`). Một vệt mỗi đoạn
-# là đúng cái thất bại mà nghiên cứu mô tả, nên trần đặt theo LOẠI chứ không theo
-# số đoạn: tổng 8–18 vệt cho cả bài, tức khoảng một vệt mỗi mười đoạn.
-INSIGHT_MAX = 18
+# Cơ sở: Dunlosky và cộng sự (2013) xếp bôi vàng vào nhóm *lợi ích thấp*, nhưng
+# lý do là người học bôi **thụ động và bôi quá nhiều**. Mức được đo là **hiệu
+# quả** trong chính nghiên cứu đó là *một hai câu mỗi đoạn*; cái thất bại là
+# *bôi vàng cả trang*. Hai chuyện đó khác nhau, và bản đầu của tính năng này đã
+# lẫn chúng: trần cứng 18 vệt cho bài 149 đoạn ra **một vệt mỗi 11 đoạn**, thưa
+# hơn mức tốt cả chục lần, và người dùng nói ngay là quá ít.
+#
+# Nên trần **co theo độ dài bài**, không phải số cứng. Đo trên 6 bài trong
+# `data/` (61–149 đoạn đã dịch): thưa 6–14 vệt · vừa 15–37 · dày 30–74.
+INSIGHT_LEVELS = {
+    "thua": (10, "thưa"),
+    "vua":  (4,  "vừa"),
+    "day":  (2,  "dày"),
+}
+INSIGHT_DEFAULT = "vua"
+
+# Sàn và trần tuyệt đối. Sàn để bài ngắn vẫn có gì đó; trần vì quá vài chục vệt
+# thì vừa hết ý nghĩa vừa đụng giới hạn đầu ra của một lượt gọi.
+INSIGHT_MIN, INSIGHT_CAP = 6, 90
+
+# Tỉ lệ giữa các loại, cộng lại bằng 1. Nhân với ngân sách để ra hạn mức từng
+# loại. `mechanism` được phần lớn nhất vì bài phương pháp — loại bài công cụ này
+# phục vụ — có nhiều câu cơ chế nhất, và đó cũng là thứ người đọc hay bỏ lỡ.
+INSIGHT_MIX = {"claim": .10, "mechanism": .34, "evidence": .26,
+               "limit": .12, "term": .18}
+
+
+def insight_budget(n_para: int, level: str = INSIGHT_DEFAULT) -> dict:
+    """Ngân sách vệt bôi cho bài có `n_para` đoạn đã dịch.
+
+    Trả `{"total": int, "per_kind": {loại: int}}`. Hạn mức từng loại làm tròn lên
+    để loại nào cũng được ít nhất một suất ở bài ngắn.
+    """
+    moi, _ = INSIGHT_LEVELS.get(level, INSIGHT_LEVELS[INSIGHT_DEFAULT])
+    total = max(INSIGHT_MIN, min(INSIGHT_CAP, n_para // moi))
+    per = {k: max(1, round(total * w)) for k, w in INSIGHT_MIX.items()}
+    # Làm tròn có thể ăn hụt: ở mức dày trên bài 149 đoạn, các loại cộng lại ra
+    # 73 trong khi trần là 74 — tức trần không bao giờ đạt được. Bù phần thiếu
+    # vào loại có tỉ trọng lớn nhất.
+    lon_nhat = max(INSIGHT_MIX, key=lambda k: INSIGHT_MIX[k])
+    thieu = total - sum(per.values())
+    if thieu > 0:
+        per[lon_nhat] += thieu
+    return {"total": total, "per_kind": per}
 
 # Năm loại, ánh xạ đúng năm màu đã có (`HL_COLORS`). Có loại thì vệt bôi thôi là
 # một mảng màu vô nghĩa — nó trả lời được câu "vì sao câu này đáng nhớ".
@@ -1318,24 +1354,25 @@ Toàn văn bài gốc nằm ở trên. Người dùng gửi kèm **bản dịch 
 khối. Việc của bạn là chọn ra những câu mà một người đọc xong bài **cần nhớ**, và
 với mỗi câu, nói **vì sao nó đáng nhớ**.
 
-### Chọn ít, và đó là điểm mấu chốt
+### Ngân sách
 
-Tối đa **{INSIGHT_MAX} câu cho cả bài**, và bài nào ít ý thì chọn ít hơn. Bài
-điển hình có hơn một trăm đoạn, nên đây là khoảng **một câu mỗi mười đoạn**.
+Chọn khoảng **{TOTAL} câu cho cả bài**, và **không quá {TOTAL} câu**. Bài ít ý thì
+chọn ít hơn — đủ số không phải là mục tiêu.
 
-Đánh dấu nhiều là **hỏng hẳn mục đích**, không phải "được thêm": khi mọi thứ đều
-được tô thì không còn gì nổi lên, và người đọc quay lại chỉ thấy một trang vàng
-khè. Nếu phân vân giữa hai câu, chọn một.
+Đánh dấu **quá tay** thì hỏng mục đích: khi mọi thứ đều được tô thì không còn gì
+nổi lên. Nhưng đánh dấu **quá ít** cũng hỏng, vì người đọc quay lại không tìm thấy
+thứ mình cần. Phân vân giữa hai câu nói cùng một ý thì chọn câu rõ hơn; hai câu
+nói hai ý khác nhau thì lấy cả hai.
 
 ### Năm loại, mỗi loại một hạn mức
 
 | loại | chọn câu nào | tối đa |
 |---|---|---|
-| `claim` | điều bài **khẳng định** — luận điểm chính, không phải mô tả chủ đề | 2 |
-| `mechanism` | câu nói **bằng cách nào** nó chạy được, hoặc **vì sao** cách đó hiệu quả | 5 |
-| `evidence` | con số quyết định, kèm điều nó chứng minh | 4 |
-| `limit` | chỗ bài tự nhận không làm được, hoặc điều kiện phải có mới đúng | 3 |
-| `term` | định nghĩa của một khái niệm mà cả bài về sau đều dựa vào | 4 |
+| `claim` | điều bài **khẳng định** — luận điểm chính, không phải mô tả chủ đề | {CLAIM} |
+| `mechanism` | câu nói **bằng cách nào** nó chạy được, hoặc **vì sao** cách đó hiệu quả | {MECHANISM} |
+| `evidence` | con số quyết định, kèm điều nó chứng minh | {EVIDENCE} |
+| `limit` | chỗ bài tự nhận không làm được, hoặc điều kiện phải có mới đúng | {LIMIT} |
+| `term` | định nghĩa của một khái niệm mà cả bài về sau đều dựa vào | {TERM} |
 
 ### Không đánh dấu
 
@@ -1371,7 +1408,14 @@ Chỉ trả lời bằng một object JSON hợp lệ, không kèm lời dẫn, 
    "why": "một câu: vì sao chỗ này đáng nhớ, nói điều mà chính câu đó không nói"}
 ]}
 """
-INSIGHT_TASK = INSIGHT_TASK.replace("{INSIGHT_MAX}", str(INSIGHT_MAX))
+
+
+def insight_task(budget: dict) -> str:
+    """`INSIGHT_TASK` với hạn mức đã điền theo độ dài bài."""
+    out = INSIGHT_TASK.replace("{TOTAL}", str(budget["total"]))
+    for k, v in budget["per_kind"].items():
+        out = out.replace("{" + k.upper() + "}", str(v))
+    return out
 
 
 def insight_user(items: list[dict]) -> str:

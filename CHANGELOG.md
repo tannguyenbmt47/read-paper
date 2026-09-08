@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.17.1
+
+**Thirteen highlights on a 149-paragraph paper was too few, and the reasoning
+behind that number was a misreading.** Dunlosky et al. (2013) rate highlighting
+low utility because students highlight passively and highlight *too much*; the
+level that measured as effective in that same work is one or two sentences per
+paragraph, and painting whole pages is the failure. The first version collapsed
+those two into "less is better" and set a flat cap of eighteen — about one mark
+every eleven paragraphs, roughly ten times sparser than the effective end.
+
+The budget now scales with the paper and the density is the reader's to choose:
+sparse (one per ten paragraphs), medium (one per four, the default), or dense
+(one per two). Across the six papers on disk that comes to 6–14, 15–37 and 30–74
+marks. Measured on the 149-paragraph paper, medium returns 30 marks over 23
+distinct blocks for $0.077, against 13 before.
+
+Three things that only showed up once the marks got denser. Pressing the button
+twice used to duplicate every mark; auto-placed highlights now carry a flag and a
+second run replaces only those, leaving anything highlighted by hand untouched.
+Two quotes overlapping inside one block would have nested `<mark>` elements and
+rendered wrong — at medium density five blocks already carry two or more marks,
+so the pass now drops the later of any overlapping pair. And the output ceiling
+had to scale too: at roughly 90 tokens per mark, dense on a long paper needs
+~6,700, where the old fixed 6,000 would have truncated the JSON and lost the
+whole paid-for call.
+
+A rounding bug the tests caught: per-kind caps summed to 73 against a total of 74,
+so the budget was unreachable by one. The shortfall now goes to the largest share.
+
 ## 1.17.0
 
 **The reader can now have the paper's key sentences marked for it.** A new button

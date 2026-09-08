@@ -1020,12 +1020,37 @@ def test_loai_cau_dang_nho_khop_bang_mau_ve_boi():
     mau = [v[0] for v in prompts.INSIGHT_KINDS.values()]
     assert len(mau) == len(set(mau)), "hai loại dùng chung một màu"
     assert set(mau) <= set(HL_COLORS), f"màu lạ: {set(mau) - set(HL_COLORS)}"
-    # hạn mức từng loại phải cộng lại không vượt trần cả bài
-    tran = {"claim": 2, "mechanism": 5, "evidence": 4, "limit": 3, "term": 4}
-    assert set(tran) == set(prompts.INSIGHT_KINDS)
-    assert sum(tran.values()) >= prompts.INSIGHT_MAX
+    assert set(prompts.INSIGHT_MIX) == set(prompts.INSIGHT_KINDS)
+    assert abs(sum(prompts.INSIGHT_MIX.values()) - 1) < 1e-9, "tỉ lệ loại phải cộng bằng 1"
 
-    # Trần phải THƯA. Bài thật có 60–150 đoạn đã dịch; Dunlosky 2013 xếp bôi vàng
-    # vào nhóm lợi ích thấp chính vì người ta bôi quá nhiều, nên nới trần ở đây là
-    # đi ngược lý do tính năng tồn tại.
-    assert prompts.INSIGHT_MAX <= 20
+
+def test_ngan_sach_vet_boi_co_theo_do_dai_bai():
+    """Số vệt phải co theo độ dài bài, không phải một con số cứng.
+
+    Bản đầu đặt trần cứng 18 vệt. Trên bài 149 đoạn đã dịch, con số đó ra **một
+    vệt mỗi 11 đoạn** — và người dùng nói ngay là quá ít. Đọc lại đúng nghiên cứu
+    đã trích: mức được đo là **hiệu quả** là *một hai câu mỗi đoạn*, còn cái thất
+    bại là *bôi vàng cả trang*. Bản đầu lẫn hai chuyện đó và siết nhầm.
+
+    Đo trên 6 bài trong `data/` (61–149 đoạn): thưa 6–14 · vừa 15–37 · dày 30–74.
+    """
+    from server import prompts
+
+    n = 149                                     # bài CIRAG
+    b = {lv: prompts.insight_budget(n, lv)["total"] for lv in prompts.INSIGHT_LEVELS}
+    assert b["thua"] < b["vua"] < b["day"], "ba mức phải tăng dần"
+    assert b["vua"] == 37 and b["day"] == 74
+
+    # bài ngắn vẫn phải có gì đó, bài dài không được phình vô hạn
+    assert prompts.insight_budget(3, "thua")["total"] == prompts.INSIGHT_MIN
+    assert prompts.insight_budget(100000, "day")["total"] == prompts.INSIGHT_CAP
+
+    # hạn mức từng loại cộng lại phải đủ để đạt trần, và loại nào cũng có suất
+    for lv in prompts.INSIGHT_LEVELS:
+        bd = prompts.insight_budget(n, lv)
+        assert sum(bd["per_kind"].values()) >= bd["total"]
+        assert all(v >= 1 for v in bd["per_kind"].values())
+
+    # mọi chỗ trống trong prompt phải được điền
+    import re
+    assert not re.findall(r"\{[A-Z_]+\}", prompts.insight_task(prompts.insight_budget(n)))

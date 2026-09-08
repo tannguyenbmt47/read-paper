@@ -405,6 +405,9 @@ def test_khong_o_chon_nao_bi_long_trong_label(app_client):
     import re
     from pathlib import Path
     html = Path(__file__).resolve().parents[1].joinpath("web/index.html").read_text()
+    # Bỏ comment TRƯỚC khi quét: comment không phải markup, mà chính chỗ giải
+    # thích luật này lại nhắc tới thẻ `<select>` nên tự làm phép kiểm báo sai.
+    html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
 
     long_nhau = []
     for m in re.finditer(r"<label[^>]*>((?:(?!</label>).)*?)</label>", html, re.S):
@@ -830,3 +833,42 @@ def test_danh_dau_cau_dang_nho_bao_loi_ro(app_client, doc):
     assert r.status_code == 400
     assert "dịch" in r.json()["detail"]
     assert app_client.post("/api/doc/khongcobai/insights").status_code == 404
+
+
+def test_danh_dau_lai_thay_cho_cu_nhung_giu_vet_nguoi_dung(app_client, doc):
+    """Bấm nút đánh dấu lần hai phải THAY chỗ cũ, không cộng dồn.
+
+    Đã thấy thật khi soát bằng trình duyệt: chạy hai lượt thì đúng câu đầu bài
+    hiện ra hai lần. Nhưng chỉ được dọn vệt do MÁY đặt — vệt người dùng tự tô là
+    công sức của họ, cùng lý do `mark_stale` chỉ gắn cờ chứ không xoá slide đã
+    sửa tay.
+    """
+    did = doc["id"]
+    bid = doc["blocks"][0]["id"]
+    # Fixture `doc` dùng chung cả module nên đã có vệt của test khác — so theo
+    # MỐC chứ không so số tuyệt đối.
+    def dem():
+        h = app_client.get(f"/api/doc/{did}").json().get("highlights") or {}
+        v = [x for lst in h.values() for x in lst]
+        return sum(1 for x in v if x.get("auto")), sum(1 for x in v if not x.get("auto"))
+
+    _, tay_truoc = dem()
+    r = app_client.patch(f"/api/doc/{did}/highlights", json={"add": {
+        "block": bid, "col": "vi", "start": 0, "end": 4, "text": "tay"}})
+    assert r.status_code == 200
+    tay = r.json()["new"]["id"]
+
+    # lượt máy đánh dấu thứ nhất
+    app_client.patch(f"/api/doc/{did}/highlights", json={"replace_auto": True, "add_many": [
+        {"block": bid, "col": "vi", "start": 10, "end": 15, "auto": True},
+        {"block": bid, "col": "vi", "start": 20, "end": 25, "auto": True}]})
+    # lượt thứ hai
+    r2 = app_client.patch(f"/api/doc/{did}/highlights", json={"replace_auto": True, "add_many": [
+        {"block": bid, "col": "vi", "start": 30, "end": 35, "auto": True}]})
+    assert r2.status_code == 200
+
+    tat_ca = [h for lst in r2.json()["highlights"].values() for h in lst]
+    may, tay_sau = dem()
+    assert may == 1, f"vệt máy bị cộng dồn: {may}"
+    assert tay_sau == tay_truoc + 1, "vệt người dùng tự tô bị đụng tới"
+    assert any(h["id"] == tay and not h.get("auto") for h in tat_ca), "mất vệt vừa tô tay"

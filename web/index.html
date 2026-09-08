@@ -302,8 +302,18 @@
                 title="Vẽ lại mọi ảnh đã cắt từ PDF gốc, theo đúng khung đã lưu. MIỄN PHÍ — không gọi model. Khối, bản dịch, ghi chú, vệt bôi đều không bị chạm: chỉ pixel được vẽ lại. Dùng khi ảnh mờ (bài nạp trước bản nâng độ nét) hoặc khi một khối hiện ô trống vì mất file ảnh.">
           Cắt lại ảnh cho nét (miễn phí)
         </button>
+        <!-- Nhãn đứng riêng, nối bằng `for=`: `<select>` lồng trong `<label>`
+             thì dropdown mở ra đóng lại ngay, xem mục riêng trong CLAUDE.md. -->
+        <div class="fld">
+          <label for="insightLevel">Mật độ đánh dấu</label>
+          <select id="insightLevel" class="input input-sm">
+            <option value="thua">Thưa — 1 câu mỗi 10 đoạn</option>
+            <option value="vua" selected>Vừa — 1 câu mỗi 4 đoạn</option>
+            <option value="day">Dày — 1 câu mỗi 2 đoạn</option>
+          </select>
+        </div>
         <button id="insightBtn" class="btn btn-sm"
-                title="Đọc lại bản dịch và bôi vàng những câu đáng nhớ, mỗi câu kèm một dòng nói vì sao. Tốn một lượt gọi model — đo trên bài 45 nghìn ký tự: khoảng $0,06. Cố ý chọn THƯA, tối đa 18 câu cho cả bài, vì bôi vàng cả trang thì không còn gì nổi lên. Màu cho biết loại: tím = luận điểm, xanh dương = cơ chế, xanh lá = số liệu, hồng = giới hạn, vàng = khái niệm. Vệt bôi bạn tự tô vẫn giữ nguyên.">
+                title="Đọc lại bản dịch và bôi vàng những câu đáng nhớ, mỗi câu kèm một dòng nói vì sao. Số vệt co theo độ dài bài và theo mật độ chọn ở trên. Tốn một lượt gọi model — đo trên bài 149 đoạn: $0,02 ở mức thưa, $0,08 ở mức vừa, và khoảng gấp đôi thế ở mức dày. Màu cho biết loại: tím = luận điểm, xanh dương = cơ chế, xanh lá = số liệu, hồng = giới hạn, vàng = khái niệm. Vệt bôi bạn tự tô vẫn giữ nguyên.">
           Đánh dấu câu đáng nhớ
         </button>
         <button id="rebriefBtn" class="btn btn-sm hidden"

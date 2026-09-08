@@ -17,7 +17,7 @@ from fastapi import Response  # noqa: E402
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from . import db, layout, llm, parser, pipeline, store  # noqa: E402
+from . import db, layout, llm, parser, pipeline, prompts, store  # noqa: E402
 from . import slide_theme as theme  # noqa: E402
 from . import slide_fit  # noqa: E402
 
@@ -1241,7 +1241,7 @@ async def retranslate(doc_id: str, block_id: str, body: dict = Body(default={}))
 
 
 @app.post("/api/doc/{doc_id}/insights")
-async def insights(doc_id: str):
+async def insights(doc_id: str, level: str = ""):
     """Chọn câu đáng nhớ trong bản dịch. Tốn một lượt gọi model.
 
     Trả về **ứng viên**, không tự ghi vệt bôi: chỉ tầng hiển thị mới neo được
@@ -1249,7 +1249,9 @@ async def insights(doc_id: str):
     `PATCH …/highlights` với `add_many`.
     """
     try:
-        return await pipeline.mark_insights(doc_id)
+        if level and level not in prompts.INSIGHT_LEVELS:
+            raise HTTPException(400, "Mật độ phải là thua, vua hoặc day")
+        return await pipeline.mark_insights(doc_id, level)
     except KeyError:
         raise HTTPException(404, "Không tìm thấy tài liệu")
     except ValueError as e:
@@ -1314,6 +1316,15 @@ async def edit_highlights(doc_id: str, body: dict = Body(...)):
     # lần là 18 lượt `store.save(doc)` ghi lại nguyên cả tài liệu.
     if (many := body.get("add_many")) is not None:
         ids = {b["id"] for b in doc["blocks"]}
+        # Bấm nút đánh dấu lần hai thì phải THAY chỗ cũ, không cộng dồn — đã thấy
+        # đúng câu đầu bài hiện ra hai lần. Nhưng chỉ dọn vệt do MÁY đặt (`auto`):
+        # vệt người dùng tự tô là công sức của họ, cùng lý do `mark_stale` chỉ gắn
+        # cờ chứ không xoá slide đã sửa tay.
+        if body.get("replace_auto"):
+            for bid in list(hl):
+                hl[bid] = [h for h in hl[bid] if not h.get("auto")]
+                if not hl[bid]:
+                    del hl[bid]
         used = {h["id"] for h in _hl_all(doc)}
         n, them = 1, []
         for a in (many if isinstance(many, list) else [])[:100]:
@@ -1330,6 +1341,7 @@ async def edit_highlights(doc_id: str, body: dict = Body(...)):
                     "start": start, "end": end,
                     "text": (a.get("text") or "")[:2000],
                     "note": (a.get("note") or "")[:4000],
+                    "auto": bool(a.get("auto")),
                     "created_at": time.time()}
             hl.setdefault(bid, []).append(item)
             them.append(item)
