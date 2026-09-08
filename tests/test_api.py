@@ -872,3 +872,28 @@ def test_danh_dau_lai_thay_cho_cu_nhung_giu_vet_nguoi_dung(app_client, doc):
     assert may == 1, f"vệt máy bị cộng dồn: {may}"
     assert tay_sau == tay_truoc + 1, "vệt người dùng tự tô bị đụng tới"
     assert any(h["id"] == tay and not h.get("auto") for h in tat_ca), "mất vệt vừa tô tay"
+
+
+def test_vot_lai_marks_khi_dau_ra_bi_cat_cut():
+    """JSON cắt cụt thì vớt những mục đã trọn vẹn, đừng vứt cả lượt gọi.
+
+    Pass đánh dấu trả về một DANH SÁCH, nên mất phần đuôi chỉ là ít vệt hơn —
+    khác hẳn pass trả về một object phải nguyên vẹn. Đã cắt cụt thật: bài 162
+    đoạn ở mức vừa (40 vệt) vượt trần 6.000 token sau 94 giây, và toàn bộ lượt
+    gọi đã trả tiền mất trắng.
+    """
+    from server.pipeline import _vot_marks
+
+    cut = ('{"marks":[{"block":"b1","kind":"claim","quote":"câu một","why":"vì"},'
+           '{"block":"b2","kind":"term","quote":"câu hai","why":"vì"},'
+           '{"block":"b3","kind":"limit","quote":"câu ba bị cắt')
+    m = _vot_marks(cut)
+    assert [x["quote"] for x in m] == ["câu một", "câu hai"]
+
+    # mục thiếu `quote` hoặc `block` thì không vớt — vớt vào cũng bị chốt chặn loại
+    assert _vot_marks('{"marks":[{"kind":"claim","why":"vì"}]}') == []
+    assert _vot_marks("hoàn toàn không phải JSON") == []
+
+    # và câu trích có LaTeX vẫn vớt được (cùng lý do với `llm._va_escape`)
+    m2 = _vot_marks(r'{"marks":[{"block":"b1","kind":"term","quote":"\(x\)","why":"v"}]}')
+    assert m2 and m2[0]["quote"] == r"\(x\)"

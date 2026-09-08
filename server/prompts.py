@@ -1311,6 +1311,15 @@ INSIGHT_DEFAULT = "vua"
 # thì vừa hết ý nghĩa vừa đụng giới hạn đầu ra của một lượt gọi.
 INSIGHT_MIN, INSIGHT_CAP = 6, 90
 
+# Trần cho MỘT khối: tối đa mấy vệt, và tối đa bao nhiêu phần trăm khối được tô.
+#
+# Ngân sách tổng không đủ để chặn chuyện này. Đo trên arXiv:2602.15922 ở mức vừa:
+# khối tóm tắt nhận **4 vệt phủ 93% khối** — cả đoạn bị bôi, tức đúng cái thất
+# bại mà nghiên cứu mô tả, chỉ là xảy ra ở mức đoạn thay vì mức trang. Đoạn nào
+# cũng có câu quan trọng hơn câu khác; tô hết là bỏ mất chính thông tin đó.
+INSIGHT_PER_BLOCK = 2
+INSIGHT_BLOCK_FRAC = 0.6
+
 # Tỉ lệ giữa các loại, cộng lại bằng 1. Nhân với ngân sách để ra hạn mức từng
 # loại. `mechanism` được phần lớn nhất vì bài phương pháp — loại bài công cụ này
 # phục vụ — có nhiều câu cơ chế nhất, và đó cũng là thứ người đọc hay bỏ lỡ.
@@ -1390,21 +1399,25 @@ sao chỗ đó quan trọng**. Nên `why` phải là **một câu** nói điều
 trích **không nói ra**: nó đổi điều gì, nó chống lại giả định nào, nó là bản lề
 cho phần nào sau đó. Chép lại ý câu trích là bỏ phí trường này.
 
-### Trích **nguyên văn**, và đây là ràng buộc cứng
+### `quote` chỉ là **mấy từ ĐẦU câu**, và phải chép đúng từng ký tự
 
-`quote` phải là một đoạn **chép đúng từng ký tự** từ bản dịch của khối đó — không
-sửa chính tả, không rút gọn, không thêm dấu ba chấm. Chép sai một ký tự là vệt
-bôi không neo được vào bài và bị bỏ.
+Đừng chép cả câu. Chép **6–12 từ đầu tiên** của câu bạn muốn đánh dấu, đúng từng
+ký tự như trong bản dịch của khối đó — công cụ sẽ tự nối tới hết câu.
 
-Trích **trọn câu**, không cắt giữa chừng. Câu dài quá thì chọn mệnh đề mang thông
-tin, nhưng vẫn phải là một chuỗi liền mạch có thật trong khối.
+Lý do: chép nguyên một câu dài từ giữa một khối văn bản lớn thì rất dễ lệch một
+chữ, mà lệch một chữ là vệt bôi không neo được và bị bỏ. Chép mấy từ đầu thì gần
+như không sai.
+
+- Bắt đầu **đúng từ đầu câu**, không bắt đầu từ giữa câu.
+- Không sửa chính tả, không đổi dấu, không thêm dấu ba chấm.
+- Đủ dài để không trùng với câu khác trong cùng khối.
 
 Chỉ trả lời bằng một object JSON hợp lệ, không kèm lời dẫn, không bọc trong ```.
 
 {"marks": [
   {"block": "b12",
    "kind": "mechanism",
-   "quote": "chép nguyên văn một câu trong bản dịch của khối b12",
+   "quote": "6-12 từ đầu của câu, chép đúng từng ký tự",
    "why": "một câu: vì sao chỗ này đáng nhớ, nói điều mà chính câu đó không nói"}
 ]}
 """

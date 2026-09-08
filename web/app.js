@@ -1077,6 +1077,11 @@ function wireReader() {
   $("#insightBtn").onclick = markInsights;
   const lv = $("#insightLevel");
   if (lv) lv.value = pref("insightlevel", "vua");
+  const au = $("#insightAuto");
+  if (au) {
+    au.checked = pref("insightauto", "1") === "1";
+    au.onchange = () => setPref("insightauto", au.checked ? "1" : "0");
+  }
 
   $("#rebriefBtn").onclick = async () => {
     const btn = $("#rebriefBtn");
@@ -2070,7 +2075,7 @@ function insightOffsets(cell, quote) {
   return start < 0 ? null : { start, end: start + can.length, text: can };
 }
 
-async function markInsights() {
+async function markInsights(tuDong = false) {
   const btn = $("#insightBtn");
   // Ước lượng số vệt ngay trong câu hỏi, để người dùng biết mình sắp nhận gì —
   // "bạn có chắc không" mà không kèm con số thì họ không có cơ sở nào để chắc.
@@ -2079,7 +2084,9 @@ async function markInsights() {
     (b) => (b.type === "para" || b.type === "caption")
         && (state.doc.translations || {})[b.id]).length;
   const uoc = Math.max(6, Math.min(90, Math.floor(nPara / moi)));
-  if (!confirm(`Đánh dấu những câu đáng nhớ trong bản dịch?\n\n`
+  // Chạy tự động thì KHÔNG hỏi lại: người dùng đã đồng ý một lần bằng ô tick,
+  // hỏi thêm ngay sau khi dịch xong là bắt họ bấm hai lần cho cùng một quyết định.
+  if (!tuDong && !confirm(`Đánh dấu những câu đáng nhớ trong bản dịch?\n\n`
     + `Bài này có ${nPara} đoạn đã dịch, mật độ đang chọn cho ra khoảng `
     + `${uoc} câu.\n\nTốn một lượt gọi model — đo trên bài 149 đoạn: `
     + `$0,02 ở mức thưa, $0,08 ở mức vừa, khoảng gấp đôi thế ở mức dày.\n\n`
@@ -2124,8 +2131,17 @@ async function markInsights() {
     reportCost(`Đã đánh dấu ${add.length} câu`, res.run, res.usage);
     // Câu model bịa hoặc chép sai một ký tự thì bị chốt chặn loại — nói ra chứ
     // đừng im lặng, nếu không người dùng trả tiền mà không biết đã mất gì.
+    // Nói ĐÚNG lý do: phần lớn câu bị bỏ là do trần "đừng tô quá nửa khối", chứ
+    // không phải model chép sai. Gộp hết thành "không khớp bản dịch" là đổ lỗi
+    // nhầm chỗ và làm người dùng tưởng bản dịch có vấn đề.
     const bo = (res.skipped || []).length + hut.length;
-    if (bo) status(`Đã đánh dấu ${add.length} câu · bỏ ${bo} câu không khớp bản dịch`);
+    if (bo) {
+      const dayKhoi = (res.skipped || []).filter((x) => /khối/.test(x)).length;
+      const lech = bo - dayKhoi;
+      status(`Đã đánh dấu ${add.length} câu · bỏ ${bo}`
+        + (dayKhoi ? ` (${dayKhoi} vì khối đó đã đủ vệt)` : "")
+        + (lech ? `${dayKhoi ? " và" : " ("}${lech} vì không khớp bản dịch)` : ""));
+    }
   } catch (e) {
     status("Lỗi: " + e.message);
   } finally {
@@ -3587,6 +3603,17 @@ async function runTranslate() {
       ? `Đã dừng ở phần ${stoppedAt + 1}/${state.chunks}${spent}.` +
         " Bấm Dịch tiếp để chạy nốt — phần đã xong không dịch lại."
       : `Dịch xong${spent}. Bấm 💡 trên từng đoạn để xem nó đang làm gì trong lập luận.`);
+
+    // Đánh dấu câu đáng nhớ ngay khi dịch xong CẢ bài — đây là thứ được yêu cầu
+    // từ đầu ("khi dịch nên có cơ chế bôi câu cần nhớ"), và làm nút bấm tay
+    // thôi thì người dùng dịch xong một bài rồi không thấy vệt nào.
+    //
+    // Ba điều kiện, cần cả ba: không dừng giữa chừng, MỌI đoạn đã có bản dịch
+    // (dịch một mục thì chưa đủ ngữ cảnh để chọn câu cho cả bài), và cột tiếng
+    // Việt đang bật — vệt neo vào ô đó, tắt cột thì không có chỗ để neo.
+    if (stoppedAt < 0 && $("#insightAuto")?.checked && wantVi && allTranslated()) {
+      await markInsights(true);
+    }
   } catch (e) {
     status("Lỗi: " + e.message);
   } finally {
@@ -3602,6 +3629,18 @@ async function runTranslate() {
   }
 
   function bar(f) { $("#progressBar").style.width = Math.round(f * 100) + "%"; }
+}
+
+/** Mọi đoạn của bài đã có bản dịch chưa (không tính khối đã ẩn).
+
+    Khác `chunkDone`: hàm kia hỏi về MỘT mẻ và tôn trọng phần đang chọn, còn ở
+    đây phải là cả bài — chọn câu đáng nhớ cho một bài mới dịch nửa chừng thì
+    ngân sách tính trên số đoạn sai và model không thấy được mạch lập luận. */
+function allTranslated() {
+  const tr = state.doc.translations || {};
+  const b = (state.doc.blocks || []).filter(
+    (x) => (x.type === "para" || x.type === "caption") && !x.hidden && x.translate);
+  return b.length > 0 && b.every((x) => (tr[x.id] || "").trim());
 }
 
 /* Một mẻ đã dịch xong chưa — dùng đúng kế hoạch chia mẻ do server trả về,

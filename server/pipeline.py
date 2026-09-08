@@ -773,6 +773,114 @@ async def retranslate_block(doc_id: str, block_id: str, mode: str = "vi") -> dic
     }
 
 
+# Một phần tử `marks` trọn vẹn trong JSON bị cắt cụt. Không dùng regex để phân
+# tích JSON nói chung — chỉ để **vớt** những object đã đóng ngoặc, khi phương án
+# còn lại là vứt cả lượt gọi.
+_MARK_OBJ = re.compile(r"\{[^{}]*\}")
+
+
+# Thay thế kiểu chữ mà model hay tự làm khi "chép nguyên văn": nháy cong thành
+# nháy thẳng, gạch ngang dài thành gạch nối, ba chấm rời. Đây là những phép đổi
+# **không đụng tới chữ nào**, nên tha chúng vẫn giữ nguyên ý nghĩa của chốt chặn.
+_TYPO_MAP = str.maketrans({
+    "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+    "\u2013": "-", "\u2014": "-", "\u2212": "-", "\u00a0": " ",
+})
+
+
+def _chuan(t: str) -> tuple[str, list[int]]:
+    """Chuẩn hoá nhẹ một chuỗi, kèm bản đồ về vị trí GỐC của từng ký tự.
+
+    Gộp mọi dải khoảng trắng thành một dấu cách và quy các biến thể kiểu chữ về
+    dạng thẳng. Bản đồ để sau khi tìm thấy trên chuỗi đã chuẩn hoá thì cắt lại
+    được **đúng chuỗi gốc** — client neo vệt bôi bằng cách chạy `sci()` lên
+    `quote` rồi dò trong ô, nên `quote` phải là chuỗi con thật của bản dịch.
+    """
+    out: list[str] = []
+    idx: list[int] = []
+    truoc_trang = False
+    for i, ch in enumerate(t.translate(_TYPO_MAP)):
+        if ch.isspace():
+            if truoc_trang or not out:
+                continue
+            out.append(" ")
+            idx.append(i)
+            truoc_trang = True
+        else:
+            out.append(ch)
+            idx.append(i)
+            truoc_trang = False
+    return "".join(out), idx
+
+
+def tim_nguyen_van(quote: str, hay: str) -> str:
+    """Tìm `quote` trong `hay`, trả về **chuỗi con gốc** hoặc rỗng nếu không có.
+
+    Khớp đúng từng ký tự trước; không được thì thử trên bản đã chuẩn hoá nhẹ.
+    Đo trên bài arXiv:2602.15922 ở mức vừa: 7 trên 39 câu trích bị chốt chặn loại
+    vì lệch kiểu chữ chứ không lệch chữ.
+    """
+    if quote in hay:
+        return quote
+    nq, _ = _chuan(quote)
+    nh, idx = _chuan(hay)
+    if not nq:
+        return ""
+    i = nh.find(nq)
+    if i < 0:
+        return ""
+    return hay[idx[i]:idx[i + len(nq) - 1] + 1]
+
+
+# Kết câu: dấu chấm/hỏi/than theo sau bởi khoảng trắng, hoặc hết chuỗi.
+_HET_CAU = re.compile(r"[.!?…]['\"\u2019\u201d)\]]*(?=\s|$)")
+
+
+def _do_khoi(quote: str, by_id: dict[str, str]) -> str:
+    """Câu trích này nằm ở khối nào — trả mã, hoặc rỗng nếu không ở đâu / ở nhiều chỗ.
+
+    Nằm ở nhiều khối thì **bỏ**, không đoán: chọn bừa một khối là gắn vệt bôi vào
+    chỗ người đọc không hề định đánh dấu, mà nhìn thì vẫn có vẻ đúng.
+    """
+    thay = [b for b, t in by_id.items() if tim_nguyen_van(quote, t)]
+    return thay[0] if len(thay) == 1 else ""
+
+
+def noi_het_cau(bat_dau: str, hay: str) -> str:
+    """Từ mấy từ đầu câu, nối tới hết câu ấy trong `hay`.
+
+    Model **chỉ được yêu cầu chép mấy từ đầu** (xem `INSIGHT_TASK`): chép nguyên
+    một câu dài từ giữa khối 47 nghìn ký tự thì lệch một chữ là chuyện thường, và
+    lệch là vệt bôi bị bỏ. Đo trên arXiv:2602.15922 ở mức vừa, hai lượt liên
+    tiếp: 7 rồi 11 trên ~38 câu bị loại vì chép lệch — dao động lớn, tức đây là
+    giới hạn của việc chép dài chứ không phải một lỗi lẻ.
+
+    Nối ở server chứ không ở client, để `quote` trả về vẫn là **chuỗi con thật**
+    của bản dịch — client neo bằng cách dò chuỗi đó trong ô đã dựng.
+    """
+    i = hay.find(bat_dau)
+    if i < 0:
+        return ""
+    m = _HET_CAU.search(hay, i + len(bat_dau))
+    return hay[i:m.end()] if m else hay[i:]
+
+
+def _vot_marks(raw: str) -> list[dict]:
+    """Bóc những mục `marks` đã trọn vẹn ra khỏi một JSON bị cắt cụt."""
+    out: list[dict] = []
+    for m in _MARK_OBJ.finditer(raw):
+        try:
+            o = json.loads(m.group(0), strict=False)
+        except json.JSONDecodeError:
+            try:
+                o = json.loads(llm._va_escape(m.group(0)), strict=False)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(o, dict) and o.get("quote") and o.get("block"):
+            out.append(o)
+    return out
+
+
 def _insight_context(doc: dict) -> str:
     """Tóm lược + bảng thuật ngữ, để pass đánh dấu biết bài này tranh luận điều gì.
 
@@ -844,13 +952,23 @@ async def mark_insights(doc_id: str, level: str = "") -> dict:
         # Tắt hẳn nghĩ thầm, cùng lý do với `explain_block`: độ sâu ở đây đến từ
         # bảng hạn mức và danh sách "không đánh dấu" trong `INSIGHT_TASK`, không
         # đến từ token nghĩ thầm — mà nghĩ thầm thì tranh chỗ với phần cần viết.
-        # Trần đầu ra co theo ngân sách: mỗi vệt tốn ~90 token (câu trích + lý
-        # do). Mức "dày" trên bài dài ra 74 vệt, tức ~6.700 token — trần cứng
-        # 6.000 của bản đầu sẽ cắt cụt JSON và mất trắng cả lượt gọi.
-        max_tokens=min(24000, 2000 + budget["total"] * 130),
+        # Trần đầu ra co theo ngân sách. **Trần là mức CHẶN, không phải mức tính
+        # tiền** — chỉ trả cho token thật sự sinh ra — nên rộng tay ở đây không
+        # tốn gì, mà chật tay thì mất trắng cả lượt gọi. Ước 130 token/vệt đã
+        # hụt thật: bài 162 đoạn ở mức vừa (40 vệt) cắt cụt JSON sau 94 giây,
+        # vì câu tiếng Việt dài hơn ước tính. Đẩy lên 220.
+        max_tokens=min(24000, 3000 + budget["total"] * 220),
         temperature=0.2, reasoning=NO_REASONING)
 
-    data = llm.extract_json(raw)
+    try:
+        data = llm.extract_json(raw)
+    except ValueError:
+        # Đầu ra bị cắt cụt thì **vớt lại những mục đã trọn vẹn** thay vì bỏ cả
+        # lượt gọi đã trả tiền. Pass này trả về một DANH SÁCH, nên mất phần đuôi
+        # chỉ là ít vệt hơn — khác hẳn pass trả về một object phải nguyên vẹn.
+        data = {"marks": _vot_marks(raw)}
+        if not data["marks"]:
+            raise
     if not isinstance(data, dict):
         raise ValueError("model không trả về JSON hợp lệ")
 
@@ -863,12 +981,50 @@ async def mark_insights(doc_id: str, level: str = "") -> dict:
         bid = str(m.get("block") or "")
         kind = str(m.get("kind") or "")
         quote = (m.get("quote") or "").strip()
-        if bid not in by_id or kind not in prompts.INSIGHT_KINDS or not quote:
-            bo.append(f"{bid or '?'}: khối hoặc loại không hợp lệ")
+        if kind not in prompts.INSIGHT_KINDS or not quote:
+            bo.append(f"{bid or '?'}: loại không hợp lệ")
             continue
+        # **Mã khối do model khai chỉ là gợi ý, câu trích mới là thứ phải thật.**
+        # Đo trên arXiv:2602.15922: trong 10 câu bị loại, 4 câu khai mã KHÔNG TỒN
+        # TẠI trong bài (`b131`, `b123`, `b132`) và 2 câu khai nhầm khối — trong
+        # khi chính câu ấy có thật ở khối khác. Cùng kiểu hỏng đã ghi cho kho
+        # survey ("model viết ra mã 12 ký tự không tồn tại").
+        #
+        # Ta tự tra lại được, nên bỏ đi là vứt thứ đã trả tiền mà không được gì:
+        # chốt chặn cần câu là **nguyên văn trong bài**, còn nó nằm ở khối nào thì
+        # server biết rõ hơn model.
+        if bid not in by_id:
+            bid = _do_khoi(quote, by_id) or bid
+            if bid not in by_id:
+                bo.append(f"{bid or '?'}: mã khối không có trong bài")
+                continue
         # chốt chặn: phải là chuỗi có thật trong bản dịch của đúng khối đó
-        if quote not in by_id[bid]:
-            bo.append(f"{bid}: câu trích không có trong bản dịch")
+        goc = quote
+        quote = tim_nguyen_van(quote, by_id[bid])
+        if not quote:                       # khai đúng mã có thật, nhưng nhầm khối
+            khac = _do_khoi(goc, by_id)
+            if khac:
+                bid, quote = khac, tim_nguyen_van(goc, by_id[khac])
+        if not quote:
+            # Kèm luôn đoạn model gõ ra: "không khớp" mà không nói khớp hụt ở đâu
+            # thì lần sau lại phải chạy thêm một lượt tốn tiền chỉ để biết.
+            bo.append(f"{bid}: không khớp bản dịch — model gõ {goc[:80]!r}")
+            continue
+        quote = noi_het_cau(quote, by_id[bid]) or quote
+
+        # Trần cho từng KHỐI — xem `prompts.INSIGHT_PER_BLOCK`. Ngân sách tổng
+        # không chặn được chuyện dồn hết vào một đoạn: đo trên bài này, khối tóm
+        # tắt từng nhận 4 vệt phủ 93% khối.
+        da = da_lay.get(bid, [])
+        if len(da) >= prompts.INSIGHT_PER_BLOCK:
+            bo.append(f"{bid}: khối đã đủ {prompts.INSIGHT_PER_BLOCK} vệt")
+            continue
+        # Chỉ áp từ vệt THỨ HAI trở đi. Trần này sinh ra để chặn **dồn đống**,
+        # không phải để từ chối một câu dài: khối 400 ký tự có một câu 250 ký tự
+        # thì tự nó đã 62%. Áp cho cả vệt đầu thì bỏ mất 15 trên 40 câu — đo thật.
+        phu = sum(e - b for b, e in da) + len(quote)
+        if da and phu > len(by_id[bid]) * prompts.INSIGHT_BLOCK_FRAC:
+            bo.append(f"{bid}: thêm vệt này là tô quá {int(prompts.INSIGHT_BLOCK_FRAC*100)}% khối")
             continue
         # hạn mức theo loại, co theo độ dài bài — xem `prompts.insight_budget`
         if dem.get(kind, 0) >= budget["per_kind"][kind]:
@@ -881,7 +1037,7 @@ async def mark_insights(doc_id: str, level: str = "") -> dict:
         # vệt bôi, vì toạ độ phải tính trên chữ đã dựng (xem docstring).
         d0 = by_id[bid].find(quote)
         d1 = d0 + len(quote)
-        if any(d0 < e and d1 > b for b, e in da_lay.get(bid, [])):
+        if any(d0 < e and d1 > b for b, e in da):
             bo.append(f"{bid}: câu trích chồng lên một vệt đã chọn")
             continue
         da_lay.setdefault(bid, []).append((d0, d1))

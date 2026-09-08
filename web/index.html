@@ -311,6 +311,9 @@
             <option value="vua" selected>Vừa — 1 câu mỗi 4 đoạn</option>
             <option value="day">Dày — 1 câu mỗi 2 đoạn</option>
           </select>
+          <label class="check" title="Chạy ngay khi dịch xong CẢ bài, khỏi phải nhớ bấm. Không chạy nếu bạn dừng giữa chừng hoặc mới dịch một phần.">
+            <input type="checkbox" id="insightAuto" checked> Tự đánh dấu khi dịch xong
+          </label>
         </div>
         <button id="insightBtn" class="btn btn-sm"
                 title="Đọc lại bản dịch và bôi vàng những câu đáng nhớ, mỗi câu kèm một dòng nói vì sao. Số vệt co theo độ dài bài và theo mật độ chọn ở trên. Tốn một lượt gọi model — đo trên bài 149 đoạn: $0,02 ở mức thưa, $0,08 ở mức vừa, và khoảng gấp đôi thế ở mức dày. Màu cho biết loại: tím = luận điểm, xanh dương = cơ chế, xanh lá = số liệu, hồng = giới hạn, vàng = khái niệm. Vệt bôi bạn tự tô vẫn giữ nguyên.">

@@ -951,6 +951,44 @@ bao giờ đạt được. Phần thiếu bù vào loại có tỉ trọng lớn
 Vì thế trường `why` mới là phần có giá trị, và prompt đòi nó nói điều mà **chính
 câu được trích không nói ra** — chép lại ý câu trích là bỏ phí.
 
+**Chạy tự động khi dịch xong cả bài** (ô tick `#insightAuto`, bật sẵn). Yêu cầu
+ban đầu là *"khi dịch nên có cơ chế bôi câu cần nhớ"*, mà bản đầu chỉ làm nút bấm
+tay — người dùng dịch xong một bài 162 đoạn rồi không thấy vệt nào, đúng như vậy.
+Ba điều kiện, cần cả ba: không dừng giữa chừng, **mọi** đoạn đã có bản dịch
+(`allTranslated()` — dịch một mục thì ngân sách tính trên số đoạn sai), và cột
+tiếng Việt đang bật (vệt neo vào ô đó).
+
+**Mã khối do model khai chỉ là GỢI Ý, câu trích mới là thứ phải thật.** Đây là
+chẩn đoán đã đi sai một vòng: thấy nhiều câu bị loại, tôi đoán là model chép lệch
+và đi sửa prompt cho nó chép ngắn lại — không ăn thua. Nhìn vào đúng danh sách bị
+loại mới thấy phân bố thật: trong 10 câu, **4 câu khai mã khối không tồn tại**
+(`b131`, `b123`, `b132` — cùng kiểu hỏng đã ghi cho kho survey), **2 câu khai
+nhầm khối**, và chỉ **3 câu chép lệch thật**.
+
+Nên `_do_khoi()` tự dò lại khối chứa câu ấy; nằm ở nhiều khối thì **bỏ, không
+đoán** — chọn bừa là gắn vệt vào chỗ người đọc không định đánh dấu mà nhìn vẫn có
+vẻ đúng. Sau khi sửa: **36 giữ / 4 bỏ**, so với 26/14 trước đó. Bài học: **đọc
+đúng danh sách lỗi trước khi sửa**, đừng suy từ con số tổng.
+
+Kèm theo, `tim_nguyen_van()` tha lệch **kiểu chữ** (nháy cong, gạch ngang dài,
+khoảng trắng gộp) nhưng **trả về chuỗi gốc** — client neo bằng cách dò chuỗi đó
+trong ô đã dựng nên nó phải là chuỗi con thật. Lệch **chữ** thì vẫn loại.
+
+**Model chỉ chép mấy từ đầu câu, server nối tới hết câu** (`noi_het_cau`). Nối ở
+server chứ không ở client, để `quote` trả về vẫn là chuỗi con thật của bản dịch.
+
+**Trần cho từng KHỐI, và nó phải chỉ áp từ vệt thứ hai.** Ngân sách tổng không
+chặn được chuyện dồn hết vào một đoạn: khối tóm tắt từng nhận **4 vệt phủ 93%
+khối** — cả đoạn bị bôi, đúng cái thất bại nghiên cứu mô tả, chỉ ở mức đoạn. Nhưng
+áp trần cho **cả vệt đầu** thì bỏ mất 15 trên 40 câu, vì khối 400 ký tự có một câu
+250 ký tự đã là 62%. Chỉ áp từ vệt thứ hai: khối tóm tắt còn **2 vệt phủ 46%**.
+
+**Trần đầu ra là mức CHẶN, không phải mức tính tiền** — chỉ trả cho token thật sự
+sinh ra. Rộng tay không tốn gì, chật tay thì mất trắng: ước 130 token/vệt đã hụt
+thật, bài 162 đoạn ở mức vừa cắt cụt JSON sau 94 giây. Và vì pass này trả về một
+**danh sách**, `_vot_marks()` vớt lại những mục đã trọn vẹn thay vì bỏ cả lượt gọi
+đã trả tiền — khác hẳn pass trả về một object phải nguyên vẹn.
+
 **Bấm lần hai phải THAY chỗ cũ, không cộng dồn.** Soát bằng trình duyệt thấy đúng
 câu đầu bài hiện ra hai lần. Vệt do máy đặt mang cờ `auto`, và `add_many` kèm
 `replace_auto` chỉ dọn đúng những vệt ấy — **vệt người dùng tự tô không bị đụng**,

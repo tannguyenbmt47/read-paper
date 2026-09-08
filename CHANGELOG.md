@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.17.2
+
+**Marking now runs by itself when a paper finishes translating.** That was the
+original request — a mechanism that highlights what is worth remembering *while
+translating* — and the first version only shipped a button, so a paper could be
+translated end to end and come out with nothing marked. It fires only when the
+run was not stopped, every paragraph has a translation, and the Vietnamese column
+is on; a checkbox turns it off.
+
+**The block id a model reports is a hint; the quote is what has to be real.**
+Chasing a high drop rate, the first guess was that the model was copying long
+sentences inexactly, and the prompt was changed to ask for short openings instead.
+It did not help. Reading the actual reject list showed a different distribution
+entirely: of ten drops, four cited block ids that do not exist in the paper, two
+attributed a real sentence to the wrong block, and only three were genuine copy
+errors. The pass now finds the block containing the quote itself — refusing to
+guess when a quote appears in more than one — which took the same paper from 26
+kept and 14 dropped to 36 and 4.
+
+Two smaller repairs alongside it. Quote matching now tolerates typographic
+substitution (curly quotes, em dashes, collapsed whitespace) while returning the
+original substring, since the browser anchors by searching for that exact string;
+differences in *words* are still rejected. And the model is asked only for the
+opening of a sentence, with the server extending it to the sentence end.
+
+**A block can no longer be painted end to end.** The overall budget does not
+prevent piling marks into one paragraph: the abstract came back with four marks
+covering 93% of it, which is the documented failure at paragraph scale. There is
+now a per-block cap — but it applies only from the second mark, because a
+400-character block holding one 250-character sentence is already at 62%, and
+applying it to the first mark dropped 15 of 40. The abstract now carries two marks
+over 46%.
+
+The output ceiling is a limit, not a charge, so it is now generous: at 130 tokens
+per mark it truncated a 162-paragraph paper after 94 seconds and lost the entire
+paid call. Since this pass returns a list, a truncated response now yields the
+marks that did complete instead of nothing.
+
 ## 1.17.1
 
 **Thirteen highlights on a 149-paragraph paper was too few, and the reasoning

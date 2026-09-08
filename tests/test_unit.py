@@ -1054,3 +1054,62 @@ def test_ngan_sach_vet_boi_co_theo_do_dai_bai():
     # mọi chỗ trống trong prompt phải được điền
     import re
     assert not re.findall(r"\{[A-Z_]+\}", prompts.insight_task(prompts.insight_budget(n)))
+
+
+def test_tran_vet_boi_cho_tung_khoi():
+    """Một khối không được bôi gần hết, nhưng câu ĐẦU TIÊN thì luôn được nhận.
+
+    Ngân sách tổng không chặn được chuyện dồn hết vào một đoạn. Đo trên
+    arXiv:2602.15922 ở mức vừa: khối tóm tắt nhận **4 vệt phủ 93% khối** — cả
+    đoạn bị bôi, tức đúng cái thất bại nghiên cứu mô tả, chỉ ở mức đoạn.
+
+    Nhưng trần này chỉ áp **từ vệt thứ hai**: khối 400 ký tự có một câu 250 ký tự
+    thì tự nó đã 62%, áp cho cả vệt đầu là bỏ mất 15 trên 40 câu (đã đo). Sau khi
+    sửa, khối tóm tắt còn 2 vệt phủ 46%.
+    """
+    from server import prompts
+
+    assert prompts.INSIGHT_PER_BLOCK >= 1
+    assert 0 < prompts.INSIGHT_BLOCK_FRAC < 1
+
+    # mô phỏng đúng luật trong `mark_insights`
+    def nhan(da, quote_len, block_len):
+        if len(da) >= prompts.INSIGHT_PER_BLOCK:
+            return False
+        phu = sum(da) + quote_len
+        return not (da and phu > block_len * prompts.INSIGHT_BLOCK_FRAC)
+
+    assert nhan([], 250, 400), "câu đầu tiên phải được nhận dù dài"
+    assert not nhan([250], 200, 400), "vệt thứ hai làm tô quá trần thì phải bỏ"
+    assert nhan([100], 100, 1000), "khối dài thì vệt thứ hai vẫn được"
+    assert not nhan([100] * prompts.INSIGHT_PER_BLOCK, 10, 100000), "quá số vệt thì bỏ"
+
+
+def test_noi_het_cau_va_khop_nguyen_van():
+    """Model chỉ chép mấy từ đầu câu; server nối tới hết câu và tha lệch KIỂU CHỮ.
+
+    Đo trên arXiv:2602.15922: trong 10 câu bị loại, 4 câu khai mã khối **không
+    tồn tại** và 2 câu khai nhầm khối — chỉ 3 câu là chép lệch thật. Nên mã khối
+    do model khai chỉ là gợi ý, còn câu trích mới là thứ phải có thật.
+    """
+    from server.pipeline import noi_het_cau, tim_nguyen_van, _do_khoi
+
+    t = "Câu một ở đây. Chúng tôi giới thiệu DreamZero, một mô hình mới. Câu ba."
+    assert noi_het_cau("Chúng tôi giới thiệu", t) == \
+        "Chúng tôi giới thiệu DreamZero, một mô hình mới."
+    assert noi_het_cau("Không có", t) == ""
+    # số thập phân và ngoặc đóng không được cắt câu sớm
+    assert noi_het_cau("Đạt", "Đạt 62,3% EM (xem Bảng 1). Sau.") == "Đạt 62,3% EM (xem Bảng 1)."
+
+    # tha lệch kiểu chữ, nhưng TRẢ VỀ chuỗi gốc để client còn neo được
+    goc = "Ví dụ — nếu có “áo sơ mi” thì  mô hình  gấp được."
+    assert tim_nguyen_van("Ví dụ - nếu", goc) == "Ví dụ — nếu"
+    assert tim_nguyen_van('có "áo sơ mi" thì', goc) == "có “áo sơ mi” thì"
+    assert tim_nguyen_van("thì mô hình gấp", goc) == "thì  mô hình  gấp"
+    assert tim_nguyen_van("nếu SỐ liệu khác hẳn", goc) == "", "lệch CHỮ thì vẫn phải loại"
+
+    # dò lại khối khi model khai sai mã
+    by = {"b1": "Câu một.", "b2": "Chúng tôi định nghĩa độ chi tiết.", "b3": "Câu một."}
+    assert _do_khoi("Chúng tôi định nghĩa", by) == "b2"
+    assert _do_khoi("Câu một", by) == "", "nằm ở hai khối thì bỏ, không đoán"
+    assert _do_khoi("không ở đâu", by) == ""
