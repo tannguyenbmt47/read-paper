@@ -212,6 +212,97 @@ def build_doc(doc_id: str, title: str, blocks: list[Block], source: str, model: 
     }
 
 
+def chu_bi_bo_roi(doc: dict) -> tuple[int, int]:
+    """Bao nhiêu ký tự trong PDF **thật sự bị bỏ rơi**, không tính phần bỏ có chủ ý.
+
+    Đây là chốt chặn cho kiểu hỏng tệ nhất của bước bóc tách: **mất chữ im
+    lặng**. Đã gặp thật — một bảng không viền trong bài hai cột biến mất hoàn
+    toàn, không thành hình, không thành chữ, và Bước 1 vẫn báo "xong" kèm giá
+    dịch. Người đọc không có cách nào biết mình vừa mất mấy con số.
+
+    **Phải trừ phần bỏ CÓ CHỦ Ý, không thì nó báo động sai trên mọi bài.** Bản
+    đầu chỉ lấy bội ký tự của toàn PDF trừ bội ký tự trong khối, và ra
+    10.708 · 31.876 · 17.935 ký tự trên ba bài thật — gần như toàn bộ là chữ
+    nằm trong hình (đã có trong ảnh) và tiêu đề chạy đầu trang. Một chốt chặn
+    kêu oan trên mọi bài thì người dùng thôi đọc nó, và lúc đó cảnh báo thật
+    cũng trôi theo — cùng bài học với mấy hằng ngân sách của slide.
+
+    Nên đếm theo **vị trí**: một dòng chữ bị tính là bỏ rơi khi nó không nằm
+    trong vùng hình nào, không nằm ở dải lề trên/dưới, và chữ của nó không có
+    mặt trong khối nào. Trả 0 khi không có PDF gốc (bài dán, bài .md).
+    """
+    path = store.pdf_path(doc["id"])
+    if path is None:
+        return 0, 0
+
+    LE = 0.055          # dải lề trên/dưới: tiêu đề chạy, số trang
+    NO = 4.0            # nới vùng hình ra 4pt, vì khung bám sát chữ
+
+    # vùng hình theo trang, lấy từ chính khung đã lưu
+    vung: dict[int, list[tuple]] = {}
+    for b in doc["blocks"]:
+        r, pno = b.get("figure_rect"), b.get("figure_page")
+        if r and pno is not None:
+            vung.setdefault(int(pno), []).append(
+                (r[0] - NO, r[1] - NO, r[2] + NO, r[3] + NO))
+
+    # So bằng BỘI KÝ TỰ, không bằng phép "chuỗi con": một block của PyMuPDF trải
+    # nhiều dòng, mà tầng bóc tách lại cắt và sắp lại, nên chuỗi của nó gần như
+    # không bao giờ là chuỗi con liền mạch của khối đã dựng. Thử cách đó ra
+    # 34.858 ký tự "bỏ rơi" trên một bài vốn phủ 99% — tức đo sai hoàn toàn.
+    from collections import Counter
+
+    def dem(t: str) -> Counter:
+        return Counter(c.lower() for c in t if c.isalnum())
+
+    # So với MỌI khối, kể cả `reference` và khối đã ẩn. `full_source_text()` cố
+    # ý loại `reference` (nó là ngữ cảnh cho model, không cần thư mục), nhưng
+    # dùng nó để đối chiếu thì **mỗi mục tham khảo thành một ký tự bị mất** —
+    # đo trên SONIC: từ `arxiv` một mình bị tính mất 86 lần.
+    giu = dem(" ".join(b["text"] for b in doc["blocks"])
+              + " " + (doc.get("title") or ""))
+    try:
+        import fitz
+        hop_le: Counter = Counter()
+        with fitz.open(path) as d:
+            # Tiêu đề chạy và số trang nhận bằng ĐỘ LẶP, không bằng dải lề: dải
+            # 5,5% bỏ sót tiêu đề chạy của SONIC, và từ trong tên bài bị tính
+            # mất 35–104 lần mỗi từ. Dòng nào xuất hiện ở ≥40% số trang thì là
+            # thứ lặp theo trang, không phải nội dung.
+            lap: Counter = Counter()
+            for page in d:
+                for blk in page.get_text("blocks"):
+                    g = "".join(c.lower() for c in (blk[4] or "") if c.isalnum())
+                    if 3 <= len(g) <= 120:
+                        lap[g] += 1
+            nguong = max(2, int(len(d) * 0.4))
+            chay = {g for g, n in lap.items() if n >= nguong}
+
+            for pno, page in enumerate(d):
+                h = page.rect.height
+                for x0, y0, x1, y1, txt, *_ in page.get_text("blocks"):
+                    if not (txt or "").strip():
+                        continue
+                    g = "".join(c.lower() for c in txt if c.isalnum())
+                    if g in chay:
+                        continue                      # lặp theo trang
+                    cy, cx = (y0 + y1) / 2, (x0 + x1) / 2
+                    if cy < h * LE or cy > h * (1 - LE):
+                        continue                      # lề: bỏ có chủ ý
+                    if any(a <= cx <= c and b2 <= cy <= d2
+                           for a, b2, c, d2 in vung.get(pno, [])):
+                        continue                      # đã nằm trong ảnh
+                    hop_le += dem(txt)
+        # Trả cả TỈ LỆ, không chỉ con số tuyệt đối. 7.000 ký tự trên một bài
+        # 70.000 ký tự là 10% — đáng biết; 7.000 trên một bài 500.000 thì không.
+        # Và ngưỡng cảnh báo phải tính theo tỉ lệ, nếu không nó nổ trên mọi bài
+        # dài và người dùng thôi đọc nó.
+        tong = sum(hop_le.values())
+        return sum((hop_le - giu).values()), tong
+    except Exception:  # noqa: BLE001 — không đọc được thì đừng báo động sai
+        return 0, 0
+
+
 async def estimate(doc: dict, mode: str = "both") -> dict:
     """Ước lượng khối lượng và chi phí của bước 2, tính trước khi tiêu đồng nào.
 
@@ -271,9 +362,28 @@ async def estimate(doc: dict, mode: str = "both") -> dict:
         cost = prompt_tok * price[0] + (out_tok + brief_out) * price[1]
         lo, hi = cost * 0.7, cost * 1.6
 
+    # Ba con số khác nhau cùng hiện ở Bước 1 (tổng · sẽ dịch · hiển thị) mà
+    # không chỗ nào nói chúng là gì — đo trên arXiv:1706.03762: 161 / 94 / 117.
+    # Người dùng không có cách nào biết 67 khối còn lại đi đâu.
+    vai: dict[str, int] = {}
+    for b in doc["blocks"]:
+        if b.get("hidden"):
+            k = "đã ẩn"
+        elif b.get("type") == "reference":
+            k = "tài liệu tham khảo"
+        elif not b.get("translate"):
+            k = "không dịch (công thức, hình, nhiễu)"
+        else:
+            k = "sẽ dịch"
+        vai[k] = vai.get(k, 0) + 1
+
+    bo_roi, pdf_chars = chu_bi_bo_roi(doc)
     return {
         "blocks_total": len(doc["blocks"]),
         "blocks_to_translate": len(todo),
+        "blocks_by_role": vai,
+        "uncovered_chars": bo_roi,
+        "pdf_chars": pdf_chars,
         "figures": sum(1 for b in doc["blocks"] if b.get("figure")),
         "source_chars": src_chars,
         "chunks": n_chunks,

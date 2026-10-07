@@ -989,3 +989,59 @@ def test_skin_bao_khong_pha_luat_chu_tieng_viet():
         assert float(lh) >= 1.28, f"line-height {lh} dưới 1.28"
     # và không dùng font mono cho văn xuôi
     assert "font-family:var(--mono)" not in than, "mono không dựng nổi dấu chồng tầng"
+
+
+def test_do_chu_bi_bo_roi_khong_bao_dong_sai(app_client, doc_pdf):
+    """Phép đo "chữ chưa vào khối nào" phải im trên bài bóc tốt.
+
+    Nó canh kiểu hỏng tệ nhất của bước bóc tách — **mất chữ im lặng**: một bảng
+    không viền từng biến mất hoàn toàn mà Bước 1 vẫn báo xong kèm giá dịch.
+
+    Nhưng bản đầu đo sai tới 20 lần vì hai chỗ, và cả hai đều làm nó **kêu oan
+    trên mọi bài** — mà một chốt chặn kêu oan thì người dùng thôi đọc nó:
+
+    - đối chiếu bằng `full_source_text()`, vốn **cố ý loại khối `reference`**,
+      nên mỗi mục tham khảo thành một khoản mất. Đo trên SONIC: riêng từ `arxiv`
+      bị tính mất 86 lần.
+    - nhận tiêu đề chạy đầu trang bằng dải lề 5,5%, bỏ sót header của SONIC nên
+      từng từ trong tên bài bị tính mất 35–104 lần.
+
+    Sau khi sửa: 0–4% trên sáu bài thật, không bài nào vượt ngưỡng 5%.
+    """
+    r = app_client.get(f"/api/doc/{doc_pdf['id']}/estimate?mode=both")
+    assert r.status_code == 200, r.text
+    e = r.json()
+    assert "uncovered_chars" in e and "pdf_chars" in e
+    assert e["pdf_chars"] > 0, "bài có PDF gốc thì phải đo được"
+    assert e["uncovered_chars"] <= e["pdf_chars"] * 0.15, \
+        f"kêu oan: {e['uncovered_chars']}/{e['pdf_chars']}"
+
+    # và phải nói rõ các con số khối là gì — ba con số không chú thích từng làm
+    # người dùng tưởng mất khối (161 tổng / 94 dịch / 117 hiển thị)
+    assert isinstance(e.get("blocks_by_role"), dict) and e["blocks_by_role"]
+    assert sum(e["blocks_by_role"].values()) == e["blocks_total"]
+
+
+def test_do_bo_roi_doi_chieu_voi_MOI_khoi():
+    """Phép đo không được dùng `full_source_text()` để đối chiếu.
+
+    Hàm đó cố ý loại khối `reference` vì thư mục không cần vào ngữ cảnh model.
+    Dùng nó làm mốc đối chiếu thì mỗi mục tham khảo thành một khoản "mất" — đó
+    chính là lỗi đã làm phép đo phóng đại 20 lần.
+    """
+    import inspect
+    from server import pipeline
+
+    # Bỏ docstring và comment trước khi kiểm: chính docstring của hàm có nhắc
+    # `full_source_text()` để giải thích vì sao KHÔNG dùng nó, nên tìm thô là
+    # phép kiểm tự báo sai.
+    import re
+    src = inspect.getsource(pipeline.chu_bi_bo_roi)
+    ma = re.sub(r'"""[\s\S]*?"""', "", src)
+    ma = "\n".join(re.sub(r"#.*$", "", ln) for ln in ma.splitlines())
+
+    assert "full_source_text" not in ma, \
+        "đối chiếu bằng full_source_text() là bỏ sót toàn bộ thư mục tham khảo"
+    assert 'b["text"] for b in doc["blocks"]' in ma, "phải đối chiếu với MỌI khối"
+    # và nhận tiêu đề chạy bằng độ lặp, không chỉ bằng dải lề
+    assert "lap[" in ma, "phải nhận tiêu đề chạy bằng độ lặp"

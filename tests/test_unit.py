@@ -1190,3 +1190,45 @@ def test_boc_markdown_that_su_chu_khong_doan_bang_heuristic():
     # văn bản THƯỜNG vẫn đi đường cũ, không bị Markdown hoá
     t2, b2, _ = parse_text("Tiêu đề bài\n\nMột đoạn văn bình thường.\n")
     assert t2 == "Tiêu đề bài" and all(b.type != "code" for b in b2)
+
+
+def test_gop_tieu_de_nhieu_dong_nhung_khong_nuot_ten_tac_gia():
+    """Tiêu đề bài báo hay nằm trên nhiều dòng cùng cỡ chữ — phải gộp lại.
+
+    Lấy đúng một khối thì mất phần còn lại, và phần mất **không im lặng**: nó
+    thành khối `meta` rác ngay đầu bài. Đo trên arXiv:2604.00965v1, tiêu đề ba
+    dòng small-caps: đường heuristic chỉ lấy được
+    "UNDERSTANDING TRANSFORMERS AND ATTENTION" — một phần ba.
+
+    Chạy lại trên 10 PDF trong `data/`: sửa được ba bài bị cụt (trong đó có bài
+    chỉ còn "Question Answering" mà CLAUDE.md ghi là ca đau nhất) và **không
+    bài nào bị nối thừa**.
+
+    Điều kiện khe dọc là thứ giữ nó không nuốt tên tác giả — tên tác giả cũng
+    thường to hơn thân bài.
+    """
+    from server.parser import gop_tieu_de, TIEU_DE_DONG_TOI_DA
+
+    def dong(i, text, size, y0, h=14):
+        return {"key": i, "text": text, "size": size, "y0": y0, "y1": y0 + h}
+
+    # ba dòng tiêu đề cùng cỡ, sát nhau -> gộp
+    phan = [dong(0, "UNDERSTANDING TRANSFORMERS AND ATTENTION", 17.2, 98),
+            dong(1, "MECHANISMS: AN INTRODUCTION FOR APPLIED", 17.2, 118),
+            dong(2, "MATHEMATICIANS", 17.2, 138),
+            dong(3, "A PREPRINT", 10.0, 179),
+            dong(4, "Michel Fabrice Serret", 10.0, 208)]
+    t, dung = gop_tieu_de(phan, 0)
+    assert t.endswith("MATHEMATICIANS") and t.startswith("UNDERSTANDING")
+    assert dung == {0, 1, 2}, "phải dừng trước 'A PREPRINT' vì cỡ chữ khác"
+
+    # cùng cỡ nhưng CÁCH XA -> không nối: tên tác giả cũng to hơn thân bài
+    xa = [dong(0, "Tiêu đề bài", 17.0, 98),
+          dong(1, "Nguyễn Văn A", 17.0, 260)]
+    t2, d2 = gop_tieu_de(xa, 0)
+    assert t2 == "Tiêu đề bài" and d2 == {0}
+
+    # không nối quá trần, kể cả khi mọi dòng đều hợp lệ
+    nhieu = [dong(i, f"dòng {i}", 17.0, 100 + i * 18) for i in range(8)]
+    t3, d3 = gop_tieu_de(nhieu, 0)
+    assert len(d3) == TIEU_DE_DONG_TOI_DA

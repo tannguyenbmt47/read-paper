@@ -632,9 +632,29 @@ async function loadEstimate() {
       : `<div class="stat warn-stat"><b>$${(e.cost_low ?? e.cost_usd).toFixed(3)}–${(e.cost_high ?? e.cost_usd).toFixed(3)}</b>`
         + `<span>ước tính · ${esc(e.covers || "lượt dịch")}</span></div>`;
     box.innerHTML =
-      `<div class="stat"><b>${e.blocks_to_translate}</b><span>khối sẽ dịch / ${e.blocks_total} khối</span></div>` +
+      // Nói rõ phần còn lại đi đâu. Ba con số không giải thích (tổng · sẽ dịch
+      // · hiển thị) là thứ đã làm người dùng tưởng mất khối.
+      `<div class="stat" title="${esc(Object.entries(e.blocks_by_role || {})
+          .map(([k, v]) => `${v} ${k}`).join(" · "))}">`
+        + `<b>${e.blocks_to_translate}</b><span>khối sẽ dịch / ${e.blocks_total} khối`
+        + `${e.blocks_by_role ? " ⓘ" : ""}</span></div>` +
       `<div class="stat"><b>${e.figures}</b><span>hình &amp; bảng</span></div>` +
       `<div class="stat"><b>${(e.source_chars / 1000).toFixed(1)}k</b><span>ký tự gốc · ${e.chunks} mẻ dịch</span></div>` +
+      // Mất chữ IM LẶNG là kiểu hỏng tệ nhất của bước bóc tách: một bảng không
+      // viền từng biến mất hoàn toàn mà Bước 1 vẫn báo xong kèm giá dịch. Chỉ
+      // kêu khi đáng kể — vài chục ký tự lệch là chuyện thường của bóc PDF.
+      (() => {
+        // Ngưỡng theo TỈ LỆ, không theo con số tuyệt đối: 7k ký tự trên bài 70k
+        // là 10% và đáng biết, 7k trên bài 500k thì không. Dưới 5% thì im —
+        // bóc PDF lệch vài phần trăm là chuyện thường, và một cảnh báo nổ trên
+        // mọi bài thì người dùng thôi đọc nó.
+        const t = e.pdf_chars || 0, u = e.uncovered_chars || 0;
+        if (!t || u / t < 0.05) return "";
+        const pct = Math.round((u / t) * 100);
+        const nang = pct >= 15;
+        return `<div class="stat${nang ? " warn-stat" : ""}" title="Chữ có trong PDF nhưng không nằm trong khối nào — thường là bảng không viền, chữ trong hình chưa được cắt, hoặc vùng mô hình bố cục bỏ sót. Bấm Bóc lại từ PDF để thử đường khác.">`
+          + `<b>${pct}%</b><span>chữ chưa vào khối nào${nang ? " ⚠" : ""}</span></div>`;
+      })() +
       money;
   } catch {
     box.innerHTML = `<div class="stat"><b>—</b><span>không ước lượng được</span></div>`;
@@ -702,7 +722,12 @@ function renderReview() {
     : `<p class="hint">Không có khối nào đáng ngờ.</p>`;
 
   const all = blocks.filter((b) => b.type !== "reference");
-  $("#revAllCount").textContent = all.length;
+  // Nói rõ con số này KHÁC tổng ở đầu trang và khác ở chỗ nào — ba con số không
+  // chú thích thì người dùng tưởng có khối bị mất.
+  const nRef = blocks.length - all.length;
+  $("#revAllCount").textContent = nRef
+    ? `${all.length} (trong ${blocks.length}, bỏ ${nRef} tài liệu tham khảo)`
+    : String(all.length);
   $("#revAll").innerHTML = all.map(blkRow).join("");
 
   $$('.blk input[type="checkbox"]').forEach((cb) => (cb.onchange = async () => {

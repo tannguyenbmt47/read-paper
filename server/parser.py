@@ -1255,9 +1255,15 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
     page0 = [i for i in raw if i["page"] == 0 and not _STAMP.match(i["text"])]
     title = ""
     if page0:
-        big = max(page0[:12], key=lambda i: i["size"])
-        if big["size"] > body_size * 1.25:
-            title = big["text"]
+        dau = page0[:12]
+        k = max(range(len(dau)), key=lambda i: dau[i]["size"])
+        if dau[k]["size"] > body_size * 1.25:
+            phan = [{"size": i["size"], "text": i["text"], "key": i["idx"],
+                     "y0": i["bbox"][1], "y1": i["bbox"][3]} for i in dau]
+            title, dung = gop_tieu_de(phan, k)
+            # Dòng đã gộp vào tiêu đề phải RỜI khỏi mạch đọc, không thì chúng
+            # thành khối `meta` rác nằm ngay đầu bài.
+            covered |= dung
 
     raw = _stitch(raw, covered)
     blocks = _to_blocks(raw, body_size, title, covered)
@@ -1282,6 +1288,53 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
     mark_continuations(blocks)
     mark_noise(blocks)
     return title, blocks, named
+
+
+# Tiêu đề bài báo rất hay nằm trên NHIỀU DÒNG, và cỡ chữ của các dòng đó bằng
+# nhau. Lấy đúng một khối thì mất phần còn lại — đo trên arXiv:2604.00965v1,
+# tiêu đề ba dòng chữ small-caps:
+#
+#   đường heuristic → "UNDERSTANDING TRANSFORMERS AND ATTENTION"   (1/3 dòng)
+#   đường MinerU    → thêm được dòng 2, vẫn thiếu "MATHEMATICIANS" (2/3 dòng)
+#
+# Và tệ hơn là phần bị bỏ không im lặng mất: hai dòng còn lại thành khối `meta`
+# rác nằm ngay đầu bài. Tiêu đề sai thì hỏng cả danh sách kho, bản xuất ra, slide
+# tiêu đề, và phần tra Semantic Scholar bên kho survey.
+TIEU_DE_DONG_TOI_DA = 4
+TIEU_DE_LECH_CO = 0.10      # cùng cỡ nếu lệch dưới 10%
+
+
+def gop_tieu_de(phan: list[dict], bat_dau: int) -> tuple[str, set[int]]:
+    """Gộp các dòng tiêu đề liền nhau cùng cỡ chữ, bắt đầu từ `bat_dau`.
+
+    `phan` là danh sách theo thứ tự đọc, mỗi phần tử cần `size`, `text`, `y0`,
+    `y1` và `key` (thứ để gọi tên dòng đã dùng). Trả `(tiêu đề, {key đã dùng})`.
+
+    Điều kiện nối, cần cả ba: **cùng cỡ chữ**, **nằm ngay dưới** (khe dọc không
+    quá 1,6 lần chiều cao dòng), và chưa quá `TIEU_DE_DONG_TOI_DA` dòng. Thiếu
+    điều kiện khe dọc thì tên tác giả — cũng có thể to hơn thân bài — bị nối vào
+    tiêu đề.
+    """
+    goc = phan[bat_dau]
+    chu = [goc["text"].strip()]
+    dung: set = {goc["key"]}
+    co = goc["size"]
+    truoc = goc
+    for it in phan[bat_dau + 1:]:
+        if len(chu) >= TIEU_DE_DONG_TOI_DA:
+            break
+        if abs(it["size"] - co) > co * TIEU_DE_LECH_CO:
+            break
+        cao = max(1.0, truoc["y1"] - truoc["y0"])
+        if it["y0"] - truoc["y1"] > cao * 1.6:
+            break
+        t = it["text"].strip()
+        if not t:
+            break
+        chu.append(t)
+        dung.add(it["key"])
+        truoc = it
+    return clean_text(" ".join(chu)), dung
 
 
 def _to_blocks(items: list[dict], body_size: float, title: str,
@@ -1929,22 +1982,27 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
                 spans_of[i] = sp
 
         # tiêu đề: khối chữ to nhất trong vài khối đầu trang 1
-        best, best_sz = None, 0.0
-        for i, it in enumerate(items):
-            if it["page"] != 0 or i > 14:
-                continue
-            sz = max((s["size"] for s in spans_of.get(i, [])), default=0.0)
-            if sz > best_sz:
-                best, best_sz = i, sz
-        if best is not None and best_sz > body * 1.25:
-            title = text_from_spans(spans_of[best])
+        dau = [i for i, it in enumerate(items) if it["page"] == 0 and i <= 14]
+        co_cua = {i: max((s["size"] for s in spans_of.get(i, [])), default=0.0)
+                  for i in dau}
+        best = max(dau, key=lambda i: co_cua[i], default=None)
+        bo_tieu_de: set[int] = set()
+        if best is not None and co_cua[best] > body * 1.25:
+            phan = [{"size": co_cua[i], "text": text_from_spans(spans_of.get(i, [])),
+                     "key": i, "y0": items[i]["bbox"][1], "y1": items[i]["bbox"][3]}
+                    for i in dau]
+            vi = dau.index(best)
+            title, bo_tieu_de = gop_tieu_de(phan, vi)
 
         for i, it in enumerate(items):
             pno = it["page"]
             if not 0 <= pno < len(doc):
                 continue
             text = text_from_spans(spans_of.get(i, [])) or clean_text(it.get("text") or "")
-            if len(text) < 2 or text == title:
+            # `i in bo_tieu_de`: dòng đã gộp vào tiêu đề nhiều dòng. So theo
+            # `text == title` thôi thì chỉ loại được dòng đầu, hai dòng còn lại
+            # thành khối rác ngay đầu bài.
+            if len(text) < 2 or text == title or i in bo_tieu_de:
                 continue
             kind = it["kind"]
 
