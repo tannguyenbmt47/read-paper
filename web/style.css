@@ -359,7 +359,14 @@ body { padding-left: var(--rail-w); }
 /* Nút Dịch và nút ▾ dính liền thành một khối: chúng là một điều khiển — làm
    việc đó, và chỉnh cách làm việc đó. Rời nhau thì mắt đọc thành hai nút. */
 .trans-group { display: flex; align-items: stretch; }
-.trans-group .btn-primary { border-top-right-radius: 0; border-bottom-right-radius: 0; margin: 0; width: auto; }
+/* `min-width` khớp nhãn DÀI NHẤT mà nút này từng mang ("Đang dừng…"). Nhãn đổi
+   theo trạng thái — Dịch · Dịch tiếp · ⏸ Dừng · Đang dừng… — và mỗi lần đổi là
+   mọi nút bên phải nhảy sang chỗ khác, đúng lúc người dùng đang với tay tới
+   chúng. Chốt bề rộng thì nhãn đổi mà bố cục đứng yên. */
+.trans-group .btn-primary {
+  border-top-right-radius: 0; border-bottom-right-radius: 0;
+  margin: 0; width: auto; min-width: 8.3rem; white-space: nowrap;
+}
 .trans-group .caret {
   width: 1.5rem; min-width: 1.5rem; border: 1px solid var(--accent);
   border-left-color: rgba(255, 255, 255, .35);

@@ -843,31 +843,77 @@ async function doImport() {
   } else return showErr("Chưa chọn nguồn nào.");
 
   btn.disabled = true; btn.textContent = "Đang đọc tài liệu…";
-  // mở kênh tiến trình TRƯỚC khi POST, không thì mất mấy bước đầu
-  const prog = impStart();
-  fd.append("job", prog.job);
-  await new Promise((r) => setTimeout(r, 120));   // chờ SSE bắt tay xong
   try {
-    const r = await fetch("/api/import", { method: "POST", body: fd });
-    if (!r.ok) throw new Error(await apiErr(r, r.statusText));
-    const doc = await r.json();
-    prog.done(true);
-    // Reset ô nguồn sau khi nạp xong. Không reset thì dòng "Đã chọn: paper.md"
-    // còn nguyên, người dùng bấm Nạp lần nữa là tạo thêm một bản trùng — đã ra
-    // 5 bản "Attention Is All You Need" trong kho đúng vì vậy.
-    $("#fileInput").value = "";
-    $("#urlInput").value = "";
-    const fn = $("#fileName");
-    if (fn) fn.textContent = "";
-    location.hash = doc.id;
-    mountReview(doc);          // bước 1 trước, dịch sau
+    // Vòng lặp chạy nhiều nhất hai lượt: lượt đầu có thể trả về "đã có bài
+    // này", lượt sau gửi lại cùng form kèm `force=1`. Dùng vòng lặp chứ không
+    // gọi đệ quy, để `finally` ở dưới mở khoá nút đúng một lần.
+    for (;;) {
+      // mở kênh tiến trình TRƯỚC khi POST, không thì mất mấy bước đầu
+      const prog = impStart();
+      fd.set("job", prog.job);
+      await new Promise((r) => setTimeout(r, 120));   // chờ SSE bắt tay xong
+      let doc;
+      try {
+        const r = await fetch("/api/import", { method: "POST", body: fd });
+        if (!r.ok) throw new Error(await apiErr(r, r.statusText));
+        doc = await r.json();
+        prog.done(true);
+      } catch (e) { prog.done(false); throw e; }
+      if (doc.duplicate) {
+        const tiep = await hoiTrung(doc.duplicate);
+        if (!tiep) return;
+        fd.set("force", "1");
+        continue;
+      }
+      sachNguon();
+      location.hash = doc.id;
+      mountReview(doc);          // bước 1 trước, dịch sau
+      return;
+    }
   } catch (e) {
-    prog.done(false);
     showErr(e.message);
   } finally {
     btn.disabled = false; btn.textContent = "Nạp bài báo";
   }
+
   function showErr(m) { err.textContent = m; err.classList.remove("hidden"); }
+
+  /* Reset ô nguồn sau khi nạp xong. Không reset thì dòng "Đã chọn: paper.md"
+     còn nguyên, người dùng bấm Nạp lần nữa là tạo thêm một bản trùng — đã ra
+     5 bản "Attention Is All You Need" trong kho đúng vì vậy. */
+  function sachNguon() {
+    $("#fileInput").value = "";
+    $("#urlInput").value = "";
+    const fn = $("#fileName");
+    if (fn) fn.textContent = "";
+  }
+
+  /* Bài đã có trong thư viện. Server dừng TRƯỚC khi bóc, nên tới đây chưa tốn
+     gì và chưa có bản ghi nào — việc còn lại chỉ là hỏi người dùng muốn gì.
+
+     Nạp trùng không hỏng gì về kỹ thuật (`parse_cache` làm bước bóc gần như
+     miễn phí), nhưng nó đẻ ra một bản thứ hai TRỐNG cạnh bản đã dịch; mở nhầm
+     bản mới là tưởng mất sạch bản dịch đã trả tiền.
+
+     Trả `true` nếu người dùng vẫn muốn nạp bản mới. */
+  async function hoiTrung(d) {
+    const pct = d.translatable ? Math.round(d.translated / d.translatable * 100) : 0;
+    const gia = d.cost_usd
+      ? ` và đã tốn $${d.cost_usd.toFixed(4).replace(".", ",")}` : "";
+    /* Nút ĐỒNG Ý là "nạp thêm bản mới", nút HUỶ là "mở bản đang có" — ngược
+       với cách đọc tự nhiên, và cố ý. Escape và bấm ra ngoài đều rơi về nhánh
+       huỷ, nên nhánh huỷ phải là nhánh an toàn: mở bài đã có. Để ngược lại thì
+       lỡ tay gõ Escape là đẻ thêm một bản trùng. */
+    const them = await xacNhan("Bài này đã có trong thư viện",
+      `${d.title}\n\nBản đang có: ${d.blocks} khối, đã dịch ${pct}%${gia}.\n\n`
+      + "Nạp thêm một bản nữa thì bản mới CHƯA DỊCH GÌ, và hai bản nằm cạnh "
+      + "nhau trong thư viện — mở nhầm bản mới là tưởng mất bản dịch cũ.",
+      { ok: "Vẫn nạp bản mới", cancel: "Mở bản đang có" });
+    if (them) return true;
+    sachNguon();
+    await openDoc(d.id);
+    return false;
+  }
 }
 
 async function openDoc(id) {
@@ -912,13 +958,21 @@ function wireHashNav() {
       showScreen("start");
       return;
     }
-    // Guard phải hỏi "đang HIỂN THỊ bài đó không", không phải "đã nạp chưa".
-    // Hỏi sai thì Back về màn nhập xong bấm Forward là kẹt: `state.doc` vẫn là
-    // bài cũ nên nó return sớm và màn hình không bao giờ quay lại trang đọc.
+    /* Guard phải hỏi "đang HIỂN THỊ bài đó không", không phải "đã nạp chưa".
+       Hỏi sai thì Back về màn nhập xong bấm Forward là kẹt: `state.doc` vẫn là
+       bài cũ nên nó return sớm và màn hình không bao giờ quay lại trang đọc.
+
+       Và màn đúng của một bài phụ thuộc `prepared`: bài vừa nạp xong còn ở bước
+       soát. Bản đầu của guard này bật thẳng sang `#reader`, nên nạp một bài mới
+       là `doImport` gọi `mountReview`, rồi `location.hash = doc.id` kích
+       `hashchange`, rồi guard đá ngược về `#reader` — bước soát bị nhảy cóc mà
+       không ai bấm gì. Đo trên bài vừa nạp: `prepared: false` mà màn `#reader`
+       đang hiện. */
+    const man = state.doc?.prepared ? "reader" : "review";
     const dangMo = state.doc && id === state.doc.id;
-    if (dangMo && !$("#reader").classList.contains("hidden")) return;
+    if (dangMo && !$(`#${man}`).classList.contains("hidden")) return;
     // Đã nạp rồi thì chỉ cần hiện lại, khỏi gọi lại API.
-    if (dangMo) { showScreen("reader"); return; }
+    if (dangMo) { showScreen(man); return; }
     openDoc(id).catch(() => { location.hash = ""; });
   });
 }
@@ -1331,6 +1385,28 @@ function mountDoc(doc) {
   state.doc = doc;
   state.chunks = doc.chunks || 0;
   state.history = [];
+  /* Mọi thứ thuộc về BÀI TRƯỚC phải dọn ngay ở đây, vì màn `#reader` không bị
+     dựng lại — nó chỉ được nạp nội dung khác.
+
+     `state.pick` là chỗ tệ nhất: nó giữ mã khối của bài trước, nên `pickedIds()`
+     trả về một tập mã KHÔNG TỒN TẠI trong bài mới, và `runTranslate` bỏ qua
+     sạch mọi mẻ. Bấm Dịch không ra gì và không có lỗi nào.
+
+     `#statusLine` thì nhìn thấy được mà vẫn dễ bỏ qua: dòng cuối cùng của bài
+     trước hay là dòng báo giá, nên mở bài mới ra là thấy ngay "…$0,0266" của
+     một bài khác — người dùng có lý do tưởng vừa bị tính tiền. */
+  state.pick = null;
+  state.sections = null;
+  state.showHidden = false;
+  state.stopping = false;
+  $("#statusLine").classList.add("hidden");
+  $("#statusLine").textContent = "";
+  $("#progress").classList.add("hidden");
+  $("#findBar").classList.add("hidden");
+  $("#hiddenBar").classList.add("hidden");
+  $("#pickMenu").classList.add("hidden");
+  $("#chat").classList.add("hidden");
+  dongHoTat();
   // Khung chat phải dọn theo. `state.history` rỗng nên MODEL không nhầm, nhưng
   // DOM vẫn đầy hỏi-đáp về bài trước — màn hình và model bất đồng, kiểu tệ nhất:
   // người đọc thấy văn bản đúng ngữ pháp nói về bài khác mà không dấu hiệu gì.
@@ -3497,6 +3573,11 @@ function onDocScroll() {
 }
 
 function restorePos() {
+  /* Về ĐẦU trước đã. Thay `innerHTML` không đặt lại `scrollTop` — trình duyệt
+     chỉ kẹp nó vào chiều cao nội dung mới — nên bài chưa đọc dở lần nào mở ra
+     ở đúng độ cao mình đang đọc bài trước (đo được 4731px), tức giữa chừng một
+     bài hoàn toàn khác. */
+  $("#doc").scrollTop = 0;
   const id = pref("pos:" + state.doc.id, "");
   if (!id) return;
   const el = $(`#p-${CSS.escape(id)}`);

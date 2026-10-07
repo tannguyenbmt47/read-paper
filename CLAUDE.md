@@ -1547,6 +1547,64 @@ lệ đọc lại từ cache**, vì đó là con số duy nhất trong đám tok
 tác động được: bấm 💡 ngay sau khi dịch thì prefix còn ấm, bấm hôm sau thì đọc
 lại cả bài ở giá đầy đủ (đã đo: `cached_tokens = 0` trên 23.836 token).
 
+### Nạp trùng bài: hỏi TRƯỚC khi bóc
+
+`parse_cache` làm việc nạp lại cùng một PDF gần như miễn phí, nên nạp trùng
+không hỏng gì **về kỹ thuật**. Cái hỏng là ở thư viện: nó đẻ ra một bản thứ hai
+**trống rỗng** nằm cạnh bản đã dịch, và mở nhầm bản mới là tưởng mất sạch bản
+dịch đã trả tiền. Đã ra năm bản *"Attention Is All You Need"* trong kho.
+
+`_da_co(data)` trong `import_doc` tra `db.doc_by_sha` và trả về `{"duplicate":
+…}` kèm **số khối, phần trăm đã dịch và số tiền đã tốn** — hỏi "bạn có chắc
+không" mà không kèm mấy con số đó thì người dùng không có cơ sở nào để chắc.
+
+Ba chỗ phải đúng:
+
+- **Hỏi trước khi bóc, không phải sau.** Bóc xong mới hỏi thì đã chạy mô hình bố
+  cục (6–196 giây) cho một thứ người dùng sắp bỏ đi. Nên phép dò nằm ngay sau
+  khi có `bytes`, trước mọi lệnh `parse_pdf`.
+- **Nút ĐỒNG Ý là "vẫn nạp bản mới", nút HUỶ là "mở bản đang có"** — ngược cách
+  đọc tự nhiên, và cố ý: Escape và bấm ra ngoài đều rơi về nhánh huỷ, nên nhánh
+  huỷ phải là nhánh an toàn. Để ngược lại thì lỡ gõ Escape là đẻ thêm bản trùng.
+- **`force=1` gửi lại cùng form, qua VÒNG LẶP chứ không gọi đệ quy**, để `finally`
+  mở khoá nút *Nạp bài báo* đúng một lần.
+
+**Và `_row_to_doc` không trả cột `title_vi`** — tên tiếng Việt nằm trong `brief`.
+Lấy nhầm thì hộp thoại hiện tên tiếng Anh trong khi thư viện hiện tên tiếng Việt,
+và người dùng không chắc có phải cùng một bài không.
+
+Bẫy đi kèm, đã vỡ ngay lúc thử: **guard của `hashchange` phải theo `prepared`.**
+Bản đầu bật thẳng sang `#reader` khi `state.doc.id` khớp hash, nên nạp bài mới
+thì `doImport` gọi `mountReview`, rồi `location.hash = doc.id` kích `hashchange`,
+rồi guard **đá ngược về `#reader`** — bước soát bị nhảy cóc mà không ai bấm gì.
+Đo trên bài vừa nạp: `prepared: false` mà màn `#reader` đang hiện.
+
+### Màn đọc không được dựng lại, nên `mountDoc` phải tự dọn
+
+Mở bài khác **không** dựng lại màn `#reader` — nó chỉ được nạp nội dung khác.
+Nên mọi thứ thuộc về bài trước còn nguyên ở đó, và hai chỗ đã hỏng thật:
+
+- **`state.pick` giữ mã khối của bài TRƯỚC**, nên `pickedIds()` trả về một tập
+  mã không tồn tại trong bài mới và `runTranslate` bỏ qua sạch mọi mẻ. Bấm
+  *Dịch* không ra gì, và **không có lỗi nào**.
+- **`#statusLine` còn dòng cuối của bài trước**, mà dòng cuối hay là dòng báo
+  giá — mở bài mới ra là thấy ngay `…$0,0266` của một bài khác, và người dùng
+  có lý do tưởng vừa bị tính tiền.
+
+Cùng họ: `state.sections`, `state.showHidden`, `state.stopping`, thanh tiến
+trình, thanh tìm, thanh "đang ẩn", panel tuỳ chọn dịch, khung chat, và đồng hồ
+đếm giây.
+
+**`#doc.scrollTop` cũng không tự về 0.** Thay `innerHTML` chỉ làm trình duyệt
+kẹp `scrollTop` vào chiều cao nội dung mới, không đặt lại — nên bài chưa đọc dở
+lần nào mở ra ở **đúng độ cao mình đang đọc bài trước** (đo được 4731px), tức
+giữa chừng một bài hoàn toàn khác. `restorePos()` đặt lại 0 **trước**, rồi mới
+nhảy tới chỗ đã lưu nếu có.
+
+**Nhãn nút *Dịch* đổi theo trạng thái** (Dịch · Dịch tiếp · ⏸ Dừng · Đang
+dừng…), nên nút phải có `min-width` khớp nhãn dài nhất: nhãn đổi mà bố cục nhảy
+thì các nút bên phải chạy đi đúng lúc người dùng đang với tay tới chúng.
+
 ### Thư viện: tìm, sắp, và tên model đọc được
 
 Danh sách bài chỉ có một thứ tự và không tìm được, nên tới bài thứ ba mươi thì

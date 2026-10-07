@@ -1030,11 +1030,41 @@ async def import_doc(
     title: str = Form(""),
     model: str = Form(""),
     use_layout: int = Form(1),
+    force: int = Form(0),
     job: str = Form(""),
 ):
     model = model or llm.DEFAULT_MODEL
     loop = asyncio.get_running_loop()
     _say(job, "Bắt đầu", "", 2)
+
+    def _da_co(data: bytes) -> dict | None:
+        """Bài này đã nằm trong thư viện chưa? Khoá theo SHA của chính file PDF.
+
+        Nạp trùng không hỏng gì về kỹ thuật — `parse_cache` làm bước bóc gần như
+        miễn phí — nhưng nó đẻ ra một bản thứ hai **trống rỗng** cạnh bản đã
+        dịch, và người dùng mở nhầm bản mới thì tưởng mất sạch bản dịch đã trả
+        tiền. Đo trên `data/` thật: có bài nằm ba bản.
+
+        Hỏi TRƯỚC khi bóc, không phải sau: bóc xong mới hỏi thì đã chạy mô hình
+        bố cục (6–196 giây) cho một thứ người dùng sắp bỏ đi.
+        """
+        if force:
+            return None
+        prior = db.doc_by_sha(db.sha(data))
+        if not prior:
+            return None
+        blocks = prior.get("blocks") or []
+        return {
+            "id": prior["id"],
+            # `_row_to_doc` không trả cột `title_vi` — tên tiếng Việt nằm trong
+            # `brief`, và bài chưa dựng brief thì chưa có tên tiếng Việt nào.
+            "title": ((prior.get("brief") or {}).get("title_vi")
+                      or prior.get("title") or "(không tiêu đề)"),
+            "blocks": len(blocks),
+            "translated": len(prior.get("translations") or {}),
+            "translatable": sum(1 for b in blocks if b.get("translate")),
+            "cost_usd": round(float((prior.get("usage") or {}).get("cost") or 0.0), 5),
+        }
 
     pdf_bytes: bytes | None = None
     kieu_nguon = "pdf"          # pdf | text — quyết định câu báo lỗi ở dưới
@@ -1046,6 +1076,11 @@ async def import_doc(
             # tự byte rác, có báo giá dịch và được lưu vĩnh viễn vào kho.
             loai = parser.kiem_nguon(data, file.filename or "")
             if loai == "pdf":
+                if (cu := _da_co(data)):
+                    _say(job, "Bài này đã có trong thư viện", cu["title"], 100)
+                    if (q := _JOBS.get(job or "")) is not None:
+                        q.put_nowait(None)
+                    return {"duplicate": cu}
                 pdf_bytes = data
                 _say(job, "Bóc chữ từ PDF", f"{len(data)//1024} KB", 15)
                 t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
@@ -1071,6 +1106,11 @@ async def import_doc(
                 raise parser.NguonHong(
                     "Không nhận ra mã arXiv hay link PDF. Ví dụ hợp lệ: "
                     "1706.03762 · arXiv:1706.03762v7 · https://…/paper.pdf")
+            if (cu := _da_co(data)):
+                _say(job, "Bài này đã có trong thư viện", cu["title"], 100)
+                if (q := _JOBS.get(job or "")) is not None:
+                    q.put_nowait(None)
+                return {"duplicate": cu}
             pdf_bytes = data
             _say(job, "Bóc chữ từ PDF", f"{len(data)//1024} KB", 15)
             t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)

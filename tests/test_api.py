@@ -458,6 +458,54 @@ def test_thu_vien_co_tim_sap_va_ten_model_doc_duoc(app_client, doc):
     assert lo and "khongDau" in lo.group(1), "ô tìm thư viện không bỏ dấu"
 
 
+def test_nap_trung_bai_thi_hoi_truoc_khi_boc(app_client):
+    """Nạp lại đúng file PDF đó phải DỪNG LẠI và hỏi, không lặng lẽ tạo bản thứ hai.
+
+    `parse_cache` làm việc nạp lại gần như miễn phí nên về kỹ thuật không hỏng
+    gì — cái hỏng là ở thư viện: một bản TRỐNG nằm cạnh bản đã dịch, và mở nhầm
+    bản mới là tưởng mất sạch bản dịch đã trả tiền.
+
+    Và phép dò phải chạy TRƯỚC khi bóc, nên câu trả lời không được kèm `blocks`
+    của một bài mới nào cả.
+    """
+    import fitz
+    tai = fitz.open()
+    trang = tai.new_page()
+    trang.insert_text((72, 100), "Bai thu nghiem nap trung", fontsize=18)
+    trang.insert_text((72, 140),
+                      "Mo hinh de xuat dat 42.5 diem F1 tren tap kiem tra, cao hon "
+                      "baseline manh nhat 3.1 diem tren ca ba bo du lieu.", fontsize=11)
+    pdf = tai.tobytes()
+    tai.close()
+
+    tep = {"file": ("trung.pdf", pdf, "application/pdf")}
+    r1 = app_client.post("/api/import", files=tep, data={"model": "test/model"})
+    assert r1.status_code == 200, r1.text
+    d1 = r1.json()
+    assert "duplicate" not in d1, "lần nạp ĐẦU không được coi là trùng"
+
+    r2 = app_client.post("/api/import", files=tep, data={"model": "test/model"})
+    assert r2.status_code == 200, r2.text
+    d2 = r2.json()
+    dup = d2.get("duplicate")
+    assert dup, "nạp lại cùng file mà không báo trùng"
+    assert dup["id"] == d1["id"]
+    assert "blocks" not in d2, "đã bóc rồi mới hỏi — phải hỏi TRƯỚC khi bóc"
+    # Phải nói ra mất gì: số khối, phần đã dịch, số tiền đã tốn.
+    for cot in ("title", "blocks", "translated", "translatable", "cost_usd"):
+        assert cot in dup, f"câu báo trùng thiếu {cot}"
+
+    # `force=1` là đường thoát, và nó phải tạo một bài THẬT SỰ KHÁC.
+    r3 = app_client.post("/api/import", files=tep,
+                         data={"model": "test/model", "force": "1"})
+    assert r3.status_code == 200, r3.text
+    d3 = r3.json()
+    assert "duplicate" not in d3 and d3["id"] != d1["id"]
+
+    for did in (d1["id"], d3["id"]):
+        app_client.delete(f"/api/doc/{did}")
+
+
 def test_khong_con_hop_thoai_native(app_client):
     """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
     cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi
