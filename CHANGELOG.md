@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.18.0
+
+**A newsprint-and-ink skin, as a fourth theme.** The warm cream default stays;
+this one is a choice. It changes no layout at all — only materials: off-white
+paper with visible grain, real black ink, thick borders, hard unblurred shadows.
+
+Three moves carry the whole effect and none of them loads anything. Making
+`--line` ink black rather than thin grey turns every border already in the app
+into a drawn line — one token, the biggest single change. Shadows become
+`3px 3px 0` with no blur, which is the comic register; a soft shadow kills the
+effect outright. And the paper grain is a `radial-gradient` on the body, so no
+request is added — at 5.5% opacity it was invisible and had to go to 10%.
+
+Column rules are the most newspaper-like thing available, and this app was
+already a two- or three-column grid. A negative margin matched by equal padding
+puts the rule in the middle of the gutter while leaving the text where it was; a
+plain `border-left` shifts the whole column and skews the grid, which is the same
+trap already documented for continuation blocks. Headings and equations span the
+full width, so the rule has to be switched off for them or it shows up as a stub
+through the title.
+
+The comic energy is concentrated in the three places the eye rests — the
+nameplate, the figure frames, and the summary card — rather than sprinkled over
+the reading area, which is mostly text and where drawn detail trades directly
+against reading.
+
+Comic design likes tight uppercase, which is exactly what Vietnamese stacked
+diacritics cannot survive, so the skin takes its headline weight from boldness
+and rules instead: no uppercase, no negative letter-spacing, no line-height under
+1.28, no monospace for prose. A test enforces all four. The highlight palette now
+has to be declared in five theme blocks rather than four, and its test counts
+blocks rather than hard-coding the number.
+
+**A pre-existing bug this surfaced:** `initMermaid` read only
+`prefers-color-scheme`, ignoring an explicit choice — picking Light on a dark OS
+still gave diagrams a dark palette, black text on black. The explicit theme now
+wins, and the newsprint skin gets its own ink-on-paper diagram palette, since
+mermaid's default lavender looks pasted in from somewhere else.
+
 ## 1.17.2
 
 **Marking now runs by itself when a paper finishes translating.** That was the

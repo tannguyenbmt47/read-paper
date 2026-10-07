@@ -1035,6 +1035,55 @@ ném `Invalid \escape` và cả lượt gọi đã trả tiền mất trắng. `
 đôi những dấu chéo đó rồi thử lại. Nó **hỏng theo bài** — bài nào model tình cờ
 không trích câu có dấu chéo thì chạy trót lọt — nên rất dễ tưởng đã ổn.
 
+### Skin "Báo" — giấy báo in cộng nét truyện tranh
+
+Theme thứ tư (`data-theme="bao"`, cạnh `auto`/`light`/`dark`). **Thêm chứ không
+thay**: bản ấm nâu-kem vẫn là mặc định, skin này là một lựa chọn — đổi giao diện
+mặc định của cả app là quyết định của người dùng, không phải của một lần sửa.
+
+Nó **không đổi một dòng bố cục nào**, chỉ đổi vật liệu: giấy ngà có hạt, mực đen
+thật, viền dày, bóng cứng không mờ. Ba đòn tạo ra toàn bộ cảm giác, và không đòn
+nào cần tải thêm thứ gì:
+
+1. **`--line` thành mực đen** (`#1d1b16`) chứ không phải xám mảnh. Mọi viền sẵn
+   có trong app lập tức thành nét vẽ — đây là chỗ đổi đáng giá nhất, một token.
+2. **Bóng cứng `3px 3px 0`**, không blur. Đó là nét truyện tranh; bóng mờ là
+   ngôn ngữ của giao diện phẳng và nó triệt tiêu hẳn cảm giác này.
+3. **Vân giấy + lưới bán sắc bằng `radial-gradient`** trên `body`, nên không
+   thêm một request nào. Để ở mức 5,5% thì **không thấy gì** — đã đo và phải
+   nâng lên 10%.
+
+**Nét kẻ giữa các cột là thứ đặc trưng nhất của trang báo**, và app này vốn đã
+là lưới hai–ba cột nên chỉ cần kẻ vào giữa khe. Mẹo `margin âm + padding bằng
+nhau` giữ chữ **không dịch chỗ** còn nét rơi đúng giữa khe; đặt `border-left`
+trần thì cả cột bị đẩy sang phải và lưới lệch — cùng cái bẫy đã gặp ở
+`.pair.is-cont`. Tiêu đề và công thức trải hết bề ngang nên phải **tắt** nét kẻ
+cho chúng, không thì có một vạch cụt giữa tít.
+
+**Chất truyện tranh dồn vào ba chỗ mắt nghỉ, không rắc lên vùng đọc**: nẹp đầu
+trang (nameplate hai nét), khung hình (nét 2,5px + bóng cứng + chú thích trên
+dải mực), và thẻ tóm lược (ô trích đóng khung). Vùng đọc phần lớn là chữ nên đẩy
+nét vẽ vào đó là đánh đổi trực tiếp với việc đọc.
+
+**Ba ràng buộc chữ tiếng Việt, và skin này là chỗ dễ phá chúng nhất** — vì ngôn
+ngữ truyện tranh vốn thích chữ hoa nén chặt:
+
+- **Không `text-transform: uppercase`, không `letter-spacing` âm,
+  `line-height` không dưới 1,28.** Dấu chồng tầng (ế, ộ, ữ) bị cắt ngọn. Cảm
+  giác "tít báo" lấy từ **độ đậm và nét kẻ**, không lấy từ chữ hoa.
+- **Không font mono cho văn xuôi** — mono của hệ không dựng nổi dấu chồng tầng.
+- `test_skin_bao_khong_pha_luat_chu_tieng_viet` canh cả ba.
+
+Và cái bẫy cũ nặng thêm: **màu bôi vàng giờ khai ở NĂM khối theme**, không còn
+bốn. `test_moi_khoi_theme_khai_du_nam_mau_boi` đếm theo thực tế chứ không chốt
+con số, nên thêm skin nữa là nó tự canh luôn.
+
+Kèm theo, sửa một lỗi có sẵn mà skin này làm lộ ra: **`initMermaid` chỉ đọc
+`prefers-color-scheme`**, bỏ qua lựa chọn tường minh — chọn "Sáng" trên máy đang
+dark thì sơ đồ vẫn ra bảng màu tối, chữ đen trên nền đen. Giờ `data-theme` thắng,
+và skin Báo có bảng màu mực-trên-giấy riêng cho mermaid: để màu mặc định (tím
+lavender) thì sơ đồ trông như dán vào từ chỗ khác.
+
 ### Bôi vàng và ghi chú
 
 Người đọc bôi một đoạn trong màn `#reader`, vệt bôi lưu ở cột `highlights`, rê

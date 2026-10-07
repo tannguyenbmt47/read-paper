@@ -253,19 +253,32 @@ function reportCost(label, run, total) {
 let mermaidReady = false;
 function initMermaid() {
   if (mermaidReady || typeof mermaid === "undefined") return;
-  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  // Theme TƯỜNG MINH phải thắng. Trước đây chỗ này chỉ đọc `prefers-color-scheme`,
+  // nên chọn "Sáng" trên máy đang dark thì sơ đồ vẫn ra bảng màu tối — chữ đen
+  // trên nền đen. Và skin "Báo" cần sơ đồ mực-trên-giấy, không phải màu mặc định.
+  const chon = document.documentElement.dataset.theme || "";
+  const dark = chon === "dark"
+    || (!chon && matchMedia("(prefers-color-scheme: dark)").matches);
+  const bao = chon === "bao";
   // Trên màn slide, sơ đồ phải theo bảng màu của deck — màu mặc định của
   // mermaid là tím lavender, lạc hẳn khỏi navy/xanh của phần còn lại.
   const onSlides = !$("#slides")?.classList.contains("hidden");
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
-    theme: onSlides ? "base" : (dark ? "dark" : "neutral"),
+    theme: onSlides || bao ? "base" : (dark ? "dark" : "neutral"),
     themeVariables: onSlides ? {
       primaryColor: "#e9eefc", primaryBorderColor: "#2563eb",
       primaryTextColor: "#0f172a", lineColor: "#64748b",
       secondaryColor: "#ddf3f5", tertiaryColor: "#e4f5ea",
       fontFamily: "Helvetica Neue,Arial,sans-serif", fontSize: "15px",
+    } : bao ? {
+      // Mực trên giấy: hộp nền giấy, viền và mũi tên đen, một hộp nhấn đỏ.
+      // Để màu mặc định của mermaid (tím lavender) thì sơ đồ trông như dán vào.
+      primaryColor: "#f6f2e7", primaryBorderColor: "#1d1b16",
+      primaryTextColor: "#141210", lineColor: "#1d1b16",
+      secondaryColor: "#ded7c4", tertiaryColor: "#f6dfe2",
+      fontSize: "15px",
     } : undefined,
     flowchart: { curve: "basis", htmlLabels: false },
     fontFamily: getComputedStyle(document.body).fontFamily,

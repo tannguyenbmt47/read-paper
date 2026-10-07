@@ -940,3 +940,52 @@ def test_client_doc_loi_an_toan_tu_response_hong():
     for ten in ("app.js", "survey.js"):
         src = (web / ten).read_text()
         assert "json()).detail" not in src, f"{ten} còn bóc .detail thẳng tay"
+
+
+def test_moi_khoi_theme_khai_du_nam_mau_boi():
+    """Năm màu bôi vàng phải khai ở **mọi** khối theme, kể cả skin mới.
+
+    Đây là cái bẫy đã vấp thật: `--c-y…--c-v` khai ở nhiều chỗ, sửa mỗi `:root`
+    thì bật theme sáng tường minh là màu cũ quay lại — đo trong trình duyệt vẫn
+    ra `#fff3a3` sau khi đã "sửa". Thêm skin "Báo" làm số khối từ bốn lên năm,
+    nên phép kiểm này phải đếm theo thực tế chứ không chốt con số.
+    """
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / "web/style.css").read_text()
+
+    # mỗi khối khai theme = một chỗ đặt `--bg`
+    khoi = re.findall(r"(:root(?:\[data-theme=\"[a-z]+\"\])?)\s*\{([^}]*--bg:[^}]*)\}", css)
+    assert len(khoi) >= 4, f"chỉ thấy {len(khoi)} khối theme — phép kiểm đã hỏng"
+
+    for ten, than in khoi:
+        thieu = [c for c in ("--c-y", "--c-g", "--c-b", "--c-p", "--c-v")
+                 if f"{c}:" not in than.replace(" ", "")]
+        assert not thieu, f"{ten} thiếu màu bôi: {thieu}"
+        # và phải có đủ cặp màu đậm đi kèm (dùng cho viền/chữ trên vệt)
+        thieu2 = [c for c in ("--c-yl", "--c-gl", "--c-bl", "--c-pl", "--c-vl")
+                  if f"{c}:" not in than.replace(" ", "")]
+        assert not thieu2, f"{ten} thiếu màu đậm: {thieu2}"
+
+
+def test_skin_bao_khong_pha_luat_chu_tieng_viet():
+    """Skin "Báo" không được viết hoa toàn bộ, siết chữ, hay hạ `line-height`.
+
+    Dấu tiếng Việt chồng tầng (ế, ộ, ữ) bị cắt ngọn — đúng cái bẫy đã ghi cho
+    slide và cho `.sv-note`. Chất "tít báo" phải lấy từ độ đậm và nét kẻ, không
+    lấy từ chữ hoa.
+    """
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / "web/style.css").read_text()
+    # chỉ xét những luật thuộc skin này
+    luat = re.findall(r':root\[data-theme="bao"\][^{]*\{([^}]*)\}', css)
+    assert luat, "không thấy luật nào của skin Báo"
+    than = " ".join(luat).replace(" ", "")
+
+    assert "text-transform:uppercase" not in than, "viết hoa toàn bộ cắt ngọn dấu"
+    assert not re.search(r"letter-spacing:-", than), "siết chữ âm cắt ngọn dấu"
+    for lh in re.findall(r"line-height:([\d.]+)", than):
+        assert float(lh) >= 1.28, f"line-height {lh} dưới 1.28"
+    # và không dùng font mono cho văn xuôi
+    assert "font-family:var(--mono)" not in than, "mono không dựng nổi dấu chồng tầng"

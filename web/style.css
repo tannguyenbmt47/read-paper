@@ -1429,3 +1429,190 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px;
   font-family: var(--mono); font-size: .86em; line-height: 1.45; white-space: pre;
 }
+
+/* ===================================================================
+   Skin "Báo" — trang báo in cộng nét truyện tranh
+   ===================================================================
+
+   Vì sao có skin này: bản gốc ấm và dễ đọc nhưng **mọi thứ cùng một tông
+   nâu-kem**, nên mắt không có mốc nào để bám và đọc lâu thì chán. Skin này
+   không đổi bố cục một chút nào — nó chỉ đổi **vật liệu**:
+
+     giấy báo (hơi ngà, có hạt) · mực đen thật · viền dày · bóng cứng không mờ
+
+   Ba thứ tạo ra cảm giác, và không thứ nào là hình ảnh tải về:
+     1. `--line` thành MỰC ĐEN chứ không phải xám mảnh. Mọi viền sẵn có trong
+        app lập tức thành nét vẽ.
+     2. Bóng cứng `3px 3px 0` — không blur. Đây là nét truyện tranh, khác hẳn
+        bóng mờ của giao diện phẳng thông thường.
+     3. Hạt giấy + lưới bán sắc (halftone) bằng `radial-gradient`, nên không
+        thêm một request nào.
+
+   Ràng buộc đã giữ, vì chúng đã vấp thật ở chỗ khác trong dự án:
+     - **Không viết hoa toàn bộ, không siết `letter-spacing`, `line-height`
+       không dưới 1.28.** Dấu tiếng Việt chồng tầng (ế, ộ, ữ) bị cắt ngọn —
+       đúng cái bẫy đã ghi cho slide. Cảm giác "tít báo" lấy từ **độ đậm và
+       nét kẻ**, không lấy từ chữ hoa.
+     - **Không dùng font mono cho văn xuôi**: mono của hệ không dựng nổi dấu
+       chồng tầng (đã thấy "sô´", "chuôĩ").
+     - Năm màu bôi vàng phải khai Ở ĐÂY nữa — chúng khai ở bốn khối theme, bỏ
+       sót một khối là bôi ra màu của theme khác.                             */
+
+:root[data-theme="bao"] {
+  --bg: #e9e3d4;             /* giấy báo: ngà, hơi xám, không phải trắng */
+  --surface: #f6f2e7;
+  --surface-2: #ded7c4;
+  --line: #1d1b16;           /* MỰC — chỗ đổi quan trọng nhất của cả skin */
+  --ink: #141210;
+  --ink-2: #3c3730;
+  --muted: #645d50;          /* 5,4:1 trên giấy — trên ngưỡng AA */
+  --accent: #c0102a;         /* đỏ spot của báo in */
+  --accent-soft: #f6dfe2;
+  --ok: #1f6b3f;
+  --warn: #8a5a00;
+  --warn-bg: #f6e8c8;
+  --c-y:#ffd94d; --c-yl:#8a6100; --c-g:#8fdda1; --c-gl:#1f6b3f;
+  --c-b:#a8d5f7; --c-bl:#15537f; --c-p:#f9b8d4; --c-pl:#8e2e5b;
+  --c-v:#cdbcf7; --c-vl:#4f3590;
+  --eq-bg: #f6f2e7; --eq-line: #1d1b16;
+  --gl-bg: #eef1e6; --gl-line: #1d1b16; --gl-ink: #2f3a30;
+  --head: #141210;           /* tít đen, không phải nâu */
+  --radius: 3px;             /* góc gần vuông — giấy in không bo tròn */
+  --muc: #1d1b16;            /* dùng cho bóng cứng */
+}
+
+/* Giấy: hai lớp gradient xếp lên nhau — lưới bán sắc mảnh và một vệt vân dọc.
+   Cố ý rất nhạt: đủ để không phẳng lì, không đủ để cạnh tranh với chữ. */
+:root[data-theme="bao"] body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(29, 27, 22, .10) 1px, transparent 1.5px),
+    repeating-linear-gradient(90deg, rgba(29, 27, 22, .035) 0 1px, transparent 1px 3px);
+  background-size: 5px 5px, 3px 100%;
+}
+
+/* Viền dày + bóng cứng cho mọi thứ "nổi lên khỏi giấy" */
+:root[data-theme="bao"] .btn,
+:root[data-theme="bao"] .seg,
+:root[data-theme="bao"] .drop,
+:root[data-theme="bao"] .input,
+:root[data-theme="bao"] .card,
+:root[data-theme="bao"] .menu,
+:root[data-theme="bao"] .figure,
+:root[data-theme="bao"] .eqfig,
+:root[data-theme="bao"] .diagram,
+:root[data-theme="bao"] .codeblk,
+:root[data-theme="bao"] .mdtable table {
+  border-width: 2px;
+  box-shadow: 3px 3px 0 var(--muc);
+}
+:root[data-theme="bao"] .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--muc); }
+:root[data-theme="bao"] .btn-primary { color: #fff8ee; }
+
+/* Hình là một KHUNG TRUYỆN: nét dày, bóng cứng, nền trắng thật để tranh in
+   không bị nhuộm vàng theo giấy. */
+:root[data-theme="bao"] .figure { background: #fffdf7; padding: .5rem; }
+
+/* Tít mục: đen, đậm, dưới chân một nét kẻ dày — đúng lối đầu mục của báo.
+   Không chữ hoa, không siết chữ: dấu tiếng Việt sẽ bị cắt ngọn. */
+:root[data-theme="bao"] .pair.h1 .en, :root[data-theme="bao"] .pair.h1 .vi {
+  font-weight: 800; border-bottom-width: 3px; border-bottom-color: var(--muc);
+  letter-spacing: 0; line-height: 1.3;
+}
+:root[data-theme="bao"] .pair.h2 .en, :root[data-theme="bao"] .pair.h2 .vi { font-weight: 800; }
+
+/* Nẹp đầu trang: hai nét, mảnh trên dày dưới — nameplate của một tờ báo */
+:root[data-theme="bao"] .topbar {
+  border-bottom: 3px solid var(--muc);
+  box-shadow: 0 5px 0 -3px var(--muc);
+}
+
+/* Cột giải thích: giữ nẹp trái nhưng bằng mực, không bằng màu nhạt */
+:root[data-theme="bao"] .gl { border-left-width: 3px; border-left-color: var(--muc); }
+
+/* Công thức: khung mực, nền giấy sáng hơn — ra dáng một ô đóng khung trong bài */
+:root[data-theme="bao"] .pair.equation .en { border-width: 2px; border-left-width: 4px; }
+
+/* Vệt bôi vàng ra dáng flat màu truyện tranh: thêm nét viền mực mảnh */
+:root[data-theme="bao"] mark.hl { box-shadow: inset 0 0 0 1px rgba(29, 27, 22, .35); }
+
+/* Chip trạng thái và nhãn nhỏ: viền mực thay vì nền xám */
+:root[data-theme="bao"] .chip, :root[data-theme="bao"] .tag {
+  border: 1.5px solid var(--muc); background: var(--surface);
+}
+
+/* ---- Nét kẻ giữa các cột: thứ đặc trưng nhất của một trang báo ----
+
+   App này vốn đã là lưới hai–ba cột, nên chỉ cần kẻ vào giữa khe là ra ngay
+   dáng báo. Mẹo `margin âm + padding bằng nhau`: chữ KHÔNG dịch chỗ, còn nét
+   kẻ rơi đúng giữa khe. Đặt một `border-left` trần thì cả cột bị đẩy sang phải
+   và lưới lệch — đã là cái bẫy từng gặp ở `.pair.is-cont`.
+
+   Chỉ kẻ cho cột dịch: cột giải thích đã có nẹp mực riêng của nó, kẻ thêm là
+   hai vạch sát nhau. */
+:root[data-theme="bao"] .doc.cols-2 .pair > .vi {
+  border-left: 1px solid var(--line); margin-left: -1.1rem; padding-left: 1.1rem;
+}
+:root[data-theme="bao"] .doc.cols-3 .pair > .vi {
+  border-left: 1px solid var(--line); margin-left: -.75rem; padding-left: .75rem;
+}
+/* Tiêu đề mục trải hết bề ngang nên không cần kẻ — kẻ vào là vạch cụt giữa tít */
+:root[data-theme="bao"] .pair.h1 > .vi, :root[data-theme="bao"] .pair.h2 > .vi,
+:root[data-theme="bao"] .pair.h3 > .vi, :root[data-theme="bao"] .pair.equation > .vi,
+:root[data-theme="bao"] .pair.meta > .vi { border-left: 0; margin-left: 0; padding-left: 0; }
+
+/* Tít mục có nét kẻ CẢ TRÊN lẫn dưới — lối phân mục của báo in */
+:root[data-theme="bao"] .pair.h1 { border-top: 3px solid var(--muc); padding-top: .6rem; }
+:root[data-theme="bao"] .pair.h2 { border-top: 1px solid var(--line); padding-top: .45rem; }
+
+/* Khối đang chọn: mảng màu phẳng kiểu bôi bút, không phải nền mờ */
+:root[data-theme="bao"] .pair.is-on { background: #ffeeb0; box-shadow: inset 0 0 0 1.5px var(--muc); }
+:root[data-theme="bao"] .pair:hover { background: rgba(255, 255, 255, .45); }
+
+/* Cột gốc: mực nhạt hơn để tách khỏi cột dịch, như phần dẫn in nhỏ của báo */
+:root[data-theme="bao"] .en { color: #4a443a; }
+
+/* Ghi chú và chú thích hình: chữ nghiêng trên nền giấy sáng, viền mực mảnh */
+:root[data-theme="bao"] .note { border: 1.5px solid var(--muc); box-shadow: 2px 2px 0 var(--muc); }
+
+/* ---- Ba chỗ chất truyện tranh thật sự thuộc về ----
+
+   Vùng đọc phần lớn là chữ, nên đẩy nét vẽ vào đó là đánh đổi với việc đọc.
+   Chất "báo hoạt hình" dồn vào đúng ba chỗ mắt nghỉ: nẹp đầu trang, khung
+   hình, và thẻ tóm lược. */
+
+/* Nẹp đầu trang thành NAMEPLATE: giấy, hai nét kẻ, tên bài đậm hơn */
+:root[data-theme="bao"] .topbar {
+  background: var(--surface);
+  border-bottom: 3px double var(--muc);
+  box-shadow: 0 4px 0 -2px var(--muc);
+}
+:root[data-theme="bao"] .topbar-title strong {
+  font-family: var(--serif); font-weight: 800; font-size: 1.06rem;
+  line-height: 1.3;                      /* không dưới 1.28: dấu chồng tầng bị cắt ngọn */
+}
+
+/* Hình là một KHUNG TRUYỆN: nét dày, bóng cứng, và chú thích nằm trên một
+   dải mực ngay dưới khung — đúng lối chú thích ảnh báo in. */
+:root[data-theme="bao"] .figure, :root[data-theme="bao"] .eqfig {
+  border-width: 2.5px; box-shadow: 4px 4px 0 var(--muc); border-radius: 2px;
+}
+:root[data-theme="bao"] .pair.caption .en, :root[data-theme="bao"] .pair.caption .vi {
+  border-left: 0; padding: .3rem .5rem;
+  background: var(--surface-2); border-top: 1.5px solid var(--muc);
+  font-style: normal; font-size: .82em;
+}
+
+/* Thẻ tóm lược: ô trích dẫn đóng khung, bóng cứng — chỗ nhấn của cả sidebar */
+:root[data-theme="bao"] .pull {
+  border: 2px solid var(--muc); border-left-width: 5px;
+  box-shadow: 3px 3px 0 var(--muc); border-radius: 2px;
+}
+/* Nhãn nhỏ của sidebar vốn đã viết hoa — ở skin này nó là chữ Anh/nhãn ngắn
+   ("BÀI TOÁN", "KHOẢNG TRỐNG") nên giữ được; nhưng nới `line-height` để dấu
+   tiếng Việt không bị cắt ngọn. */
+:root[data-theme="bao"] .brief-line b { color: var(--ink); line-height: 1.5; }
+
+/* Vạch ngăn mục trong sidebar: nét mực thay vì xám mảnh */
+:root[data-theme="bao"] .side-tabs { border-bottom: 2px solid var(--muc); }
+:root[data-theme="bao"] .side { border-right: 2px solid var(--muc); }
