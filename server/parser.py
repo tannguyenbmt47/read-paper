@@ -1164,10 +1164,34 @@ def _running_headers(items: list[dict]) -> set[int]:
     return drop
 
 
-def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
-    import fitz  # PyMuPDF
+def mo_pdf(data: bytes):
+    """Mở PDF, và **dịch mọi lỗi của PyMuPDF thành câu người dùng làm được gì**.
 
-    doc = fitz.open(stream=data, filetype="pdf")
+    Trước đây hai ca này đều ném 500 kèm trang HTML: file text đổi đuôi `.pdf`,
+    và PDF đặt mật khẩu mở. Người dùng chỉ thấy `Unexpected token 'I',
+    "Internal S"… is not valid JSON` — không nói được gì về việc phải làm.
+    """
+    import fitz
+
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception as e:  # noqa: BLE001 — mọi kiểu hỏng đều quy về một câu
+        raise NguonHong(
+            "File không phải PDF hợp lệ hoặc đã hỏng. Hãy mở thử bằng trình đọc "
+            f"PDF để kiểm tra. ({type(e).__name__})")
+    if doc.needs_pass:
+        doc.close()
+        raise NguonHong(
+            "PDF đang khoá bằng mật khẩu nên không đọc được. Hãy bỏ khoá rồi "
+            "tải lên lại — ví dụ mở bằng trình đọc PDF rồi In ra PDF mới.")
+    if doc.page_count == 0:
+        doc.close()
+        raise NguonHong("PDF không có trang nào.")
+    return doc
+
+
+def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
+    doc = mo_pdf(data)
     raw: list[dict] = []
     sizes: Counter = Counter()
     per_page: dict[int, list[dict]] = {}
@@ -2030,8 +2054,171 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
 # ---------------------------------------------------------------- plain text
 
 
-def parse_text(raw: str) -> tuple[str, list[Block], dict[str, bytes]]:
+# Dấu hiệu "đây là Markdown chứ không phải văn bản thường". Đòi **tiêu đề ATX**
+# hoặc **khối mã có rào** — hai thứ không xuất hiện tình cờ. Chỉ nhìn `|` hay `*`
+# thì một đoạn văn có gạch đầu dòng cũng bị đối xử như Markdown.
+_MD_DAU = re.compile(r"^(#{1,6} \S|```|~~~)", re.M)
+
+_MD_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*$")
+_MD_FENCE = re.compile(r"^\s*(```|~~~)")
+_MD_BANG = re.compile(r"^\s*\|.*\|\s*$")
+_MD_HR = re.compile(r"^\s*([-*_])\1{2,}\s*$")
+_MD_MUC = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
+
+
+def _md_toan(t: str) -> str:
+    r"""`$$…$$` và `$…$` → `\(…\)`, tức dạng tầng hiển thị đã dựng được.
+
+    Không tự chế một bộ dựng toán thứ hai: `mathTeX()` bên `app.js` và `_math_tex`
+    bên `main.py` đã lo `\(…\)` và có test giữ hai bên khớp nhau.
+    """
+    t = re.sub(r"\$\$(.+?)\$\$", r"\\(\1\\)", t, flags=re.S)
+    return re.sub(r"(?<![\\$])\$([^$\n]+?)\$(?!\$)", r"\\(\1\\)", t)
+
+
+def _parse_markdown(raw: str) -> tuple[str, list[Block]]:
+    """Bóc Markdown theo DÒNG, vì cấu trúc của nó là theo dòng.
+
+    Cách cũ cắt theo dòng trống rồi đoán bằng heuristic của văn bản thường, nên
+    `# Tiêu đề` giữ nguyên dấu `#` làm tên bài, `## Abstract` bị xếp vào "khối
+    đáng ngờ" và tự bỏ tick, bảng và khối mã bị dồn thành một dòng dài, còn
+    `$$…$$` thì không ai nhận ra.
+    """
+    blocks: list[Block] = []
+    title, section, in_refs, n = "", "", False, 0
+
+    def them(kind: str, text: str, dich: bool, lvl: int = 0) -> None:
+        nonlocal n
+        if not text.strip():
+            return
+        n += 1
+        blocks.append(Block(f"b{n}", kind, text.strip(), section, lvl, 0, dich))
+
+    dong = raw.split("\n")
+    i = 0
+    doan: list[str] = []
+
+    def xa_doan() -> None:
+        if not doan:
+            return
+        t = clean_text(_md_toan(" ".join(doan)))
+        doan.clear()
+        if not t:
+            return
+        if in_refs:
+            them("reference", t, False)
+        elif _CAPTION.match(t):
+            them("caption", t, True)
+        else:
+            them("para", t, True)
+
+    while i < len(dong):
+        ln = dong[i]
+
+        # khối mã có rào: giữ NGUYÊN VĂN, và không dịch
+        if (m := _MD_FENCE.match(ln)):
+            xa_doan()
+            rao = m.group(1)
+            than = [ln]
+            i += 1
+            while i < len(dong) and not dong[i].lstrip().startswith(rao):
+                than.append(dong[i])
+                i += 1
+            if i < len(dong):
+                than.append(dong[i])
+            them("code", "\n".join(than), False)
+            i += 1
+            continue
+
+        # bảng: gom trọn các dòng có `|`, giữ xuống dòng để còn dựng lại được
+        if _MD_BANG.match(ln):
+            xa_doan()
+            hang = []
+            while i < len(dong) and _MD_BANG.match(dong[i]):
+                hang.append(dong[i].strip())
+                i += 1
+            them("table", "\n".join(hang), False)
+            continue
+
+        # công thức hiển thị đứng riêng một khối
+        if ln.strip() in ("$$", "\\[") or (ln.strip().startswith("$$")
+                                            and ln.strip().endswith("$$")
+                                            and len(ln.strip()) > 4):
+            xa_doan()
+            if ln.strip().startswith("$$") and ln.strip().endswith("$$") and len(ln.strip()) > 4:
+                them("equation", _md_toan(ln.strip()), False)
+                i += 1
+                continue
+            than = []
+            i += 1
+            while i < len(dong) and dong[i].strip() not in ("$$", "\\]"):
+                than.append(dong[i])
+                i += 1
+            them("equation", _md_toan("$$" + "\n".join(than) + "$$"), False)
+            i += 1
+            continue
+
+        if (m := _MD_HEADING.match(ln)):
+            xa_doan()
+            lvl, chu = len(m.group(1)), clean_text(m.group(2))
+            if not chu:
+                i += 1
+                continue
+            # `# Tiêu đề` đầu bài là TÊN BÀI, và dấu `#` phải bị bỏ — trước đây
+            # nó theo tên bài vào cả header lẫn danh sách kho.
+            if lvl == 1 and not title and not blocks:
+                title = chu
+                i += 1
+                continue
+            in_refs = bool(_REF_START.match(chu))
+            section = chu
+            them("heading", chu, not in_refs, min(lvl, 3))
+            i += 1
+            continue
+
+        if _MD_HR.match(ln):
+            xa_doan()
+            i += 1
+            continue
+
+        if not ln.strip():
+            xa_doan()
+            i += 1
+            continue
+
+        # Mục danh sách là MỘT khối riêng, cùng lý do với `_list_items()` ở đường
+        # PDF: cột song ngữ căn theo khối, gộp lại thì mấy ý song song thành một
+        # đoạn chạy dài.
+        if (m := _MD_MUC.match(ln)) and not doan:
+            xa_doan()
+            t = clean_text(_md_toan(m.group(1)))
+            them("reference" if in_refs else "para", t, not in_refs)
+            i += 1
+            continue
+
+        doan.append(ln.strip())
+        i += 1
+
+    xa_doan()
+    return title, blocks
+
+
+def parse_text(raw: str, name: str = "") -> tuple[str, list[Block], dict[str, bytes]]:
     raw = raw.replace("\r\n", "\n")
+
+    if _MD_DAU.search(raw):
+        title, blocks = _parse_markdown(raw)
+    else:
+        title, blocks = _parse_plain(raw)
+
+    stitch_hyphenated(blocks)
+    mark_continuations(blocks)
+    mark_noise(blocks)
+    return title, blocks, {}
+
+
+def _parse_plain(raw: str) -> tuple[str, list[Block]]:
+    """Văn bản thường: cắt theo dòng trống rồi đoán bằng heuristic."""
     chunks = [c.strip() for c in re.split(r"\n\s*\n", raw) if c.strip()]
     blocks: list[Block] = []
     section = ""
@@ -2065,11 +2252,7 @@ def parse_text(raw: str) -> tuple[str, list[Block], dict[str, bytes]]:
             blocks.append(Block(bid, "equation", one, section, 0, 0, False))
             continue
         blocks.append(Block(bid, "para", one, section, 0, 0, True))
-
-    stitch_hyphenated(blocks)
-    mark_continuations(blocks)
-    mark_noise(blocks)
-    return title, blocks, {}
+    return title, blocks
 
 
 # ---------------------------------------------------------------- arXiv
@@ -2089,11 +2272,105 @@ async def fetch_arxiv(url_or_id: str) -> tuple[str, bytes]:
         return aid, r.content
 
 
+# Chữ ký đầu file, để biết người dùng vừa đưa cái gì vào. Đuôi file không đủ:
+# đổi tên `paper.docx` thành `.pdf` là lọt, mà đọc ZIP thành văn bản thì ra một
+# khối 9.800 ký tự `PK…[Content_Types].xml…` — đã xảy ra thật, và tệ hơn là nó
+# được báo giá dịch rồi lưu vĩnh viễn vào kho thành "(không tiêu đề)".
+_MAGIC = [
+    (b"%PDF-", "pdf"),
+    (b"PK\x03\x04", "zip"),      # docx / xlsx / pptx / odt / jar
+    (b"\xd0\xcf\x11\xe0", "doc"),  # .doc, .xls cũ
+    (b"\x89PNG", "anh"),
+    (b"\xff\xd8\xff", "anh"),
+    (b"GIF8", "anh"),
+    (b"\x1f\x8b", "nen"),
+    (b"Rar!", "nen"),
+    (b"\x7fELF", "nhiphan"),
+]
+
+_TEN_DINH_DANG = {
+    "zip": "tài liệu Office (.docx/.xlsx/.pptx) hoặc file nén",
+    "doc": "tài liệu Office đời cũ (.doc/.xls)",
+    "anh": "file ảnh",
+    "nen": "file nén",
+    "nhiphan": "file nhị phân",
+}
+
+
+def sniff(data: bytes, name: str = "") -> str:
+    """Đoán định dạng thật từ **nội dung**, không tin đuôi file.
+
+    Trả `pdf` · `text` · hoặc một mã trong `_TEN_DINH_DANG`. Rỗng thì trả `rong`.
+    """
+    if not data.strip():
+        return "rong"
+    for sig, kind in _MAGIC:
+        if data.startswith(sig):
+            return kind
+    # Còn lại: coi là văn bản nếu giải mã được và hầu như không có byte điều khiển
+    try:
+        t = data[:4096].decode("utf-8")
+    except UnicodeDecodeError:
+        return "nhiphan"
+    xau = sum(1 for c in t if ord(c) < 9 or (13 < ord(c) < 32))
+    return "nhiphan" if xau > len(t) * 0.02 else "text"
+
+
+class NguonHong(Exception):
+    """Nguồn người dùng đưa vào không dùng được — kèm câu giải thích tiếng Việt.
+
+    Tách riêng khỏi mọi lỗi khác để route trả **4xx có nội dung đọc được**, chứ
+    không phải 500 kèm trang HTML. Frontend gọi `res.json()` lên một trang 500
+    thì ném `Unexpected token 'I', "Internal S"… is not valid JSON` và in nguyên
+    câu đó ra màn hình — người dùng không có cách nào hiểu mình phải làm gì.
+    """
+
+
+def kiem_nguon(data: bytes, name: str = "") -> str:
+    """Chặn file không đọc được NGAY, trước khi tốn công bóc và tạo bản ghi."""
+    loai = sniff(data, name)
+    if loai == "rong":
+        raise NguonHong(f"File {name or ''} rỗng — không có gì để đọc.".strip())
+    if loai in _TEN_DINH_DANG:
+        raise NguonHong(
+            f"Đây là {_TEN_DINH_DANG[loai]}, không phải PDF hay văn bản. "
+            "Công cụ nhận .pdf, .txt và .md. "
+            "Với file Word, hãy xuất ra PDF rồi tải lên lại.")
+    # Mang tên `.pdf` mà ruột không phải PDF: người dùng đang tin mình vừa tải
+    # một PDF lên, nên im lặng bóc nó như văn bản rồi báo "không có chữ nào" là
+    # trả lời lạc đề. Nói thẳng ra cái lệch.
+    if loai != "pdf" and name.lower().endswith(".pdf"):
+        raise NguonHong(
+            "File có đuôi .pdf nhưng nội dung không phải PDF hợp lệ — có thể đã "
+            "hỏng hoặc chỉ được đổi tên. Hãy mở thử bằng trình đọc PDF để kiểm tra.")
+    return loai
+
+
 async def fetch_pdf_url(url: str) -> bytes:
+    """Tải một PDF từ link. Link không trỏ tới PDF thì nói ra, đừng bóc bừa.
+
+    Dán link Wikipedia vào thì trước đây app tải nguyên trang HTML, bóc ra 1.128
+    khối, đếm "545 tài liệu tham khảo", rồi báo giá dịch cả trang web — mà tiêu
+    đề bài là chính cái URL.
+    """
     async with httpx.AsyncClient(timeout=90, follow_redirects=True) as cl:
-        r = await cl.get(url, headers={"User-Agent": "paper-reader-vi/1.0"})
-        r.raise_for_status()
-        return r.content
+        try:
+            r = await cl.get(url, headers={"User-Agent": "paper-reader-vi/1.0"})
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise NguonHong(f"Không tải được link (mã {e.response.status_code}).")
+        except httpx.HTTPError as e:
+            raise NguonHong(f"Không tải được link: {type(e).__name__}.")
+
+    ct = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not r.content.startswith(b"%PDF-"):
+        if "html" in ct:
+            raise NguonHong(
+                "Link này là trang web, không phải PDF. Với arXiv hãy dán mã bài "
+                "(ví dụ 1706.03762) hoặc link /abs/.")
+        raise NguonHong(
+            f"Link không trả về PDF (máy chủ báo kiểu {ct or 'không rõ'}).")
+    return r.content
 
 
 # ---------------------------------------------------------------- chunking

@@ -1037,42 +1037,65 @@ async def import_doc(
     _say(job, "Bắt đầu", "", 2)
 
     pdf_bytes: bytes | None = None
-    if file is not None:
-        data = await file.read()
-        name = (file.filename or "").lower()
-        if name.endswith(".pdf") or data[:5] == b"%PDF-":
+    kieu_nguon = "pdf"          # pdf | text — quyết định câu báo lỗi ở dưới
+    try:
+        if file is not None:
+            data = await file.read()
+            # Kiểm NGAY, trước khi bóc và trước khi tạo bất cứ bản ghi nào. Đuôi
+            # file không đủ: `paper.docx` từng lọt qua và thành một khối 9.800 ký
+            # tự byte rác, có báo giá dịch và được lưu vĩnh viễn vào kho.
+            loai = parser.kiem_nguon(data, file.filename or "")
+            if loai == "pdf":
+                pdf_bytes = data
+                _say(job, "Bóc chữ từ PDF", f"{len(data)//1024} KB", 15)
+                t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
+                source = file.filename or "upload.pdf"
+            else:
+                kieu_nguon = "text"
+                t, blocks, imgs = parser.parse_text(data.decode("utf-8", "replace"),
+                                                   name=file.filename or "")
+                source = file.filename or "upload.txt"
+        elif url.strip():
+            u = url.strip()
+            if "arxiv.org" in u or parser._ARXIV.search(u):
+                _say(job, "Tải bài từ arXiv", u, 6)
+                aid, data = await parser.fetch_arxiv(u)
+                source = f"arXiv:{aid}"
+            elif u.lower().startswith(("http://", "https://")):
+                _say(job, "Tải PDF về", u, 6)
+                data = await parser.fetch_pdf_url(u)
+                source = u
+            else:
+                # Chuỗi không phải link cũng không phải mã arXiv. Trước đây nó
+                # chạy thẳng vào `fetch_pdf_url` rồi nổ thành 500.
+                raise parser.NguonHong(
+                    "Không nhận ra mã arXiv hay link PDF. Ví dụ hợp lệ: "
+                    "1706.03762 · arXiv:1706.03762v7 · https://…/paper.pdf")
             pdf_bytes = data
-        if name.endswith(".pdf") or data[:5] == b"%PDF-":
             _say(job, "Bóc chữ từ PDF", f"{len(data)//1024} KB", 15)
             t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
-            source = file.filename or "upload.pdf"
+        elif text.strip():
+            kieu_nguon = "text"
+            t, blocks, imgs = parser.parse_text(text, name="dán")
+            source = "dán trực tiếp"
         else:
-            t, blocks, imgs = parser.parse_text(data.decode("utf-8", "replace"))
-            source = file.filename or "upload.txt"
-    elif url.strip():
-        u = url.strip()
-        if "arxiv.org" in u or parser._ARXIV.search(u):
-            _say(job, "Tải bài từ arXiv", u, 6)
-            aid, data = await parser.fetch_arxiv(u)
-            source = f"arXiv:{aid}"
-        else:
-            _say(job, "Tải PDF về", u, 6)
-            data = await parser.fetch_pdf_url(u)
-            source = u
-        pdf_bytes = data
-        _say(job, "Bóc chữ từ PDF", f"{len(data)//1024} KB", 15)
-        t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
-    elif text.strip():
-        t, blocks, imgs = parser.parse_text(text)
-        source = "dán trực tiếp"
-    else:
-        raise HTTPException(400, "Cần một trong: file PDF, đường dẫn, hoặc văn bản dán vào")
+            raise HTTPException(400, "Cần một trong: file PDF, đường dẫn, hoặc văn bản dán vào")
+    except parser.NguonHong as e:
+        _say(job, "Lỗi", str(e), None)
+        if (q := _JOBS.get(job or "")) is not None:
+            q.put_nowait(None)
+        raise HTTPException(400, str(e))
 
     if not blocks:
         _say(job, "Lỗi", "không trích được nội dung", None)
         if (q := _JOBS.get(job or "")) is not None:
             q.put_nowait(None)
-        raise HTTPException(422, "Không trích được nội dung. PDF có thể là bản scan ảnh — cần OCR trước.")
+        # Câu báo phải theo ĐÚNG loại nguồn. Tải `empty.txt` lên mà bị khuyên "cần
+        # OCR" thì lời khuyên vô nghĩa và người dùng mất thì giờ đi tìm OCR.
+        raise HTTPException(422, "Không trích được nội dung. PDF có thể là bản scan "
+                                 "ảnh — cần OCR trước."
+                            if kieu_nguon == "pdf" else
+                            "Không trích được nội dung — nguồn không có chữ nào đọc được.")
 
     # Cùng một file PDF thì cấu trúc bóc ra và khung hình chắc chắn giống hệt.
     # Chạy lại PyMuPDF và mô hình bố cục chỉ tốn thời gian chứ không đổi kết quả.

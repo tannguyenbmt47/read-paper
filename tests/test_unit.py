@@ -1113,3 +1113,80 @@ def test_noi_het_cau_va_khop_nguyen_van():
     assert _do_khoi("Chúng tôi định nghĩa", by) == "b2"
     assert _do_khoi("Câu một", by) == "", "nằm ở hai khối thì bỏ, không đoán"
     assert _do_khoi("không ở đâu", by) == ""
+
+
+# ------------------------------------------- nhận nguồn: chặn trước khi bóc
+
+def test_nhan_dinh_dang_that_tu_noi_dung_khong_tu_duoi_file():
+    """Đuôi file không đáng tin — phải đọc chữ ký đầu file.
+
+    `paper.docx` từng lọt qua và được đọc như văn bản: ra **một khối 9.800 ký tự**
+    `PK…[Content_Types].xml…`, có báo giá dịch $0,009–0,021, và được lưu vĩnh viễn
+    vào kho thành "(không tiêu đề)". Chặn phải xảy ra **trước** khi bóc và trước
+    khi tạo bất cứ bản ghi nào.
+    """
+    from server.parser import sniff, kiem_nguon, NguonHong
+
+    assert sniff(b"%PDF-1.7 ...") == "pdf"
+    assert sniff(b"PK\x03\x04" + b"x" * 50) == "zip"
+    assert sniff("# Tiêu đề\n\nĐoạn văn tiếng Việt.".encode()) == "text"
+    assert sniff(b"   \n ") == "rong"
+    assert sniff(bytes(range(256))) == "nhiphan"
+
+    for data, name in ((b"PK\x03\x04" + b"x" * 50, "paper.docx"), (b"", "empty.txt")):
+        with pytest.raises(NguonHong):
+            kiem_nguon(data, name)
+
+    # Mang tên `.pdf` mà ruột là text: người dùng đang tin mình vừa tải PDF lên,
+    # nên bóc im lặng như văn bản rồi báo "không có chữ nào" là trả lời lạc đề.
+    with pytest.raises(NguonHong, match="đuôi .pdf"):
+        kiem_nguon(b"day khong phai pdf", "fake.pdf")
+
+    # còn .txt/.md thật thì phải đi qua
+    assert kiem_nguon(b"# Bai\n\nNoi dung", "paper.md") == "text"
+
+
+def test_boc_markdown_that_su_chu_khong_doan_bang_heuristic():
+    """`.md` phải ra HEADING / EQUATION / TABLE / CODE / REF, và tiêu đề sạch `#`.
+
+    Màn hình ghi là nhận `.md`, nhưng đường cũ cắt theo dòng trống rồi đoán bằng
+    heuristic của văn bản thường. Hậu quả đo được: tên bài giữ nguyên dấu `#` ở
+    cả header lẫn danh sách kho, `## Abstract` bị xếp vào "khối đáng ngờ" và tự
+    bỏ tick, bảng và khối mã bị dồn thành một dòng, `$$…$$` không ai nhận ra.
+    """
+    from server.parser import parse_text
+
+    md = (
+        "# Sparse Mixture Routing\n\n"
+        "## Abstract\n\n"
+        "Một đoạn văn có $\\alpha = 1$ ở giữa câu.\n\n"
+        "$$\n\\sum_{i=1}^{E} g_i = 1\n$$\n\n"
+        "## 2. Phương pháp\n\n"
+        "| Model | Acc |\n|---|---|\n| Dense | 84.1 |\n\n"
+        "```python\ndef route(x):\n    return x\n```\n\n"
+        "## References\n\n"
+        "[1] Vaswani et al. Attention is all you need. NeurIPS 2017.\n"
+    )
+    title, blocks, _ = parse_text(md, name="paper.md")
+
+    assert title == "Sparse Mixture Routing", "dấu # phải bị bỏ khỏi tên bài"
+    loai = {b.type for b in blocks}
+    assert {"heading", "para", "equation", "table", "code", "reference"} <= loai
+
+    # heading phải còn cờ dịch — trước đây nó bị xếp là rác rồi tự bỏ tick
+    abst = next(b for b in blocks if b.text == "Abstract")
+    assert abst.type == "heading" and abst.translate
+
+    # bảng và mã giữ NGUYÊN xuống dòng (dồn một dòng là mất cấu trúc) và không dịch
+    bang = next(b for b in blocks if b.type == "table")
+    assert "\n" in bang.text and not bang.translate
+    code = next(b for b in blocks if b.type == "code")
+    assert "def route" in code.text and not code.translate
+
+    # `$…$` và `$$…$$` quy về `\(…\)` — dạng mà `mathTeX` đã dựng được và có test
+    assert any("\\(" in b.text for b in blocks if b.type == "para")
+    assert next(b for b in blocks if b.type == "equation").text.startswith("\\(")
+
+    # văn bản THƯỜNG vẫn đi đường cũ, không bị Markdown hoá
+    t2, b2, _ = parse_text("Tiêu đề bài\n\nMột đoạn văn bình thường.\n")
+    assert t2 == "Tiêu đề bài" and all(b.type != "code" for b in b2)

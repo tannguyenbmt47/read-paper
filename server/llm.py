@@ -63,7 +63,11 @@ def _client() -> AsyncOpenAI:
             "HTTP-Referer": os.getenv("OR_APP_URL", "http://localhost:8000"),
             "X-Title": os.getenv("OR_APP_TITLE", "Paper Reader VI"),
         },
-        timeout=300,
+        # 300 giây là trần của MỘT lượt gọi. Dài vì mẻ dịch của bài lớn thật sự
+        # cần chừng đó; nhưng phía người dùng phải thấy đồng hồ chạy và bấm Dừng
+        # được, nếu không thì một dòng trạng thái bất động không phân biệt nổi
+        # "đang chạy" với "đã treo" — đã ngồi chờ 5 phút trước đúng tình huống đó.
+        timeout=float(os.getenv("OR_TIMEOUT", "300")),
     )
 
 

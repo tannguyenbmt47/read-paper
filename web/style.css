@@ -1400,3 +1400,15 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
    tiếng Việt. Chỉ nghiêng nhẹ phần chữ cái, đúng lối in toán. */
 .imath { font-style: italic; white-space: nowrap; }
 .imath sub, .imath sup { font-style: normal; }
+
+/* Bảng và khối mã bóc từ nguồn Markdown. Chúng giữ nguyên xuống dòng, nên nếu
+   để `sci()` dựng như một đoạn văn thì cả bảng dồn thành một dòng dài — đúng
+   thứ đã thấy khi nạp một file .md. */
+.pair.code .en, .pair.table .en { grid-column: 1 / -1; }   /* trải hết bề ngang */
+.pair.code .vi, .pair.code .gl,
+.pair.table .vi, .pair.table .gl { display: none; }        /* không dịch thì không chừa cột */
+.codeblk {
+  margin: 0; padding: .5rem .7rem; overflow-x: auto;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px;
+  font-family: var(--mono); font-size: .86em; line-height: 1.45; white-space: pre;
+}

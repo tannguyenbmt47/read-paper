@@ -51,11 +51,9 @@ const SV_KEY = "docdoc:survey";   // giữ tiền tố cũ, xem chú thích ở 
 
 const svFetch = async (url, opt) => {
   const r = await fetch(url, opt);
-  if (!r.ok) {
-    let msg = r.statusText;
-    try { msg = (await r.json()).detail || msg; } catch (_) { /* body rỗng */ }
-    throw new Error(msg);
-  }
+  // `apiErr` khai ở `app.js` và dùng nhờ (cùng lối với `esc`): nó biết phân biệt
+  // body JSON với trang lỗi HTML, nên không dội một trang 500 vào mặt người dùng.
+  if (!r.ok) throw new Error(await apiErr(r, r.statusText));
   return r.json();
 };
 

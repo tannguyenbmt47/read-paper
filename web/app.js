@@ -2,6 +2,29 @@
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+/** Lấy câu lỗi từ một response hỏng, KHÔNG bao giờ ném thêm lỗi mới.
+
+    `await apiErr(r)` là cái bẫy: server trả 500 thì FastAPI gửi về một
+    trang HTML, `json()` ném `Unexpected token 'I', "Internal S"… is not valid
+    JSON`, và chính câu tiếng Anh đó bị in ra màn hình thay cho lỗi thật. Người
+    dùng không có cách nào hiểu mình phải làm gì. */
+async function apiErr(r, mac = "") {
+  try {
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("json")) {
+      const d = await r.json();
+      const m = d?.detail ?? d?.error ?? d?.message;
+      if (typeof m === "string" && m.trim()) return m;
+      if (Array.isArray(m) && m.length) return m.map((x) => x?.msg || x).join("; ");
+    } else {
+      const t = (await r.text()).trim();
+      // Trang lỗi HTML thì không có gì đáng đọc — đừng dội nó vào mặt người dùng.
+      if (t && !/^\s*</.test(t) && t.length < 300) return t;
+    }
+  } catch { /* đọc được gì thì đọc, không được thì rơi về câu mặc định */ }
+  return mac || `Máy chủ báo lỗi ${r.status}${r.statusText ? " " + r.statusText : ""}.`;
+}
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -180,7 +203,7 @@ function wireFigPeek() {
 }
 
 const state = {
-  doc: null, chunks: 0, translating: false, stopping: false,
+  doc: null, chunks: 0, translating: false, stopping: false, bo: null,
   history: [], session: 0, models: [], slideSel: null,
 };
 
@@ -193,6 +216,27 @@ function money(v) {
 }
 
 /** Báo chi phí của một lượt gọi vừa xong, kèm tổng đã tiêu cho bài này. */
+/* Đồng hồ cho những lượt gọi dài. Một dòng trạng thái đứng yên không nói được
+   "đang chạy" khác "đã treo" ở chỗ nào — và người dùng đã ngồi chờ 5 phút trước
+   một dòng chữ bất động rồi. */
+let _dongHo = null;
+
+function dongHo(nhan) {
+  dongHoTat();
+  const t0 = Date.now();
+  const ve = () => {
+    const s = Math.round((Date.now() - t0) / 1000);
+    status(`${nhan}… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+      + (s > 45 ? " · bấm ■ Dừng nếu muốn huỷ" : ""));
+  };
+  ve();
+  _dongHo = setInterval(ve, 1000);
+}
+
+function dongHoTat() {
+  if (_dongHo) { clearInterval(_dongHo); _dongHo = null; }
+}
+
 function reportCost(label, run, total) {
   const c = run?.cost;
   if (total) { state.doc.usage = total; renderUsage(); }
@@ -300,7 +344,7 @@ async function setModel(id) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: id }),
   });
-  if (!r.ok) throw new Error((await r.json()).detail || "Không đổi được model");
+  if (!r.ok) throw new Error(await apiErr(r, "Không đổi được model"));
   state.doc.model = id;
   $("#revModel").value = id;      // hai ô chọn ở hai màn hình luôn khớp nhau
   $("#docModel").value = id;
@@ -364,6 +408,10 @@ function wireStart() {
     $$(".tab").forEach((x) => x.classList.toggle("is-on", x === t));
     $$("[data-pane]", $("#start")).forEach((p) =>
       p.classList.toggle("hidden", p.dataset.pane !== t.dataset.tab));
+    // Lỗi và nhật ký của lần trước thuộc về NGUỒN trước. Để nguyên thì
+    // "Chưa chọn nguồn nào." còn đỏ chót trong khi người dùng đã sang tab khác
+    // và đang gõ, rồi tiến trình của lần nạp cũ vẫn chạy trên màn hình.
+    startSach();
   }));
 
   const drop = $("#drop"), input = $("#fileInput");
@@ -383,6 +431,16 @@ function wireStart() {
 
   $("#importBtn").onclick = doImport;
   $("#urlInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doImport(); });
+  // Bắt đầu gõ là lỗi cũ hết nghĩa — xoá luôn, đừng bắt người dùng nhìn một
+  // câu đỏ nói về thao tác họ đã bỏ qua từ lâu.
+  ["#urlInput", "#textInput"].forEach((sel) =>
+    $(sel)?.addEventListener("input", () => $("#startErr").classList.add("hidden")));
+}
+
+/** Dọn mọi dấu vết của lần nạp trước trên màn hình nhập. */
+function startSach() {
+  $("#startErr")?.classList.add("hidden");
+  $("#impProg")?.classList.add("hidden");
 }
 
 /* Nạp bài đi qua nhiều bước, bước chạy mô hình bố cục lâu nhất. Client mở kênh
@@ -448,10 +506,30 @@ async function doImport() {
   fd.append("use_layout", $("#useLayout").checked ? "1" : "0");
   const f = $("#fileInput").files[0];
   const active = $(".tab.is-on").dataset.tab;
-  if (active === "file" && f) fd.append("file", f);
-  else if (active === "url") fd.append("url", $("#urlInput").value);
-  else if (active === "text") fd.append("text", $("#textInput").value);
-  else return showErr("Chưa chọn nguồn nào.");
+  if (active === "file" && f) {
+    // Lọc ngay ở đây cho nhanh; server vẫn kiểm lại bằng magic bytes vì đuôi
+    // file không đáng tin (`paper.docx` đổi tên là lọt).
+    if (!/\.(pdf|txt|md|markdown)$/i.test(f.name)) {
+      return showErr(`Chỉ nhận .pdf, .txt và .md — "${f.name}" không thuộc nhóm đó. `
+        + "Với file Word, hãy xuất ra PDF rồi tải lên lại.");
+    }
+    fd.append("file", f);
+  } else if (active === "url") {
+    const u = $("#urlInput").value.trim();
+    if (!u) return showErr("Chưa nhập mã arXiv hay link PDF.");
+    // Mã arXiv (YYMM.NNNNN[vN]) hoặc một URL http(s). Sai thì nói luôn ở đây,
+    // đừng để server phải đoán rồi trả về một lỗi khó hiểu.
+    if (!/^\d{4}\.\d{4,5}(v\d+)?$/i.test(u)
+        && !/^arxiv:\s*\d{4}\.\d{4,5}(v\d+)?$/i.test(u)
+        && !/^https?:\/\/\S+$/i.test(u)) {
+      return showErr("Không nhận ra mã arXiv hay link PDF. "
+        + "Ví dụ: 1706.03762 · arXiv:1706.03762v7 · https://…/paper.pdf");
+    }
+    fd.append("url", u);
+  } else if (active === "text") {
+    if (!$("#textInput").value.trim()) return showErr("Ô dán văn bản đang trống.");
+    fd.append("text", $("#textInput").value);
+  } else return showErr("Chưa chọn nguồn nào.");
 
   btn.disabled = true; btn.textContent = "Đang đọc tài liệu…";
   // mở kênh tiến trình TRƯỚC khi POST, không thì mất mấy bước đầu
@@ -460,9 +538,16 @@ async function doImport() {
   await new Promise((r) => setTimeout(r, 120));   // chờ SSE bắt tay xong
   try {
     const r = await fetch("/api/import", { method: "POST", body: fd });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    if (!r.ok) throw new Error(await apiErr(r, r.statusText));
     const doc = await r.json();
     prog.done(true);
+    // Reset ô nguồn sau khi nạp xong. Không reset thì dòng "Đã chọn: paper.md"
+    // còn nguyên, người dùng bấm Nạp lần nữa là tạo thêm một bản trùng — đã ra
+    // 5 bản "Attention Is All You Need" trong kho đúng vì vậy.
+    $("#fileInput").value = "";
+    $("#urlInput").value = "";
+    const fn = $("#fileName");
+    if (fn) fn.textContent = "";
     location.hash = doc.id;
     mountReview(doc);          // bước 1 trước, dịch sau
   } catch (e) {
@@ -642,7 +727,7 @@ async function editBlocks(url, payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!r.ok) throw new Error((await r.json()).detail || "không sửa được");
+  if (!r.ok) throw new Error(await apiErr(r, "không sửa được"));
   state.doc = await r.json();
   renderReview();
   loadEstimate();
@@ -730,7 +815,7 @@ async function loadCropPage(pno) {
   $("#cropErr").textContent = "";
   try {
     const r = await fetch(`/api/doc/${state.doc.id}/page/${pno}.png?dpi=110`);
-    if (!r.ok) throw new Error((await r.json()).detail || "không tải được trang");
+    if (!r.ok) throw new Error(await apiErr(r, "không tải được trang"));
     crop.pageW = parseFloat(r.headers.get("X-Page-Width")) || 612;
     crop.pageH = parseFloat(r.headers.get("X-Page-Height")) || 792;
     if (crop.url) URL.revokeObjectURL(crop.url);
@@ -837,7 +922,7 @@ function wireCrop() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ page: crop.page, rect: getCropRect() }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "lỗi");
+      if (!r.ok) throw new Error(await apiErr(r, "lỗi"));
       const { block } = await r.json();
       Object.assign(crop.block, block);
       closeCrop();
@@ -912,7 +997,7 @@ function wireReader() {
     msg.textContent = "Đang nhờ model dọn lại chữ bóc từ PDF…";
     try {
       const r = await fetch(`/api/doc/${state.doc.id}/relayout`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "không căn chỉnh được");
+      if (!r.ok) throw new Error(await apiErr(r, "không căn chỉnh được"));
       const { stats, run, doc } = await r.json();
       state.doc = doc;
       renderReview();
@@ -1012,7 +1097,7 @@ function wireReader() {
     btn.textContent = "Đang bóc lại…";
     try {
       const r = await fetch(`/api/doc/${state.doc.id}/reparse`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "không bóc lại được");
+      if (!r.ok) throw new Error(await apiErr(r, "không bóc lại được"));
       const res = await r.json();
       mountDoc(res.doc);
       const st = res.stats;
@@ -1052,7 +1137,7 @@ function wireReader() {
     btn.textContent = "Đang cắt lại…";
     try {
       const r = await fetch(`/api/doc/${state.doc.id}/recrop`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "không cắt lại được");
+      if (!r.ok) throw new Error(await apiErr(r, "không cắt lại được"));
       const res = await r.json();
       mountDoc(res.doc);
       const st = res.stats;
@@ -1092,8 +1177,9 @@ function wireReader() {
     const old = btn.textContent;
     btn.textContent = "Đang đọc toàn bài…";
     try {
-      const r = await fetch(`/api/doc/${state.doc.id}/brief`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "không dựng được");
+      const r = await fetch(`/api/doc/${state.doc.id}/brief`,
+                           { method: "POST", signal: state.bo?.signal });
+      if (!r.ok) throw new Error(await apiErr(r, "không dựng được"));
       const res = await r.json();
       state.doc.brief = res.brief;
       $("#docTitleVi").textContent = res.brief.title_vi || state.doc.title;
@@ -1687,7 +1773,7 @@ async function patchSlides(body, label) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!r.ok) throw new Error((await r.json()).detail || "không lưu được");
+  if (!r.ok) throw new Error(await apiErr(r, "không lưu được"));
   state.doc.slides = (await r.json()).slides;
   renderStrip();
   if (label) slStatus(label);
@@ -1821,7 +1907,7 @@ async function patchOutline(body, label) {
   const r = await fetch(`/api/doc/${state.doc.id}/outline`,
                         { method: "PATCH", headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(body) });
-  if (!r.ok) { slStatus("Lỗi: " + ((await r.json()).detail || "không lưu được")); return; }
+  if (!r.ok) { slStatus("Lỗi: " + (await apiErr(r, "không lưu được"))); return; }
   (state.doc.slides ||= {}).outline = (await r.json()).outline;
   renderOutline();
   if (label) slStatus(label);
@@ -1893,7 +1979,7 @@ function wireOutline() {
     slStatus("Đang đọc lại bài và soạn nội dung buổi nói…");
     try {
       const r = await fetch(`/api/doc/${state.doc.id}/outline`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "không soạn được");
+      if (!r.ok) throw new Error(await apiErr(r, "không soạn được"));
       const res = await r.json();
       (state.doc.slides ||= {}).outline = res.outline;
       slTab("outline");
@@ -1934,7 +2020,7 @@ function buildDeck() {
       resolve({ ...JSON.parse(e.data), run });
     });
     es.addEventListener("error", (e) => {
-      es.close();
+      xong(); es.close();
       let msg = "mất kết nối tới server";
       try { msg = JSON.parse(e.data).error; } catch {}
       reject(new Error(msg));
@@ -2048,7 +2134,7 @@ async function makeHighlight(color) {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ add: hlPending }),
     });
-    if (!r.ok) throw new Error((await r.json()).detail || "không bôi được");
+    if (!r.ok) throw new Error(await apiErr(r, "không bôi được"));
     const { highlights, new: item } = await r.json();
     state.doc.highlights = highlights;
     document.getSelection().removeAllRanges();
@@ -2102,7 +2188,7 @@ async function markInsights(tuDong = false) {
     const r = await fetch(
       `/api/doc/${state.doc.id}/insights?level=${encodeURIComponent(muc)}`,
       { method: "POST" });
-    if (!r.ok) throw new Error((await r.json()).detail || "không đánh dấu được");
+    if (!r.ok) throw new Error(await apiErr(r, "không đánh dấu được"));
     const res = await r.json();
 
     // Neo từng câu vào đúng ô của nó. Ô chưa dựng (khối đang bị ẩn, hoặc cột
@@ -2124,7 +2210,7 @@ async function markInsights(tuDong = false) {
         // Vệt người dùng tự tô không mang cờ `auto` nên không bị đụng.
         body: JSON.stringify({ add_many: add, replace_auto: true }),
       });
-      if (!w.ok) throw new Error((await w.json()).detail || "không lưu được vệt bôi");
+      if (!w.ok) throw new Error(await apiErr(w, "không lưu được vệt bôi"));
       state.doc.highlights = (await w.json()).highlights;
       renderDoc();
     }
@@ -2195,7 +2281,7 @@ async function saveHlNote() {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ update: { id: state.hlOpen, note } }),
     });
-    if (!r.ok) throw new Error((await r.json()).detail || "không lưu được");
+    if (!r.ok) throw new Error(await apiErr(r, "không lưu được"));
     state.doc.highlights = (await r.json()).highlights;
     $("#hlMsg").textContent = "Đã lưu.";
     $$(`#doc mark.hl[data-hl="${CSS.escape(state.hlOpen)}"]`)
@@ -2249,7 +2335,7 @@ function wireHighlights() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ update: { id: state.hlOpen, color: b.dataset.c } }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "không đổi màu được");
+      if (!r.ok) throw new Error(await apiErr(r, "không đổi màu được"));
       state.doc.highlights = (await r.json()).highlights;
       setPref("hlcolor", b.dataset.c);
       $$(`#doc mark.hl[data-hl="${CSS.escape(state.hlOpen)}"]`)
@@ -2294,7 +2380,7 @@ function wireHighlights() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ drop: [id] }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "không xoá được");
+      if (!r.ok) throw new Error(await apiErr(r, "không xoá được"));
       state.doc.highlights = (await r.json()).highlights;
       renderDoc();
     } catch (e) { status("Lỗi: " + e.message); }
@@ -2308,7 +2394,7 @@ function wireHighlights() {
     try {
       const r = await fetch(
         `/api/doc/${state.doc.id}/highlights/${state.hlOpen}/explain`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "không giải thích được");
+      if (!r.ok) throw new Error(await apiErr(r, "không giải thích được"));
       const res = await r.json();
       const hit = findHl(state.hlOpen);
       if (hit) hit.h.note = res.note;
@@ -2647,7 +2733,7 @@ function wireSlides() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hint, model: sel.value }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "không viết lại được");
+      if (!r.ok) throw new Error(await apiErr(r, "không viết lại được"));
       const res = await r.json();
       const hit = findSlide(state.slideSel);
       if (hit) state.doc.slides[hit.key][hit.i] = res.slide;
@@ -2671,7 +2757,7 @@ function wireSlides() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ add: state.slideSel || "" }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "không thêm được");
+      if (!r.ok) throw new Error(await apiErr(r, "không thêm được"));
       const { slides, new_id } = await r.json();
       state.doc.slides = slides; state.slideSel = new_id;
       renderStrip(); selectSlide(new_id); slStatus("Đã thêm slide trắng.");
@@ -2685,7 +2771,7 @@ function wireSlides() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ duplicate: state.slideSel }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "không nhân đôi được");
+      if (!r.ok) throw new Error(await apiErr(r, "không nhân đôi được"));
       const { slides, new_id } = await r.json();
       state.doc.slides = slides; state.slideSel = new_id;
       renderStrip(); selectSlide(new_id); slStatus("Đã nhân đôi slide.");
@@ -2733,7 +2819,7 @@ function wireSlides() {
       fd.append("file", f);
       const r = await fetch(`/api/doc/${state.doc.id}/slides/${state.slideSel}/image`,
                            { method: "POST", body: fd });
-      if (!r.ok) throw new Error((await r.json()).detail || "không tải lên được");
+      if (!r.ok) throw new Error(await apiErr(r, "không tải lên được"));
       const { slide } = await r.json();
       const hit = findSlide(state.slideSel);
       if (hit) state.doc.slides[hit.key][hit.i] = slide;
@@ -3156,7 +3242,7 @@ async function setBlockHidden(id, on) {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(on ? { hide: [id] } : { unhide: [id] }),
     });
-    if (!r.ok) throw new Error((await r.json()).detail || "không lưu được");
+    if (!r.ok) throw new Error(await apiErr(r, "không lưu được"));
     const doc = await r.json();
     state.doc.blocks = doc.blocks;
     state.doc.chunk_ids = doc.chunk_ids;
@@ -3205,6 +3291,15 @@ function pairHTML(b, vi, note, inFlow = false) {
     + (b.marker ? " li" : "")
     + (b.cont ? " is-cont" : "") + (inFlow ? " in-flow" : "")
     + (b.type === "equation" && b.figure ? " eq-img" : "");
+  // Bảng và khối mã của nguồn Markdown giữ nguyên xuống dòng, nên `sci()` —
+  // vốn dựng một đoạn văn — sẽ dồn chúng thành một dòng dài. Dùng lại
+  // `renderMd` cho bảng (nó đã có nhánh bảng và có test) và `<pre>` cho mã.
+  const bodyHTML = (blk) =>
+    blk.type === "table" ? renderMd(blk.text)
+    : blk.type === "code" ? `<pre class="codeblk"><code>${esc(
+        blk.text.replace(/^\s*(```|~~~).*\n?/, "").replace(/\n?\s*(```|~~~)\s*$/, ""))}</code></pre>`
+    : sci(blk.text);
+
   // dấu đầu mục treo ngoài lề, lặp ở cả cột gốc lẫn cột dịch vì hai cột là hai
   // bản của cùng một mục
   const mk = b.marker ? `<span class="li-mk">${esc(b.marker)}</span>` : "";
@@ -3244,7 +3339,7 @@ function pairHTML(b, vi, note, inFlow = false) {
   const gl = state.doc.plain?.[b.id] || "";
   return `<div class="pair ${cls}${b.hidden ? " is-hidden" : ""}" id="p-${esc(b.id)}" data-id="${esc(b.id)}" data-section="${esc(b.section || "")}">
     ${fig}${tools}
-    <div class="en">${mk}${sci(b.text)}</div>
+    <div class="en">${mk}${bodyHTML(b)}</div>
     <div class="vi" data-vi>${mk}${viHTML}</div>
     <div class="gl" data-gl>${sci(gl)}</div>
     ${note ? noteHTML(note) : ""}
@@ -3286,7 +3381,7 @@ function editCell(pair, which) {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ block_id: id, [which]: val }),
       });
-      if (!r.ok) throw new Error((await r.json()).detail || "không lưu được");
+      if (!r.ok) throw new Error(await apiErr(r, "không lưu được"));
       const res = await r.json();
       if (which === "vi") state.doc.translations[id] = res.vi;
       else state.doc.plain[id] = res.plain;
@@ -3535,7 +3630,15 @@ function requestStop() {
   const btn = $("#translateBtn");
   btn.textContent = "Đang dừng…";
   btn.disabled = true;
-  status("Sẽ dừng khi xong mẻ đang chạy — mẻ đó đã trả tiền rồi nên để chạy nốt cho khỏi phí.");
+  // HUỶ THẬT, không chỉ gắn cờ. Trước đây Dừng chỉ hẹn "sẽ dừng khi xong mẻ
+  // đang chạy" — mà mẻ đang chạy là một request có thể treo tới 300 giây, nên
+  // nút kẹt ở "Đang dừng…" và cách duy nhất còn lại là tải lại trang.
+  //
+  // Lượt dựng tóm lược chưa sinh ra gì nên huỷ là không mất tiền; mẻ dịch đang
+  // chạy thì phần đã stream về vẫn được giữ, vì `streamChunk` lưu từng khối
+  // ngay khi nhận.
+  try { state.bo?.abort(); } catch { /* đã huỷ rồi thì thôi */ }
+  status("Đang huỷ lượt gọi hiện tại… Phần đã dịch xong vẫn được giữ.");
 }
 
 async function runTranslate() {
@@ -3567,15 +3670,20 @@ async function runTranslate() {
     return;
   }
 
+  state.bo = new AbortController();
   try {
     if (!state.doc.brief) {
-      status("Đang đọc toàn bài để dựng tóm lược và chốt bảng thuật ngữ…");
-      const r = await fetch(`/api/doc/${state.doc.id}/brief`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).detail || "Không dựng được tóm lược");
+      // Đồng hồ chạy ngay: một thanh trạng thái đứng im không phân biệt được
+      // "đang chạy" với "đã treo", và đó đúng là thứ người dùng gặp.
+      dongHo("Đang đọc toàn bài để dựng tóm lược và chốt bảng thuật ngữ");
+      const r = await fetch(`/api/doc/${state.doc.id}/brief`,
+                           { method: "POST", signal: state.bo?.signal });
+      if (!r.ok) throw new Error(await apiErr(r, "Không dựng được tóm lược"));
       const res = await r.json();
       state.doc.brief = res.brief;
       $("#docTitleVi").textContent = state.doc.brief.title_vi || state.doc.title;
       renderSide();
+      dongHoTat();
       reportCost("Đọc toàn bài xong", res.run, res.total);
     }
 
@@ -3615,8 +3723,12 @@ async function runTranslate() {
       await markInsights(true);
     }
   } catch (e) {
-    status("Lỗi: " + e.message);
+    status(e.name === "AbortError"
+      ? "Đã dừng theo yêu cầu. Phần đã dịch xong vẫn giữ nguyên — bấm Dịch tiếp để chạy nốt."
+      : "Lỗi: " + e.message);
   } finally {
+    dongHoTat();
+    state.bo = null;
     state.translating = false;
     state.stopping = false;
     btn.disabled = false;
@@ -3668,6 +3780,12 @@ function streamChunk(i, refine, mode, only) {
     const q = only && only.size ? `&only=${[...only].join(",")}` : "";
     const es = new EventSource(
       `/api/doc/${state.doc.id}/translate?chunk=${i}&refine=${refine}&mode=${mode}${q}`);
+    // `EventSource` không nhận `AbortSignal`, nên nối tay vào cùng một nút Dừng:
+    // đóng kênh là server thấy client ngắt và dừng stream. Khối đã nhận vẫn còn
+    // vì mỗi khối được lưu ngay lúc tới.
+    const huy = () => { try { es.close(); } catch {} ; reject(new DOMException("Đã dừng", "AbortError")); };
+    state.bo?.signal.addEventListener("abort", huy, { once: true });
+    const xong = () => state.bo?.signal.removeEventListener("abort", huy);
     es.addEventListener("block", (e) => {
       const { id, vi, plain } = JSON.parse(e.data);
       if (plain !== undefined) {
@@ -3695,7 +3813,7 @@ function streamChunk(i, refine, mode, only) {
     es.addEventListener("done", (e) => {
       const d = JSON.parse(e.data);
       if (d.usage) { state.doc.usage = d.usage; renderUsage(); }
-      es.close(); resolve(d);
+      xong(); es.close(); resolve(d);
     });
     es.addEventListener("error", (e) => {
       es.close();
@@ -3728,7 +3846,7 @@ async function explainBlock(id) {
     `<div class="note" data-loading><h4>Giải thích lập luận</h4><p class="muted"><span class="spin">◐</span> đang phân tích…</p></div>`);
   try {
     const r = await fetch(`/api/doc/${state.doc.id}/explain/${id}`, { method: "POST" });
-    if (!r.ok) throw new Error((await r.json()).detail || "lỗi");
+    if (!r.ok) throw new Error(await apiErr(r, "lỗi"));
     const { note, run, total } = await r.json();
     state.doc.notes[id] = note;
     $(".note[data-loading]", pair).outerHTML = noteHTML(note);
@@ -3767,7 +3885,7 @@ async function redoBlock(id) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: colMode() }),
     });
-    if (!r.ok) throw new Error((await r.json()).detail || "lỗi");
+    if (!r.ok) throw new Error(await apiErr(r, "lỗi"));
     const res = await r.json();
     if (res.vi) state.doc.translations[id] = res.vi;
     if (res.plain) (state.doc.plain ||= {})[id] = res.plain;

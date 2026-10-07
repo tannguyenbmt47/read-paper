@@ -897,3 +897,46 @@ def test_vot_lai_marks_khi_dau_ra_bi_cat_cut():
     # và câu trích có LaTeX vẫn vớt được (cùng lý do với `llm._va_escape`)
     m2 = _vot_marks(r'{"marks":[{"block":"b1","kind":"term","quote":"\(x\)","why":"v"}]}')
     assert m2 and m2[0]["quote"] == r"\(x\)"
+
+
+@pytest.mark.parametrize("ten,noi_dung,ma,phan", [
+    ("paper.docx", b"PK\x03\x04" + b"x" * 200, 400, "Office"),
+    ("empty.txt", b"", 400, "rỗng"),
+    ("fake.pdf", b"day khong phai pdf", 400, "đuôi .pdf"),
+])
+def test_nap_bai_tu_choi_nguon_hong_bang_4xx_co_noi_dung(app_client, ten, noi_dung, ma, phan):
+    """Nguồn hỏng phải ra **4xx kèm JSON đọc được**, không phải 500 kèm trang HTML.
+
+    Frontend gọi `res.json()` lên một trang 500 thì ném `Unexpected token 'I',
+    "Internal S"… is not valid JSON`, và chính câu tiếng Anh đó bị in ra màn hình
+    thay cho lỗi thật — người dùng không có cách nào hiểu phải làm gì.
+    """
+    r = app_client.post("/api/import",
+                        files={"file": (ten, noi_dung, "application/octet-stream")},
+                        data={"model": "test/model"})
+    assert r.status_code == ma, r.text
+    assert r.headers["content-type"].startswith("application/json")
+    assert phan in r.json()["detail"]
+
+
+def test_chuoi_rac_o_tab_arxiv_khong_thanh_500(app_client):
+    """Gõ chữ bừa vào ô link phải ra 400 kèm ví dụ hợp lệ, không phải 500."""
+    r = app_client.post("/api/import",
+                        data={"url": "hello world not a link", "model": "test/model"})
+    assert r.status_code == 400
+    assert "1706.03762" in r.json()["detail"]
+
+
+def test_client_doc_loi_an_toan_tu_response_hong():
+    """`apiErr` phải tồn tại và KHÔNG chỗ nào còn bóc `.detail` thẳng tay.
+
+    `(await r.json()).detail` là cái bẫy: 500 trả về HTML, `json()` ném, và câu
+    ném đó thành thông báo cho người dùng. Đếm được 29 chỗ như vậy trước bản này.
+    """
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    app_js = (web / "app.js").read_text()
+    assert "async function apiErr(" in app_js
+    for ten in ("app.js", "survey.js"):
+        src = (web / ten).read_text()
+        assert "json()).detail" not in src, f"{ten} còn bóc .detail thẳng tay"
