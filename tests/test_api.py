@@ -426,6 +426,38 @@ def test_khong_o_chon_nao_bi_long_trong_label(app_client):
         assert co_ten, f"select {sid.group(1)} không có nhãn nào"
 
 
+def test_thu_vien_co_tim_sap_va_ten_model_doc_duoc(app_client, doc):
+    """Thư viện phải tìm được, sắp được, và gọi tên model theo lối người đọc.
+
+    `list_docs()` phải trả `cost_usd` / `source` / `created_at`: hộp thoại xoá
+    dùng chúng để nói ra CÁI GIÁ, và ô sắp dùng để xếp theo tiền và theo ngày
+    nạp. Thiếu một cột là mất im lặng một lựa chọn trên giao diện.
+    """
+    import re
+    from pathlib import Path
+    rows = app_client.get("/api/docs").json()
+    assert rows, "không có bài nào để kiểm"
+    for cot in ("cost_usd", "source", "created_at", "updated_at", "model"):
+        assert cot in rows[0], f"/api/docs thiếu cột {cot}"
+
+    app = (Path(__file__).resolve().parents[1] / "web/app.js").read_text()
+    # Mỗi khoá sắp trong HTML phải có một hàm so sánh thật trong `RECENT_SORT` —
+    # thiếu thì ô chọn có mục đó nhưng chọn vào không đổi gì, và không có lỗi nào.
+    html = (Path(__file__).resolve().parents[1] / "web/index.html").read_text()
+    o = re.search(r'<select id="recentSort".*?</select>', html, re.S)
+    assert o, "không thấy ô sắp thư viện"
+    khoa = re.findall(r'value="([^"]+)"', o.group(0))
+    assert khoa, "ô sắp không có mục nào"
+    bang = re.search(r"const RECENT_SORT = \{(.*?)\n\};", app, re.S)
+    assert bang, "không thấy RECENT_SORT"
+    for k in khoa:
+        assert re.search(rf"(?m)^\s*{re.escape(k)}:", bang.group(1)), f"RECENT_SORT thiếu {k}"
+
+    # Tìm phải đi qua `khongDau` — gõ "truy hoi" phải ra "truy hồi".
+    lo = re.search(r"function loRecent\(\) \{(.*?)\n\}", app, re.S)
+    assert lo and "khongDau" in lo.group(1), "ô tìm thư viện không bỏ dấu"
+
+
 def test_khong_con_hop_thoai_native(app_client):
     """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
     cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi

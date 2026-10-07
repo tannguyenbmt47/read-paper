@@ -494,17 +494,141 @@ async function loadDbStats() {
   } catch { /* không có thì thôi */ }
 }
 
+/** Tên model cho người đọc. Slug của OpenRouter là mã định tuyến, không phải
+    nhãn: `~deepseek/deepseek-v4-flash-latest` nói đúng một thứ hữu ích là
+    "DeepSeek V4 Flash", phần còn lại là tiền tố hãng, dấu `~` của bản tự chọn
+    endpoint, và hậu tố phiên bản.
+
+    KHÔNG dựng bảng tra cả cái tên model: model mới xuất hiện liên tục nên bảng
+    sẽ lệch, mà nhãn sai thì khó nhận ra hơn cả slug thô. Chỉ tra **cách viết
+    hoa** của những chữ đã biết — danh sách đó nhỏ và ổn định — rồi gọt phần
+    chắc chắn là thừa.
+
+    Thử trên slug thật đang có trong `data/`: `Deepseek V4 Flash` sai hoa, và
+    `qwen/qwen3-235b-a22b` ra `Qwen Qwen3 …` vì phép bỏ trùng tên hãng đòi có
+    dấu gạch ngay sau. Hai ca đó sinh ra đúng hai luật dưới đây. */
+const MODEL_HOA = {
+  deepseek: "DeepSeek", openai: "OpenAI", gpt: "GPT", qwen: "Qwen",
+  anthropic: "Anthropic", google: "Google", meta: "Meta", llama: "Llama",
+  gemini: "Gemini", oss: "OSS", vl: "VL", moe: "MoE", glm: "GLM",
+  // Mã hãng của OpenRouter có cả dấu gạch, nên tra cả chuỗi hãng nguyên vẹn.
+  mistralai: "Mistral", "x-ai": "xAI", "z-ai": "Z.ai", moonshotai: "Moonshot",
+  alibaba: "Alibaba", nvidia: "NVIDIA", microsoft: "Microsoft", ai21: "AI21",
+};
+function tenModel(slug) {
+  if (!slug) return "";
+  const sach = String(slug).replace(/^[~@]/, "");
+  const hang = sach.includes("/") ? sach.split("/")[0] : "";
+  const duoi = sach.split("/").pop().replace(/[-:](latest|preview|beta|stable)$/i, "");
+  const hoa = (w) => {
+    const k = w.toLowerCase();
+    if (MODEL_HOA[k]) return MODEL_HOA[k];
+    // Tên có số bản dính liền (`qwen3`, `llama4`) thì tra phần CHỮ rồi gắn số
+    // lại. Không tách thì `qwen3` rơi vào luật "có chữ số" và ra `QWEN3`.
+    const chia = /^([a-z]+)(\d.*)$/.exec(k);
+    if (chia && MODEL_HOA[chia[1]]) return MODEL_HOA[chia[1]] + chia[2];
+    // Còn lại, có chữ số thì viết hoa cả token: `235b` → `235B`, `v4` → `V4`,
+    // `5.6` không đổi. Title Case ở đây cho ra `235b`, trông như lỗi gõ.
+    return /\d/.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1);
+  };
+  const ten = duoi.split("-").filter(Boolean).map(hoa).join(" ");
+  /* Hãng hay lặp tên mình vào cả tên model (`deepseek/deepseek-v4`,
+     `qwen/qwen3-…`). Bỏ TIỀN TỐ HÃNG ở đầu ra, không cắt vào tên model — cắt
+     vào tên thì `qwen3` thành `3`.
+
+     So trên TÊN ĐÃ HIỆN, không so trên mã hãng: `mistralai/mistral-large` và
+     `meta-llama/llama-4-…` đều lặp tên hãng mà mã lại không trùng tiền tố, nên
+     phép so theo mã cho ra `Mistral Mistral Large`. */
+  if (!hang) return ten;
+  const nhan = hoa(hang);
+  const dau = ten.split(" ")[0].toLowerCase();
+  const h = hang.toLowerCase();
+  // `startsWith` cho ca `qwen` ↔ `qwen3`, `includes` cho ca ngược lại
+  // (`mistralai` ↔ `mistral`, `meta-llama` ↔ `llama`). Cần cả hai chiều.
+  if (dau && (dau.startsWith(h) || h.includes(dau))) return ten;
+  return nhan + " " + ten;
+}
+
+/** "3 ngày trước" dễ đọc hơn một mốc ngày tuyệt đối khi nó vừa mới xảy ra, và
+    ngược lại khi nó đã lâu — nên đổi cách nói ở mốc một tuần. */
+function khiNao(giay) {
+  if (!giay) return "";
+  const d = new Date(giay * 1000);
+  const phut = (Date.now() - d.getTime()) / 60000;
+  if (phut < 1) return "vừa xong";
+  if (phut < 60) return `${Math.floor(phut)} phút trước`;
+  if (phut < 1440) return `${Math.floor(phut / 60)} giờ trước`;
+  if (phut < 10080) return `${Math.floor(phut / 1440)} ngày trước`;
+  return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** Nguồn bài gọn lại còn tên miền, hoặc tên file. Đường dẫn đầy đủ dài hơn cả
+    tiêu đề và không cho biết thêm gì. */
+function tenNguon(src) {
+  if (!src) return "";
+  try { return new URL(src).hostname.replace(/^www\./, ""); }
+  catch { return src.split(/[\\/]/).pop().slice(0, 40); }
+}
+
+const RECENT_SORT = {
+  moi: (a, b) => b.updated_at - a.updated_at,
+  nap: (a, b) => b.created_at - a.created_at,
+  ten: (a, b) => (a.title_vi || a.title).localeCompare(b.title_vi || b.title, "vi"),
+  dich: (a, b) => tiLeDich(b) - tiLeDich(a),
+  // Việc còn dở xếp trước, và bài chưa dịch gì cũng là việc còn dở — nhưng bài
+  // đã xong 100% thì xuống cuối, chứ không lẫn vào giữa.
+  chuadich: (a, b) => (tiLeDich(a) >= 1) - (tiLeDich(b) >= 1) || tiLeDich(a) - tiLeDich(b),
+  tien: (a, b) => (b.cost_usd || 0) - (a.cost_usd || 0),
+};
+const tiLeDich = (d) => d.translatable ? d.translated / d.translatable : 0;
+
+let recentDocs = [];
+
+/** Lọc và sắp thư viện theo ô tìm và ô sắp.
+
+    Tìm **không dấu** (`khongDau`), cùng lý do với bộ tìm trong bài: gõ "truy
+    hoi" phải ra "truy hồi" — không ai gõ dấu khi đang tìm nhanh. Và tìm cả
+    `model` lẫn `source`, vì "bài nào tôi nạp từ arxiv" là câu hỏi thật. */
+function loRecent() {
+  const q = khongDau(($("#recentFind")?.value || "").trim());
+  const xep = RECENT_SORT[$("#recentSort")?.value] || RECENT_SORT.moi;
+  const ra = !q ? [...recentDocs] : recentDocs.filter((d) => khongDau(
+    [d.title_vi, d.title, tenModel(d.model), d.source].filter(Boolean).join(" ")
+  ).includes(q));
+  return ra.sort(xep);
+}
+
 async function loadRecent() {
-  const docs = await fetch("/api/docs").then((r) => r.json());
-  $("#recentWrap").classList.toggle("hidden", !docs.length);
+  recentDocs = await fetch("/api/docs").then((r) => r.json());
+  $("#recentWrap").classList.toggle("hidden", !recentDocs.length);
+  // Thanh công cụ chỉ đáng hiện khi danh sách đã dài tới mức phải tìm.
+  $("#recentTools").classList.toggle("hidden", recentDocs.length < 6);
+  veRecent();
+}
+
+function veRecent() {
+  const docs = loRecent();
+  $("#recentEmpty").classList.toggle("hidden", !!docs.length || !recentDocs.length);
   $("#recentList").innerHTML = docs
     .map((d) => {
-      const pct = d.translatable ? Math.round((d.translated / d.translatable) * 100) : 0;
+      const pct = Math.round(tiLeDich(d) * 100);
+      const nguon = tenNguon(d.source);
+      // Ba con số, mỗi con trả lời một câu khác nhau: còn bao nhiêu việc, đọc
+      // lần cuối khi nào, và đã bỏ ra bao nhiêu tiền.
+      const meta = [
+        `${d.blocks} khối`,
+        pct >= 100 ? "đã dịch xong" : `đã dịch ${pct}%`,
+        tenModel(d.model),
+        d.cost_usd ? `$${(+d.cost_usd).toFixed(2).replace(".", ",")}` : "",
+      ].filter(Boolean).join(" · ");
       return `<li>
         <span class="rt" data-id="${esc(d.id)}">
           <b>${esc(d.title_vi || d.title)}</b>
-          <span>${d.blocks} khối · đã dịch ${pct}% · ${esc(d.model || "")}</span>
+          <span>${esc(meta)}</span>
         </span>
+        <span class="rwhen" title="${esc("Nạp " + khiNao(d.created_at)
+          + (nguon ? " từ " + nguon : ""))}">${esc(khiNao(d.updated_at))}${
+          nguon ? `<em>${esc(nguon)}</em>` : ""}</span>
         <button class="icon-btn" data-ren="${esc(d.id)}" title="Đổi tên bài">✎</button>
         <button class="icon-btn" data-del="${esc(d.id)}" title="Xoá">🗑</button>
       </li>`;
@@ -556,7 +680,7 @@ async function loadRecent() {
   }));
   $$("#recentList [data-del]").forEach((el) => (el.onclick = async () => {
     const id = el.dataset.del;
-    const d = docs.find((x) => x.id === id) || {};
+    const d = recentDocs.find((x) => x.id === id) || {};
     // Nói ra mất gì: bản dịch là thứ đã trả tiền, "bạn có chắc không" mà không
     // kèm cái giá thì người dùng không có cơ sở nào để chắc.
     const gia = d.cost_usd
@@ -576,6 +700,21 @@ async function loadRecent() {
 /* ================================================ màn hình nhập ===== */
 
 function wireStart() {
+  /* Thư viện: ô tìm và ô sắp vẽ lại tại chỗ, KHÔNG gọi lại `/api/docs` — dữ
+     liệu đã có trong `recentDocs`, gọi lại mỗi lần gõ một ký tự là đổi một
+     phép lọc trong bộ nhớ thành một vòng đọc cả bảng `documents`. */
+  $("#recentFind").oninput = veRecent;
+  $("#recentFind").onkeydown = (e) => {
+    if (e.key !== "Escape") return;
+    e.target.value = "";
+    veRecent();
+  };
+  $("#recentSort").onchange = () => {
+    setPref("recentsort", $("#recentSort").value);
+    veRecent();
+  };
+  $("#recentSort").value = pref("recentsort", "moi");
+
   $$(".tab").forEach((t) => (t.onclick = () => {
     $$(".tab").forEach((x) => x.classList.toggle("is-on", x === t));
     $$("[data-pane]", $("#start")).forEach((p) =>

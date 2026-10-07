@@ -197,6 +197,29 @@ body { padding-left: var(--rail-w); }
 .recent .rt b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent .rt span { color: var(--muted); font-size: .82em; }
 
+/* Thanh công cụ thư viện. `flex-wrap` vì ở màn hẹp ô tìm và ô sắp không đủ chỗ
+   trên một hàng với tiêu đề — mà ô tìm bị bóp còn 80px thì không gõ nổi. */
+.recent-h {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem;
+  margin-bottom: .6rem;
+}
+.recent-h h2 { margin: 0; flex: none; }
+.recent-tools { display: flex; gap: .5rem; margin-left: auto; flex: 1 1 18rem; }
+/* `min-width: 0` vì option dài nhất của ô sắp quyết định bề ngang mặc định của
+   flex item — cùng cái bẫy đã ghi cho ô chọn bài ở tab Bài giảng. */
+.recent-tools .input, .recent-tools select { min-width: 0; margin: 0; }
+.recent-tools .input { flex: 1; padding: .3rem .55rem; font-size: .88em; }
+.recent-tools select { flex: none; padding: .3rem .4rem; font-size: .88em; }
+
+/* Mốc thời gian + nguồn. Hai dòng xếp dọc, căn phải, không co — số liệu ngắn
+   nên để nó giãn chỉ làm cột tiêu đề hẹp lại vô cớ. */
+.rwhen {
+  flex: none; text-align: right; color: var(--muted);
+  font-size: .76em; line-height: 1.35; white-space: nowrap;
+}
+.rwhen em { display: block; font-style: normal; opacity: .75; }
+@media (max-width: 560px) { .rwhen { display: none; } }
+
 /* ------------------------------------------- bước 1: kiểm tra cấu trúc */
 #review { display: flex; flex-direction: column; height: 100vh; }
 .review-wrap { flex: 1; overflow-y: auto; padding: 1.4rem 1.6rem 4rem; max-width: 1000px; margin: 0 auto; width: 100%; }

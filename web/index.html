@@ -112,8 +112,25 @@
     <p id="dbStats" class="hint"></p>
 
     <div id="recentWrap" class="recent hidden">
-      <h2>Đã đọc gần đây</h2>
+      <div class="recent-h">
+        <h2>Thư viện</h2>
+        <!-- Ô tìm và ô sắp chỉ hiện khi thư viện đã đủ dài để cần tới chúng —
+             ba bài thì một thanh công cụ chỉ là thứ chen vào. -->
+        <div id="recentTools" class="recent-tools hidden">
+          <input id="recentFind" class="input" type="search"
+                 placeholder="Tìm theo tên, model hay nguồn…" aria-label="Tìm trong thư viện">
+          <select id="recentSort" aria-label="Sắp thư viện theo">
+            <option value="moi">Mới đọc trước</option>
+            <option value="nap">Mới nạp trước</option>
+            <option value="ten">Tên A→Z</option>
+            <option value="dich">Dịch nhiều nhất</option>
+            <option value="chuadich">Chưa dịch xong</option>
+            <option value="tien">Tốn tiền nhất</option>
+          </select>
+        </div>
+      </div>
       <ul id="recentList"></ul>
+      <p id="recentEmpty" class="hint hidden">Không có bài nào khớp.</p>
     </div>
 
     <!-- Lối vào chính là thanh bên trái. Khối này chỉ để người mới biết công cụ
