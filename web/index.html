@@ -221,14 +221,26 @@
           <input type="checkbox" id="colGl" checked> Giải thích
         </label>
       </div>
-      <select id="docModel" class="model-pick" aria-label="Model đang dùng"
-              title="Model dùng cho các lượt dịch, giải thích và hỏi đáp sau. Đổi model không dịch lại phần đã xong."></select>
-      <label class="check" title="Thêm một lượt soát lại: đối chiếu bản dịch với bản gốc để bắt lỗi mất liên từ, lệch mức khẳng định, sai số liệu. Chậm và tốn hơn ~1.7 lần.">
-        <input type="checkbox" id="refineChk"> Dịch kỹ
-      </label>
-      <div class="menu">
-        <button id="pickBtn" class="icon-btn" title="Chọn dịch từng phần cho đỡ tốn — bỏ phụ lục, bỏ mục không định đọc">☑</button>
+      <!-- Model, "Dịch kỹ" và chọn mục đều là TUỲ CHỌN CỦA MỘT LƯỢT DỊCH, nên
+           chúng thuộc về nút Dịch chứ không phải ba chỗ rời trên thanh. Để rời
+           thì thanh có mười ba điều khiển một hàng, tiêu đề bài bị bóp còn
+           340px trên màn 1400px — mà tiêu đề mới là thứ cho biết đang đọc bài
+           nào. Gom lại được vì tần suất khác hẳn nhau: ba cái này chạm tới
+           một hai lần trong cả buổi đọc, nút Dịch thì bấm liên tục. -->
+      <div class="menu trans-group">
+        <button id="translateBtn" class="btn btn-primary">Dịch</button>
+        <button id="pickBtn" class="icon-btn caret" aria-label="Tuỳ chọn dịch"
+                title="Tuỳ chọn cho lượt dịch: model · dịch kỹ · chọn mục cần dịch">▾</button>
         <div class="menu-pop menu-wide hidden" id="pickMenu">
+          <div class="fld">
+            <label for="docModel">Model dịch</label>
+            <select id="docModel" class="model-pick"
+                    title="Model dùng cho các lượt dịch, giải thích và hỏi đáp sau. Đổi model không dịch lại phần đã xong."></select>
+          </div>
+          <label class="check" title="Thêm một lượt soát lại: đối chiếu bản dịch với bản gốc để bắt lỗi mất liên từ, lệch mức khẳng định, sai số liệu. Chậm và tốn hơn ~1.7 lần.">
+            <input type="checkbox" id="refineChk"> Dịch kỹ — soát lại một lượt nữa (~1,7 lần tiền)
+          </label>
+          <hr>
           <p class="hint" style="margin:0 0 .5rem">
             Chọn mục cần dịch. Giá là ước tính cho <b>phần chưa dịch</b> của mục đó —
             phần đã dịch lấy lại miễn phí từ bộ nhớ dịch.
@@ -242,7 +254,6 @@
           </div>
         </div>
       </div>
-      <button id="translateBtn" class="btn btn-primary">Dịch</button>
       <button id="findBtn" class="icon-btn" title="Tìm trong bài (Ctrl+F)">🔍</button>
       <button id="pdfBtn" class="icon-btn hidden" title="Mở bản PDF gốc để đối chiếu">📄</button>
       <div class="menu">

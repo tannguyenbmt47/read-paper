@@ -1514,6 +1514,65 @@ phép đo nói dối. Phải `Page.reload(ignoreCache=True)`.
 ký hiệu) dùng font thường; chỉ ký hiệu lẻ trong `<code>` mới để mono. Cùng họ
 với cái bẫy `line-height` ở slide.
 
+### Thanh công cụ màn đọc, và chân cột trái
+
+Hai chỗ cùng một kiểu hỏng: **thứ máy đo được đẩy thứ người đọc cần ra rìa.**
+
+**Thanh công cụ có mười ba điều khiển trên một hàng**, nên tiêu đề bài — thứ
+duy nhất cho biết đang đọc bài nào — bị bóp còn **340px trên màn 1400px** trong
+khi khối nút chiếm **863px**. Nhưng ba trong số đó (ô chọn model, ô tick *Dịch
+kỹ*, nút ☑ chọn mục) không phải là ba việc rời: chúng là **tuỳ chọn của một
+lượt dịch**, tức thuộc về nút *Dịch*. Gom vào một panel thả xuống từ chính nút
+ấy: tiêu đề **340 → 593px**, khối nút **863 → 611px**. Và ô chọn model được cả
+bề rộng panel nên thôi phải rút gọn nhãn — giá và độ dài ngữ cảnh hiện đủ, vốn
+là hai thứ duy nhất để chọn giữa hai model.
+
+Nút *Dịch* và nút ▾ **dính liền thành một khối** (`.trans-group`): rời nhau thì
+mắt đọc thành hai nút khác nhau. Panel thả theo `top: calc(100% + .45rem)` chứ
+không theo mốc cứng `2.4rem` của các menu icon — nút *Dịch* cao hơn icon, nên
+mốc cứng làm panel **đè lên thanh 13px**.
+
+Tiêu đề vẫn cắt được, nên `.topbar-title` phải mang `title` đủ cả hai dòng:
+phần bị cắt thường chính là phần phân biệt bài này với bài kia
+(*"… for Multi-hop Question Answering"*).
+
+**Chân cột trái ghi `23.4k vào · 5.1k ra · 12.0k đọc từ cache · $0.0266`** —
+bốn con số, ba trong đó là token. Token là đơn vị **tính tiền của nhà cung
+cấp**, không phải thứ người đọc quyết định được gì dựa vào: không ai nhìn
+"5.1k ra" rồi đổi cách dùng công cụ. Con số duy nhất có nghĩa bị đẩy xuống
+cuối, sau ba con số không ai đọc.
+
+Giờ tiền đứng trước (`Bài này đã tốn $2,6329`), token xuống `title`. Kèm **tỉ
+lệ đọc lại từ cache**, vì đó là con số duy nhất trong đám token mà người dùng
+tác động được: bấm 💡 ngay sau khi dịch thì prefix còn ấm, bấm hôm sau thì đọc
+lại cả bài ở giá đầy đủ (đã đo: `cached_tokens = 0` trên 23.836 token).
+
+### Thư viện: tìm, sắp, và tên model đọc được
+
+Danh sách bài chỉ có một thứ tự và không tìm được, nên tới bài thứ ba mươi thì
+cách duy nhất để mở lại một bài là cuộn và nhìn. Thêm ô tìm **không dấu**
+(`khongDau`, cùng lý do với bộ tìm trong bài) trên tên bài / tên model / nguồn,
+và sáu cách sắp trong `RECENT_SORT`. Lọc **tại chỗ** trên `recentDocs`, không
+gọi lại `/api/docs` mỗi ký tự. Thanh công cụ chỉ hiện từ bài thứ sáu — ba bài
+thì nó chỉ là thứ chen vào.
+
+**`tenModel()` KHÔNG dựng bảng tra cả cái tên.** Model mới ra liên tục nên bảng
+sẽ lệch, mà nhãn sai thì khó nhận ra hơn cả slug thô. Nó chỉ tra **cách viết
+hoa** của những chữ đã biết — danh sách nhỏ và ổn định — rồi gọt phần chắc chắn
+thừa (`~`, tên hãng lặp lại, hậu tố `-latest`). Ba luật sinh ra từ việc thử
+trên slug thật:
+
+- **Tên có số bản dính liền phải tra phần CHỮ rồi gắn số lại.** `qwen3` không
+  có trong bảng nên rơi vào luật "có chữ số" và ra `QWEN3`.
+- **Bỏ trùng tên hãng phải so hai chiều.** `qwen` ↔ `qwen3` cần `startsWith`,
+  còn `mistralai` ↔ `mistral` và `meta-llama` ↔ `llama` cần `includes`.
+- **Token có chữ số thì viết hoa cả token**: `235b` → `235B`. Title Case cho ra
+  `235b`, trông như lỗi gõ.
+
+`test_thu_vien_co_tim_sap_va_ten_model_doc_duoc` canh hai chỗ dễ trôi: mỗi khoá
+trong ô sắp phải có một hàm so sánh thật trong `RECENT_SORT` (thiếu thì chọn
+vào không đổi gì và **không có lỗi nào**), và ô tìm phải đi qua `khongDau`.
+
 ### Hộp thoại: không dùng `confirm` / `prompt` / `alert` của hệ
 
 Ba hàm native **khoá cả tab** — không cuộn được, không bấm được gì khác — và

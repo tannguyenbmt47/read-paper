@@ -347,12 +347,32 @@ body { padding-left: var(--rail-w); }
 .seg-btn { font: inherit; font-size: .85em; padding: .35rem .7rem; background: var(--surface); border: 0; cursor: pointer; color: var(--ink-2); }
 .seg-btn.is-on { background: var(--accent); color: #fff; }
 .check { display: flex; align-items: center; gap: .35rem; font-size: .85em; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
-/* chọn model ngay trên thanh công cụ — nhãn rút gọn để không đẩy hỏng topbar */
+/* Ô chọn model, giờ nằm TRONG panel tuỳ chọn dịch chứ không trên thanh — nên
+   nó được rộng cả panel thay vì bị bóp còn 12rem. Nhãn đầy đủ đọc được giá và
+   độ dài ngữ cảnh, vốn mới là thứ để chọn giữa hai model. */
 .model-pick {
-  font: inherit; font-size: .82em; max-width: 12rem; padding: .3rem .45rem;
+  font: inherit; font-size: .85em; width: 100%; padding: .35rem .45rem;
   border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--surface); color: var(--ink-2); cursor: pointer; flex: none;
+  background: var(--surface); color: var(--ink-2); cursor: pointer;
 }
+
+/* Nút Dịch và nút ▾ dính liền thành một khối: chúng là một điều khiển — làm
+   việc đó, và chỉnh cách làm việc đó. Rời nhau thì mắt đọc thành hai nút. */
+.trans-group { display: flex; align-items: stretch; }
+.trans-group .btn-primary { border-top-right-radius: 0; border-bottom-right-radius: 0; margin: 0; width: auto; }
+.trans-group .caret {
+  width: 1.5rem; min-width: 1.5rem; border: 1px solid var(--accent);
+  border-left-color: rgba(255, 255, 255, .35);
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  background: var(--accent); color: #fff; font-size: .8em;
+}
+.trans-group .caret:hover { filter: brightness(1.07); background: var(--accent); }
+/* Panel neo vào mép phải của cả khối, không của riêng nút ▾; và thả xuống
+   theo CHIỀU CAO THẬT của khối (`100%`) chứ không theo mốc 2,4rem dùng cho các
+   nút icon — nút Dịch cao hơn icon nên mốc cứng làm panel đè lên thanh 13px. */
+.trans-group .menu-pop { right: 0; top: calc(100% + .45rem); }
+.menu-pop .fld { display: block; margin-bottom: .6rem; }
+.menu-pop .fld label { display: block; font-size: .8em; color: var(--muted); margin-bottom: .2rem; }
 .model-pick:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .model-pick:disabled { opacity: .5; cursor: default; }
 .menu { position: relative; }

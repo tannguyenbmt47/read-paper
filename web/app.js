@@ -1338,9 +1338,18 @@ function mountDoc(doc) {
   const ci = $("#chatInput"); if (ci) ci.value = "";
   state.session = 0;
   showScreen("reader");
-  $("#docTitleVi").textContent = doc.brief?.title_vi || doc.title || "(không tiêu đề)";
-  $("#docTitleEn").textContent = doc.title && doc.brief?.title_vi ? doc.title : doc.source || "";
-  fillModels($("#docModel"), doc.model, { short: true });
+  const tenVi = doc.brief?.title_vi || doc.title || "(không tiêu đề)";
+  const tenEn = doc.title && doc.brief?.title_vi ? doc.title : doc.source || "";
+  $("#docTitleVi").textContent = tenVi;
+  $("#docTitleEn").textContent = tenEn;
+  // Tiêu đề bài báo thường dài hơn chỗ có trên thanh, nên nó bị cắt bằng dấu ba
+  // chấm. Không có `title` thì phần bị cắt không có đường nào đọc được — mà đó
+  // hay là phần phân biệt bài này với bài kia ("… for Multi-hop QA").
+  $(".topbar-title").title = tenEn ? `${tenVi}\n${tenEn}` : tenVi;
+  // Nhãn ĐẦY ĐỦ: từ khi ô chọn nằm trong panel tuỳ chọn thay vì trên thanh, nó
+  // rộng cả panel, nên nhãn rút gọn chỉ còn làm mất phần giá và độ dài ngữ cảnh
+  // — vốn là hai thứ duy nhất để chọn giữa hai model.
+  fillModels($("#docModel"), doc.model);
   // bài dán bằng văn bản thì không có PDF gốc để đối chiếu
   $("#pdfBtn").classList.toggle("hidden", !doc.has_pdf);
   $("#pdfPane").classList.add("hidden");
@@ -3952,12 +3961,35 @@ function jumpToSection(name) {
   if (el) jumpToBlock(el.dataset.id);
 }
 
+/** Dòng cuối cột trái: **bài này đã tốn bao nhiêu**.
+
+    Bản cũ ghi `23.4k vào · 5.1k ra · 12.0k đọc từ cache · $0.0266` — bốn con
+    số, ba trong đó là token. Token là đơn vị tính tiền của nhà cung cấp, không
+    phải thứ người đọc quyết định được gì dựa vào: không ai nhìn "5.1k ra" rồi
+    đổi cách dùng công cụ. Cái họ thật sự muốn biết là **đã bỏ ra bao nhiêu**,
+    và nó bị đẩy xuống cuối dòng, sau ba con số không ai đọc.
+
+    Nên tiền lên trước, phần token xuống `title` — vẫn tra được khi cần soát
+    cache, mà không tranh chỗ với con số duy nhất có nghĩa.
+
+    Tỉ lệ cache đi kèm vì đó là con số DUY NHẤT trong đám token mà người dùng
+    tác động được: bấm 💡 ngay sau khi dịch thì prefix còn ấm, bấm hôm sau thì
+    đọc lại cả bài ở giá đầy đủ (đã đo: `cached_tokens = 0` trên 23.836 token). */
 function renderUsage() {
   const u = state.doc.usage || {};
-  const cached = u.cached_tokens ? ` · ${(u.cached_tokens / 1000).toFixed(1)}k đọc từ cache` : "";
-  $("#usageBox").textContent =
-    `${((u.prompt_tokens || 0) / 1000).toFixed(1)}k vào · ${((u.completion_tokens || 0) / 1000).toFixed(1)}k ra` +
-    cached + (u.cost ? ` · $${u.cost.toFixed(4)}` : "");
+  const k = (n) => `${((n || 0) / 1000).toFixed(1)}k`.replace(".", ",");
+  const vao = u.prompt_tokens || 0;
+  const tiLe = vao ? Math.round((u.cached_tokens || 0) / vao * 100) : 0;
+  const box = $("#usageBox");
+  box.textContent = u.cost
+    ? `Bài này đã tốn $${u.cost.toFixed(4).replace(".", ",")}`
+    : "Chưa tốn gì cho bài này";
+  if (tiLe >= 5) box.textContent += ` · ${tiLe}% đọc lại từ cache`;
+  box.title = `${k(vao)} token đọc vào · ${k(u.completion_tokens)} token viết ra`
+    + (u.cached_tokens ? ` · ${k(u.cached_tokens)} trong số đọc vào lấy từ cache` : "")
+    + "\n\nPhần đọc vào gần như là toàn văn bài, lặp lại ở mọi lượt gọi. Nó rẻ "
+    + "khi còn trong cache của model, nên dịch xong rồi bấm giải thích hay dựng "
+    + "slide ngay thì rẻ hơn hẳn bấm vào hôm sau.";
 }
 
 /* --------------------------------------- chọn dịch từng phần --------- */
