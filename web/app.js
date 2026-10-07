@@ -4141,6 +4141,15 @@ async function sendQuestion() {
         if (ev === "delta") answer += JSON.parse(data).t;
         else if (ev === "usage") { const u = JSON.parse(data); reportCost("Trả lời xong", u.run, u.total); }
         else if (ev === "error") answer += "\n\n**[lỗi]** " + JSON.parse(data).message;
+        // Rò hệ chữ: pass dịch đã soát từ lâu, pass hỏi đáp thì chưa — và nó rò
+        // thật, một câu trả lời đúng nội dung có chữ `तथा` (Hindi) nằm giữa câu
+        // tiếng Việt. Gắn cờ lên chính bong bóng đó để mắt tìm ra ngay.
+        else if (ev === "warn") {
+          const w = JSON.parse(data);
+          bot.classList.add("bad-script");
+          bot.dataset.warn = w.msg || "";
+          status("⚠ " + (w.msg || "Câu trả lời lẫn ký tự lạ."));
+        }
         else continue;
         if (!painting) { painting = true; requestAnimationFrame(paint); }
       }

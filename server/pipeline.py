@@ -2248,6 +2248,14 @@ async def ask(doc_id: str, question: str, history: list[dict]) -> AsyncIterator[
 
     import json
 
+    # Gom lại để soát hệ chữ sau khi stream xong. Pass dịch đã có `script_leak`,
+    # pass hỏi đáp thì chưa — và nó rò thật: một câu trả lời đúng nội dung có
+    # chữ `तथा` (tiếng Hindi = "và") nằm giữa câu tiếng Việt.
+    #
+    # Soát SAU chứ không chặn giữa chừng: chữ đã hiện ra trên màn hình rồi, và
+    # cắt ngang câu trả lời còn tệ hơn. Cùng triết lý "cảnh báo chứ không chặn"
+    # của `check_slides` / `check_answer`.
+    da_noi: list[str] = []
     async for kind, payload in llm.stream_text(
         msgs, model=doc["model"], session_id=doc_id, max_tokens=4000, temperature=0.4
     ):
@@ -2257,4 +2265,15 @@ async def ask(doc_id: str, question: str, history: list[dict]) -> AsyncIterator[
             total = _bump_usage(doc_id, payload)
             yield "usage", json.dumps({"run": json.loads(payload), "total": total})
             continue
+        if kind == "delta":
+            da_noi.append(payload)
         yield kind, payload
+
+    bad = script_leak("".join(da_noi), full_source_text(doc["blocks"]))
+    if bad:
+        yield "warn", json.dumps({
+            "chars": "".join(sorted(bad))[:12],
+            "msg": "Câu trả lời lẫn ký tự thuộc hệ chữ lạ ("
+                   + "".join(sorted(bad))[:12]
+                   + ") — model trả về rác ở chỗ đó. Hỏi lại là thường hết.",
+        })

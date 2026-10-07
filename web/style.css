@@ -34,7 +34,10 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #16151a; --surface: #1d1c22; --surface-2: #26252c; --line: #35333c;
-    --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #857f76;
+    /* `--muted` cũ (#857f76) chỉ đạt 3,9:1 trên nền nâu `--accent-soft` —
+       dưới ngưỡng AA 4,5 — nên dòng tác giả gần như chìm hẳn. Bộ này 6,2:1
+       trên nền nâu và 7,2:1 trên nền chính. Nhớ đổi ở CẢ HAI khối dark. */
+    --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #a8a29e;
     --accent: #e08a52; --accent-soft: #2c211a;
     --ok: #6cc08a; --warn: #d9a441; --warn-bg: #2b2416;
   --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
@@ -45,7 +48,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #16151a; --surface: #1d1c22; --surface-2: #26252c; --line: #35333c;
-  --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #857f76;
+  --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #a8a29e;   /* xem ghi chú ở khối @media dark */
   --accent: #e08a52; --accent-soft: #2c211a; --ok: #6cc08a; --warn: #d9a441;
   --warn-bg: #2b2416;
   --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
@@ -100,7 +103,11 @@ a { color: var(--accent); }
 }
 .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .input-sm { padding: .35rem .55rem; font-size: .9em; margin-bottom: .6rem; }
-.textarea { font-family: var(--mono); font-size: .88em; resize: vertical; }
+/* Font UI chứ KHÔNG mono. Font mono của hệ không dựng nổi dấu tiếng Việt chồng
+   tầng, nên placeholder ô dán văn bản hiện ra "để`tách" — dấu huyền rời hẳn khỏi
+   chữ. Cùng cái bẫy đã ghi cho `.sv-note` bên kho survey và cho `line-height`
+   của slide. */
+.textarea { font-family: var(--sans); font-size: .92em; resize: vertical; line-height: 1.5; }
 .err { color: #c0392b; }
 .warn {
   background: var(--accent-soft); border: 1px solid var(--accent);
@@ -533,9 +540,19 @@ sub { bottom: -.22em; }
    lên dòng đầu và che mất chữ; chừa chỗ cố định thì vừa không che, vừa không
    giật bố cục khi rê chuột vào rê chuột ra. */
 .pair.para, .pair.caption { padding-right: 2.9rem; }
+/* Cụm nút phải nằm GỌN trong dải đã chừa. Dải rộng 2,9rem mà năm nút xếp một
+   hàng thì rộng ~6,9rem, nên nó tràn ngược vào cột Giải thích và che mất dòng
+   đầu — đúng thứ đã thấy ở khung 1236px ba cột.
+
+   Cho xuống dòng trong đúng bề rộng ấy (hai nút mỗi hàng) thay vì nới dải: nới
+   là mỗi đoạn mất thêm 4rem bề ngang, mà ba cột vốn đã chật. Thêm nền đặc để
+   ngay cả lúc chồng lên hình cũng đọc được. */
 .tools {
-  position: absolute; right: .25rem; top: .2rem; display: flex; gap: .1rem;
-  border-radius: 6px; padding: .1rem; z-index: 5;
+  position: absolute; right: .25rem; top: .2rem;
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .1rem;
+  width: 2.6rem; z-index: 5;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: .15rem;
   opacity: 0; transition: opacity .12s;
 }
 .pair:hover > .tools, .pair.is-on > .tools, .tools:focus-within { opacity: 1; }
