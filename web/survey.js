@@ -441,7 +441,7 @@ function svMoveBox(li, pid) {
     if (!e.target.dataset.go) return;
     let to = box.querySelector("select").value;
     if (to === "__new") {
-      const ten = prompt("Tên kho mới:", "");
+      const ten = await nhapChu("Kho mới", "Mỗi kho là một chủ đề riêng.", "");
       if (!ten || !ten.trim()) return;
       const s2 = await svFetch("/api/survey", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -885,12 +885,12 @@ function svBuildSynth() {
 async function svEditFacets() {
   if (!await svNeedId()) return;
   const cur = (SV.facets || []).map((f) => `${f.key} | ${f.label}`).join("\n");
-  const got = prompt(
+  const got = await nhapChu("Các cột của bảng đối chiếu",
     "Mỗi dòng một cột, dạng:  khoá | Nhãn hiện trên bảng\n"
-    + "Khoá phải trùng tên trường trong phiếu (task, problem, idea, method,\n"
+    + "Khoá phải trùng tên trường trong phiếu (task, problem, idea, method, "
     + "datasets, metrics, baselines, novelty, limitations…).\n\n"
     + "Miễn phí — bảng dựng thẳng từ phiếu đã bóc, không gọi model.",
-    cur);
+    cur, true);
   if (got === null) return;
 
   const facets = got.split("\n").map((line) => {
@@ -899,7 +899,7 @@ async function svEditFacets() {
     return key ? { key, label: (rest.join("|") || key).trim() || key } : null;
   }).filter(Boolean);
   if (!facets.length) {
-    alert("Cần ít nhất một cột.");
+    await baoTin("Chưa lưu được", "Cần ít nhất một cột.");
     return;
   }
   await svFetch(`/api/survey/${SV.id}`, {
@@ -1097,7 +1097,7 @@ async function svOpenCite(cid) {
     };
     document.body.appendChild(box);
   } catch (e) {
-    alert("Không mở được đoạn: " + e.message);
+    await baoTin("Không mở được đoạn", e.message);
   }
 }
 
@@ -1207,7 +1207,7 @@ function svWire() {
   $("#svPick").onchange = async (e) => {
     if (e.target.value === "__new") {
       e.target.value = SV.id;                 // trả về kho cũ trước, phòng khi huỷ
-      const name = prompt("Tên kho mới — mỗi kho là một chủ đề riêng:", "");
+      const name = await nhapChu("Kho mới", "Mỗi kho là một chủ đề riêng.", "");
       if (name) await svNewSurvey(name);
       return;
     }
@@ -1223,13 +1223,13 @@ function svWire() {
 
   $("#svNew").onclick = async () => {
     menu.classList.add("hidden");
-    const name = prompt("Tên kho mới — mỗi kho là một chủ đề riêng:", "");
+    const name = await nhapChu("Kho mới", "Mỗi kho là một chủ đề riêng.", "");
     if (name) await svNewSurvey(name);
   };
   $("#svRename").onclick = async () => {
     menu.classList.add("hidden");
     if (!await svNeedId()) return;
-    const name = prompt("Tên kho:", SV.survey?.name || "");
+    const name = await nhapChu("Đổi tên kho", "", SV.survey?.name || "");
     if (!name) return;
     await svFetch(`/api/survey/${SV.id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
@@ -1241,8 +1241,12 @@ function svWire() {
     menu.classList.add("hidden");
     if (!SV.id) return;
     const n = SV.papers.length;
-    if (!confirm(`Xoá kho "${SV.survey?.name || ""}"?\n\n`
-      + `${n} bài, cùng toàn bộ đoạn, chỉ mục và lịch sử hỏi sẽ mất. Không hoàn lại được.`)) return;
+    if (!await xacNhan(`Xoá kho "${SV.survey?.name || ""}"?`,
+      `${n} bài, cùng toàn bộ đoạn, chỉ mục và lịch sử hỏi sẽ mất. Không hoàn lại `
+      + `được.\n\nBơm lại một bài tốn khoảng $0,034, nên cả kho là khoảng `
+      + `$${(n * 0.034).toFixed(2)}. Nạp nhầm kho thì dùng Chuyển sang kho khác `
+      + `(miễn phí), đừng xoá.`,
+      { ok: "Xoá kho", hong: true })) return;
     await svFetch(`/api/survey/${SV.id}`, { method: "DELETE" });
     SV.id = "";
     await svLoadList();
@@ -1306,7 +1310,11 @@ function svWire() {
     const pid = btn.closest("[data-pid]").dataset.pid;
     const act = btn.dataset.act;
     if (act === "drop") {
-      if (!confirm("Bỏ bài này khỏi kho?")) return;
+      if (!await xacNhan("Bỏ bài này khỏi kho?",
+        "Mất phiếu, câu ngữ cảnh của từng đoạn, cây tóm lược, vector và bài giảng "
+        + "— bơm lại tốn khoảng $0,034.\n\nNạp nhầm kho thì dùng Chuyển sang kho "
+        + "khác, nó giữ nguyên tất cả và miễn phí.",
+        { ok: "Bỏ bài", hong: true })) return;
       await svFetch(`/api/survey/${SV.id}/paper/${pid}`, { method: "DELETE" });
     } else if (act === "move") {
       svMoveBox(btn.closest("[data-pid]"), pid);
@@ -1349,13 +1357,15 @@ function svWire() {
      "bạn có chắc không" mà không kèm giá thì người dùng không có cơ sở để chắc. */
   $("#svSynDrop").onclick = async () => {
     if (!SV.id) return;
-    if (!confirm("Bỏ bản tổng hợp này?\n\nDựng lại tốn khoảng $0,09.")) return;
+    if (!await xacNhan("Bỏ bản tổng hợp này?",
+      "Dựng lại tốn khoảng $0,09.", { ok: "Bỏ", hong: true })) return;
     await svFetch(`/api/survey/${SV.id}/synthesis`, { method: "DELETE" });
     await svLoadSynth();
   };
   $("#svLecDrop").onclick = async () => {
     if (!SV.id || !SV.lecPid) return;
-    if (!confirm("Bỏ bài giảng của bài này?\n\nDựng lại tốn khoảng $0,08.")) return;
+    if (!await xacNhan("Bỏ bài giảng của bài này?",
+      "Dựng lại tốn khoảng $0,08.", { ok: "Bỏ", hong: true })) return;
     await svFetch(`/api/survey/${SV.id}/paper/${SV.lecPid}/lecture`, { method: "DELETE" });
     await svLoadLec();
   };
@@ -1413,7 +1423,9 @@ function svWire() {
     const x = e.target.closest("[data-drop-run]");
     if (x) {
       e.stopPropagation();          // đừng mở lượt hỏi mà mình vừa xoá
-      if (!confirm("Xoá lượt hỏi này khỏi lịch sử?")) return;
+      if (!await xacNhan("Xoá lượt hỏi này khỏi lịch sử?",
+        "Hỏi lại đúng câu đó thì phải chạy lại cả vòng tìm — tốn tiền.",
+        { ok: "Xoá", hong: true })) return;
       try {
         await svFetch(`/api/survey/${SV.id}/run/${x.dataset.dropRun}`, { method: "DELETE" });
         await svLoad();

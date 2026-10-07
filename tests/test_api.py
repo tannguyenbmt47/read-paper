@@ -426,6 +426,42 @@ def test_khong_o_chon_nao_bi_long_trong_label(app_client):
         assert co_ten, f"select {sid.group(1)} không có nhãn nào"
 
 
+def test_khong_con_hop_thoai_native(app_client):
+    """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
+    cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi
+    câu hỏi sau đó bị bỏ qua **im lặng**, tức `confirm()` trả `false` và người
+    dùng tưởng nút không ăn.
+
+    Mà phần lớn câu hỏi ở đây là câu hỏi TỐN TIỀN, nên phải nói rõ mất gì và giá
+    bao nhiêu — hộp thoại native hiện chữ một cỡ nên đoạn giải thích đó trôi hết.
+    Thay bằng `xacNhan` / `nhapChu` / `baoTin`.
+
+    Phép kiểm cấu trúc vì đây là loại lỗi không hiện ra lúc chạy: hộp thoại
+    native vẫn "hoạt động", chỉ là hoạt động sai chỗ.
+    """
+    import re
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    xau = []
+    for ten in ("app.js", "survey.js"):
+        src = (web / ten).read_text()
+        # Bỏ comment TRƯỚC khi quét — chính chỗ giải thích luật này nhắc tới
+        # `confirm()`, nên không bỏ thì phép kiểm tự báo sai.
+        src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+        src = re.sub(r"(?m)//.*$", "", src)
+        for m in re.finditer(r"(?<![.\w])(confirm|alert|prompt)\s*\(", src):
+            xau.append(f"{ten}: {m.group(1)}() ở offset {m.start()}")
+    assert not xau, "còn hộp thoại native: " + "; ".join(xau)
+
+    # Và ba hàm thay thế phải có thật, cùng hộp thoại trong DOM.
+    app = (web / "app.js").read_text()
+    for ham in ("function xacNhan", "function nhapChu", "function baoTin"):
+        assert ham in app, f"thiếu {ham}"
+    html = (web / "index.html").read_text()
+    for el in ("dlgVeil", "dlgTitle", "dlgBody", "dlgInput", "dlgArea", "dlgOk", "dlgCancel"):
+        assert f'id="{el}"' in html, f"thiếu #{el} trong index.html"
+
+
 def test_o_xem_truoc_hinh_co_bo_phong_to(app_client):
     """Hình cắt từ PDF dày đặc chữ nhỏ — nhãn trục, chú giải, số trong bảng — mà
     ô xem trước chỉ rộng chừng 560px. Đọc được con số trên biểu đồ mới là lý do

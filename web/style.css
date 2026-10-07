@@ -1616,3 +1616,55 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
 /* Vạch ngăn mục trong sidebar: nét mực thay vì xám mảnh */
 :root[data-theme="bao"] .side-tabs { border-bottom: 2px solid var(--muc); }
 :root[data-theme="bao"] .side { border-right: 2px solid var(--muc); }
+
+/* Hộp thoại của app (xem `#dlgVeil`). Thay cho confirm/prompt/alert của hệ: hộp
+   thoại native khoá cả tab, không cùng ngôn ngữ thiết kế, và không hiện nổi một
+   đoạn giải thích dài — mà mọi chỗ hỏi tốn tiền trong app đều cần đúng thứ đó. */
+.dlg-veil {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  background: rgba(20, 18, 16, .45); padding: 1rem;
+}
+.dlg {
+  width: min(30rem, 100%); max-height: 85vh; overflow-y: auto;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .28); padding: 1rem 1.1rem;
+}
+.dlg h3 { margin: 0 0 .5rem; font-family: var(--serif); font-size: 1.1rem; line-height: 1.35; }
+/* `pre-wrap`: mấy câu hỏi trong app xuống dòng thật để tách lý do khỏi hệ quả */
+.dlg-body { white-space: pre-wrap; color: var(--ink-2); font-size: .92em; line-height: 1.55; }
+.dlg-act { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+.dlg-act .btn { width: auto; margin: 0; }
+:root[data-theme="bao"] .dlg { border-width: 2px; box-shadow: 5px 5px 0 var(--muc); }
+
+/* Nút cho việc xoá. Đỏ chứ không phải màu nhấn: nút mặc định của hộp thoại là
+   "Đồng ý", mà đồng ý ở đây là mất dữ liệu. */
+.btn-danger { background: #b4342a; border-color: #b4342a; color: #fff; font-weight: 600; }
+.btn-danger:hover { filter: brightness(1.08); }
+
+/* Thông báo thoáng qua (xem `baoNhanh`). Neo dưới-giữa, không chặn gì. */
+.toast {
+  position: fixed; left: 50%; bottom: 1.4rem; transform: translate(-50%, 1rem);
+  z-index: 95; display: flex; align-items: center; gap: .75rem;
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: .6rem .9rem; border-radius: var(--radius);
+  background: var(--ink); color: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+  font-size: .9em; opacity: 0; pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast-undo {
+  flex: none; background: none; border: 1px solid currentColor; color: inherit;
+  border-radius: 6px; padding: .2rem .55rem; font: inherit; cursor: pointer;
+}
+.toast-undo:hover { background: rgba(255, 255, 255, .14); }
+:root[data-theme="bao"] .toast { border: 2px solid var(--muc); box-shadow: 4px 4px 0 rgba(0, 0, 0, .35); }
+
+/* Ô nhập đổi tên ngay trên dòng (xem danh sách bài). Giữ đúng cỡ chữ của tên
+   bài để hàng không nhảy lúc bật ô nhập — hàng nhảy thì mắt mất chỗ bám và
+   người dùng tưởng vừa bấm sai nút. */
+.input-inline {
+  width: 100%; padding: .1rem .3rem; margin: -.1rem 0;
+  font: inherit; font-weight: inherit; line-height: inherit;
+}

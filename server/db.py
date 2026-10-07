@@ -178,13 +178,20 @@ def delete_doc(doc_id: str) -> None:
 def list_docs() -> list[dict]:
     """Danh sách bài — chỉ đọc cột cần, không nạp cả nội dung như bản JSON cũ."""
     rows = conn().execute(
-        "SELECT id, title, title_vi, model, updated_at, blocks, translations"
-        " FROM documents ORDER BY updated_at DESC"
+        "SELECT id, title, title_vi, model, source, usage, created_at, updated_at,"
+        " blocks, translations FROM documents ORDER BY updated_at DESC"
     ).fetchall()
     out = []
     for r in rows:
         blocks = json.loads(r["blocks"] or "[]")
         todo = [b for b in blocks if b.get("translate")]
+        # `cost_usd` ở đây để hộp thoại xoá nói được MẤT GÌ — "bạn có chắc không"
+        # mà không kèm cái giá thì người dùng không có cơ sở nào để chắc. Và để
+        # danh sách sắp theo tiền đã bỏ ra.
+        try:
+            cost = float(json.loads(r["usage"] or "{}").get("cost") or 0.0)
+        except (ValueError, TypeError):
+            cost = 0.0
         out.append({
             "id": r["id"],
             "title": r["title"] or r["title_vi"] or "(không tiêu đề)",
@@ -193,6 +200,9 @@ def list_docs() -> list[dict]:
             "translated": len(json.loads(r["translations"] or "{}")),
             "translatable": len(todo),
             "model": r["model"],
+            "source": r["source"] or "",
+            "cost_usd": round(cost, 5),
+            "created_at": r["created_at"] or r["updated_at"] or 0,
             "updated_at": r["updated_at"] or 0,
         })
     return out

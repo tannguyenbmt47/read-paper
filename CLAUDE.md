@@ -1514,6 +1514,58 @@ phép đo nói dối. Phải `Page.reload(ignoreCache=True)`.
 ký hiệu) dùng font thường; chỉ ký hiệu lẻ trong `<code>` mới để mono. Cùng họ
 với cái bẫy `line-height` ở slide.
 
+### Hộp thoại: không dùng `confirm` / `prompt` / `alert` của hệ
+
+Ba hàm native **khoá cả tab** — không cuộn được, không bấm được gì khác — và
+Chromium còn kèm ô tick *"chặn trang này hiện thêm hộp thoại"*. Tick vào là mọi
+câu hỏi sau đó bị bỏ qua **im lặng**: `confirm()` trả `false`, nên người dùng
+thấy đúng một thứ là **nút không ăn**, y hệt triệu chứng dropdown tự đóng. Lại
+một ca "triệu chứng và nguyên nhân trông giống hệt nhau".
+
+Nhưng lý do nặng hơn là **nội dung**: phần lớn câu hỏi trong app này là câu hỏi
+**tốn tiền** ("dựng lại dàn ý?", "dịch lại khối này?", "xoá kho?"), nên nó phải
+nói rõ mất gì và giá bao nhiêu — chính luật *"hỏi trước khi xoá thứ dựng lại tốn
+tiền, và nói rõ bao nhiêu"*. Hộp thoại native hiện chữ một cỡ, không định dạng,
+nên đoạn giải thích đó trôi hết; `white-space: pre-wrap` trên `.dlg-body` là thứ
+giữ được chỗ ngắt giữa *lý do* và *hệ quả*.
+
+Ba hàm thay thế, khai ở `app.js` và `survey.js` **dùng nhờ** (cùng lối với `esc`
+và `_SUBSCRIPTISH`): `xacNhan(title, body, {ok, cancel, hong})` ·
+`nhapChu(title, body, value, nhieuDong)` · `baoTin(title, body)`. Tất cả trả
+Promise, nên mọi chỗ gọi phải `await` — gần hết đã nằm trong hàm `async` sẵn, chỉ
+hai handler phải đổi thành `async`.
+`test_khong_con_hop_thoai_native` canh cả ba hàm và cấu trúc trong `index.html`.
+
+Bốn chỗ đã vấp khi soát bằng trình duyệt:
+
+- **Hộp thoại phải là con TRỰC TIẾP của `<body>`.** Đặt nó trong một
+  `<section class="screen">` thì `.hidden { display: none !important }` của màn
+  đó ăn theo — đo được veil **0×0**, `focus()` không ăn, và mọi thứ khác hỏng
+  dây chuyền từ đó mà vẫn báo `hien: true`.
+- **Điều kiện Enter bám vào `nhieuDong`, KHÔNG bám vào `document.activeElement`.**
+  Tiêu điểm có thể chưa về ô nhập (đúng hệ quả của bẫy trên), và lúc ấy Enter
+  đóng mất hộp thoại ngay giữa lúc người dùng gõ dòng thứ hai. Ô nhiều dòng thì
+  Enter là **ngắt dòng thật**, Ctrl/⌘+Enter mới là đồng ý.
+- **Ô một dòng và ô nhiều dòng là hai phần tử.** `<input>` không nhận Enter làm
+  ngắt dòng, nên danh sách cột của bảng đối chiếu buộc phải là `<textarea>`.
+- **Bấm ra ngoài chỉ huỷ khi `e.target === veil`, và ở `mousedown`.** Kéo chọn
+  chữ trong hộp rồi thả tay ra ngoài không được tính là huỷ.
+
+**Đổi tên thì sửa NGAY TRÊN DÒNG, không mở hộp thoại.** Người dùng cần thấy tên
+cũ nằm cạnh các bài khác trong lúc gõ — đó mới là lý do họ biết tên này sai; hộp
+thoại che mất đúng cái ngữ cảnh ấy. Hai chi tiết: `.input-inline` giữ nguyên cỡ
+và độ đậm của tên bài (đo được hàng chỉ nhảy 2px, là phần viền), và ô nhập phải
+`stopPropagation` cú click — không thì bấm vào ô nhập là mở bài.
+
+**`baoNhanh(msg, hoanLai)`** là thông báo thoáng qua có nút *Hoàn lại*, dùng cho
+việc xoá **không tốn tiền** để dựng lại. Việc tốn tiền thì phải hỏi TRƯỚC bằng
+`xacNhan`, vì "hoàn lại" ở đó là lời hứa không giữ được — xoá bài là xoá khỏi DB,
+không có đường về.
+
+**`list_docs()` trả thêm `cost_usd` / `source` / `created_at`** chính là để hộp
+thoại xoá nói được cái giá: đo trên bài CIRAG, **$2,6329**. "Bạn có chắc không"
+mà không kèm con số đó thì người dùng không có cơ sở nào để chắc.
+
 ### Đủ bộ CRUD — mỗi thứ người dùng tạo ra phải sửa và xoá được
 
 Phần lớn màn hình ban đầu chỉ có **tạo** và **đọc**. Kiểu thiếu này không lộ ra

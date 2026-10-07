@@ -25,6 +25,123 @@ async function apiErr(r, mac = "") {
   } catch { /* đọc được gì thì đọc, không được thì rơi về câu mặc định */ }
   return mac || `Máy chủ báo lỗi ${r.status}${r.statusText ? " " + r.statusText : ""}.`;
 }
+/* ============================================ hộp thoại của app =====
+
+   `confirm()` / `prompt()` / `alert()` của hệ điều hành KHOÁ cả tab: không cuộn
+   được, không bấm được gì khác, và trên Chromium còn hiện kèm ô "chặn trang này
+   hiện thêm hộp thoại" — tick vào là mọi câu hỏi sau đó bị bỏ qua **im lặng**,
+   tức `confirm()` trả `false` và người dùng tưởng nút không ăn.
+
+   Mà phần lớn câu hỏi trong app này là câu hỏi TỐN TIỀN ("dựng lại dàn ý?",
+   "dịch lại khối này?") nên phải nói rõ mất gì và giá bao nhiêu — hộp thoại
+   native hiện chữ một cỡ, không định dạng, nên đoạn giải thích đó trôi hết.
+
+   Ba hàm trả Promise, dùng chung đúng một hộp thoại trong DOM. */
+
+let dlgDong = null;   // hàm đóng của lượt đang mở, để lượt sau không chồng lên
+
+function dlgMo({ title, body = "", ok = "Đồng ý", cancel = "Huỷ", nhap = null, hong = false, nhieuDong = false }) {
+  dlgDong?.(null);
+  const veil = $("#dlgVeil"), btnOk = $("#dlgOk"), btnNo = $("#dlgCancel");
+  // Ô một dòng và ô nhiều dòng là hai phần tử: `<input>` không nhận Enter làm
+  // ngắt dòng, nên danh sách cột của bảng đối chiếu buộc phải là `<textarea>`.
+  const inp = nhieuDong ? $("#dlgArea") : $("#dlgInput");
+  (nhieuDong ? $("#dlgInput") : $("#dlgArea")).classList.add("hidden");
+  $("#dlgTitle").textContent = title;
+  $("#dlgBody").textContent = body;
+  $("#dlgBody").classList.toggle("hidden", !body);
+  btnOk.textContent = ok;
+  btnOk.classList.toggle("btn-danger", hong);
+  btnNo.classList.toggle("hidden", cancel === null);
+  if (cancel) btnNo.textContent = cancel;
+  inp.classList.toggle("hidden", nhap === null);
+  if (nhap !== null) { inp.value = nhap; inp.placeholder = ""; }
+  veil.classList.remove("hidden");
+
+  const truoc = document.activeElement;
+  (nhap !== null ? inp : btnOk).focus();
+  if (nhap !== null) inp.select();
+
+  return new Promise((xong) => {
+    const dong = (kq) => {
+      dlgDong = null;
+      veil.classList.add("hidden");
+      document.removeEventListener("keydown", phim, true);
+      // Trả tiêu điểm về chỗ cũ, nếu nó còn trong trang.
+      if (truoc?.isConnected) truoc.focus();
+      xong(kq);
+    };
+    const nhan = () => dong(nhap !== null ? inp.value : true);
+    const phim = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); dong(null); }
+      // Enter trong ô nhập là "đồng ý" — hộp thoại chỉ có một dòng nên không
+      // có form nào để submit.
+      /* Trong ô nhiều dòng Enter là ngắt dòng THẬT; Ctrl/⌘+Enter mới là đồng ý.
+         Điều kiện bám vào `nhieuDong`, KHÔNG bám vào `document.activeElement`:
+         tiêu điểm có thể chưa về ô nhập (đã đo đúng vậy khi hộp thoại còn bị
+         một `.hidden` của màn ngoài ăn theo), và lúc ấy Enter đóng mất hộp
+         thoại ngay giữa lúc người dùng đang gõ dòng thứ hai. */
+      else if (e.key === "Enter" && nhieuDong) {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); nhan(); }
+      }
+      else if (e.key === "Enter" && (nhap !== null || document.activeElement !== btnNo)) {
+        e.preventDefault(); nhan();
+      }
+    };
+    dlgDong = dong;
+    btnOk.onclick = nhan;
+    btnNo.onclick = () => dong(null);
+    // Bấm ra ngoài là huỷ, nhưng chỉ khi bấm đúng vào lớp phủ: kéo chọn chữ
+    // trong hộp rồi thả tay ra ngoài thì không được tính là huỷ.
+    veil.onmousedown = (e) => { if (e.target === veil) dong(null); };
+    document.addEventListener("keydown", phim, true);
+  });
+}
+
+/** Hỏi đồng ý / huỷ. Trả `true` khi người dùng đồng ý. */
+async function xacNhan(title, body = "", opts = {}) {
+  return (await dlgMo({ title, body, ok: "Đồng ý", ...opts })) === true;
+}
+
+/** Hỏi một dòng chữ. Trả chuỗi, hoặc `null` khi huỷ. */
+async function nhapChu(title, body = "", value = "", nhieuDong = false) {
+  const kq = await dlgMo({ title, body, nhap: value ?? "", ok: "Lưu", nhieuDong });
+  return kq === null ? null : String(kq);
+}
+
+/** Báo một tin, chỉ có nút đóng. */
+async function baoTin(title, body = "") {
+  await dlgMo({ title, body, ok: "Đã hiểu", cancel: null });
+}
+
+/* Thông báo thoáng qua, có thể kèm một nút hoàn lại. Dùng cho việc xoá được
+   mà KHÔNG tốn tiền để dựng lại — xoá một mục dàn ý, một slide. Việc xoá tốn
+   tiền (xoá bài, bóc lại) thì phải hỏi trước bằng `xacNhan`, vì "hoàn lại" ở
+   đó là lời hứa không giữ được. */
+function baoNhanh(msg, hoanLai = null) {
+  let box = $("#toast");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "toast";
+    box.className = "toast";
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    document.body.append(box);
+  }
+  clearTimeout(box._hen);
+  box.textContent = "";
+  box.append(Object.assign(document.createElement("span"), { textContent: msg }));
+  if (hoanLai) {
+    const b = Object.assign(document.createElement("button"), {
+      className: "toast-undo", textContent: "Hoàn lại",
+    });
+    b.onclick = () => { box.classList.remove("is-on"); hoanLai(); };
+    box.append(b);
+  }
+  box.classList.add("is-on");
+  box._hen = setTimeout(() => box.classList.remove("is-on"), hoanLai ? 8000 : 3500);
+}
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -328,6 +445,7 @@ async function init() {
   wirePdfPane();
   wireHighlights();
   wireFigPeek();
+  wireHashNav();
   wireSlides();
   wirePresent();
   const id = location.hash.slice(1);
@@ -365,7 +483,9 @@ async function setModel(id) {
 
 async function loadDbStats() {
   try {
-    const d = await fetch("/api/db/stats").then((r) => r.json());
+    // `cache: "no-store"`: trình duyệt cache GET này nên sau khi nạp bài mới,
+    // dòng thống kê vẫn là số cũ — đo được "27 bài" khi API đã trả 28.
+    const d = await fetch("/api/db/stats", { cache: "no-store" }).then((r) => r.json());
     if (!d.tm_entries && !d.parse_cached) return;
     $("#dbStats").textContent =
       `Kho đã lưu: ${d.documents} bài · ${d.parse_cached} file đã bóc tách sẵn · ` +
@@ -396,20 +516,59 @@ async function loadRecent() {
      ở slide tiêu đề, nên sai một chỗ là sai khắp nơi. Đổi tên không đụng nội
      dung: `title` không nằm trong `cached_prefix` nên không có bản dịch nào
      phải bỏ đi. */
-  $$("#recentList [data-ren]").forEach((el) => (el.onclick = async () => {
+  /* Sửa NGAY TRÊN DÒNG, không mở hộp thoại: đổi tên là việc nhẹ và người dùng
+     cần thấy tên cũ nằm cạnh các bài khác trong lúc gõ — đó mới là lý do họ
+     biết tên này sai. Hộp thoại che mất chính cái ngữ cảnh ấy. */
+  $$("#recentList [data-ren]").forEach((el) => (el.onclick = () => {
     const id = el.dataset.ren;
-    const cur = docs.find((d) => d.id === id) || {};
-    const title = prompt("Tên bài:", cur.title_vi || cur.title || "");
-    if (!title || !title.trim()) return;
-    await fetch(`/api/doc/${id}/title`, {
-      method: "PATCH", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: title.trim() }),
+    const nhan = $(`#recentList .rt[data-id="${id}"] b`);
+    if (!nhan || nhan.querySelector("input")) return;
+    const cu = nhan.textContent;
+    const inp = Object.assign(document.createElement("input"), {
+      className: "input input-inline", value: cu,
     });
-    loadRecent();
+    nhan.textContent = "";
+    nhan.append(inp);
+    inp.focus();
+    inp.select();
+    // Chặn click nổi lên `.rt` — không thì bấm vào ô nhập là mở bài.
+    inp.onclick = (e) => e.stopPropagation();
+    let xong = false;
+    const thoi = () => { if (!xong) { xong = true; nhan.textContent = cu; } };
+    const luu = async () => {
+      if (xong) return;
+      xong = true;
+      const t = inp.value.trim();
+      if (!t || t === cu) { nhan.textContent = cu; return; }
+      nhan.textContent = t;
+      const r = await fetch(`/api/doc/${id}/title`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: t }),
+      });
+      if (!r.ok) { nhan.textContent = cu; baoNhanh(await apiErr(r, "Không lưu được tên.")); return; }
+      loadRecent();
+    };
+    inp.onblur = luu;
+    inp.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); luu(); }
+      else if (e.key === "Escape") { e.preventDefault(); thoi(); }
+    };
   }));
   $$("#recentList [data-del]").forEach((el) => (el.onclick = async () => {
-    if (!confirm("Xoá bài này khỏi máy?")) return;
-    await fetch(`/api/doc/${el.dataset.del}`, { method: "DELETE" });
+    const id = el.dataset.del;
+    const d = docs.find((x) => x.id === id) || {};
+    // Nói ra mất gì: bản dịch là thứ đã trả tiền, "bạn có chắc không" mà không
+    // kèm cái giá thì người dùng không có cơ sở nào để chắc.
+    const gia = d.cost_usd
+      ? `Bài này đã tốn $${(+d.cost_usd).toFixed(4).replace(".", ",")} để dịch.\n\n` : "";
+    if (!await xacNhan(
+      "Xoá bài này khỏi máy?",
+      `${d.title_vi || d.title || ""}\n\n${gia}`
+      + "Mất cả bản dịch, ghi chú, vệt bôi và bộ slide. Không hoàn lại được.",
+      { ok: "Xoá", hong: true },
+    )) return;
+    const r = await fetch(`/api/doc/${id}`, { method: "DELETE" });
+    if (!r.ok) return baoTin("Không xoá được", await apiErr(r));
     loadRecent();
   }));
 }
@@ -588,6 +747,41 @@ function showScreen(id) {
   ["start", "review", "reader", "slides", "survey"].forEach((s) =>
     $("#" + s).classList.toggle("hidden", s !== id));
   syncRail(id);
+  // Về màn nhập là làm mới thống kê và danh sách. Trước đây chúng chỉ nạp một
+  // lần lúc khởi động, nên nạp xong một bài rồi bấm ← vẫn thấy số cũ — và chỉ
+  // đúng sau khi tải lại cả trang.
+  if (id === "start") { loadDbStats(); loadRecent(); }
+}
+
+/* Nút Back của trình duyệt phải điều hướng thật.
+
+   App lưu mã bài ở `location.hash` (6 chỗ ghi vào đó) nhưng **không ai lắng
+   nghe `hashchange`** — nên bấm Back thì URL về "/" mà màn hình vẫn là bài
+   đang đọc. Người dùng mất đường về mà không hiểu vì sao.
+
+   Chỉ phản ứng khi hash THẬT SỰ khác bài đang mở: mọi chỗ trong app đều ghi
+   `location.hash` khi mở bài, và nếu không so thì chính cú ghi đó lại kích hoạt
+   một lượt mở bài nữa. */
+function wireHashNav() {
+  addEventListener("hashchange", () => {
+    const id = location.hash.slice(1);
+    if (!id) {
+      // Về màn nhập, và đóng mọi popup đang mở — trước đây hộp ghi chú tự bật
+      // lên che nội dung sau khi điều hướng.
+      closeHlPop?.();
+      $("#hlBar")?.classList.add("hidden");
+      showScreen("start");
+      return;
+    }
+    // Guard phải hỏi "đang HIỂN THỊ bài đó không", không phải "đã nạp chưa".
+    // Hỏi sai thì Back về màn nhập xong bấm Forward là kẹt: `state.doc` vẫn là
+    // bài cũ nên nó return sớm và màn hình không bao giờ quay lại trang đọc.
+    const dangMo = state.doc && id === state.doc.id;
+    if (dangMo && !$("#reader").classList.contains("hidden")) return;
+    // Đã nạp rồi thì chỉ cần hiện lại, khỏi gọi lại API.
+    if (dangMo) { showScreen("reader"); return; }
+    openDoc(id).catch(() => { location.hash = ""; });
+  });
 }
 
 /* Thanh bên trái phải luôn chỉ đúng công cụ đang mở, kể cả khi màn hình đổi từ
@@ -774,7 +968,8 @@ async function editBlocks(url, payload) {
 function wireBlockEdits() {
   $$("#review [data-dropblk]").forEach((el) => (el.onclick = async () => {
     const b = state.doc.blocks.find((x) => x.id === el.dataset.dropblk);
-    if (!confirm(`Bỏ hẳn khối này khỏi bài?\n\n${(b?.text || "").slice(0, 200)}`)) return;
+    if (!await xacNhan("Bỏ hẳn khối này khỏi bài?",
+      (b?.text || "").slice(0, 300), { ok: "Bỏ khối", hong: true })) return;
     await patchBlocks({ drop: [el.dataset.dropblk] });
     renderReview();
     loadEstimate();
@@ -784,13 +979,14 @@ function wireBlockEdits() {
     const id = el.dataset.merge;
     const i = state.doc.blocks.findIndex((x) => x.id === id);
     const nxt = state.doc.blocks[i + 1];
-    if (!nxt) return alert("Đây là khối cuối, không có gì để gộp vào.");
+    if (!nxt) return baoTin("Không gộp được", "Đây là khối cuối, không có gì để gộp vào.");
     const warn = nxt.type !== state.doc.blocks[i].type
       ? `\n\nLưu ý: hai khối khác loại (${state.doc.blocks[i].type} + ${nxt.type}).` : "";
-    if (!confirm(`Gộp khối này với khối ngay sau?${warn}\n\n…${
-      state.doc.blocks[i].text.slice(-90)}\n+\n${nxt.text.slice(0, 90)}…`)) return;
+    if (!await xacNhan("Gộp khối này với khối ngay sau?",
+      `${warn ? warn.trim() + "\n\n" : ""}…${state.doc.blocks[i].text.slice(-90)}`
+      + `\n+\n${nxt.text.slice(0, 90)}…`, { ok: "Gộp" })) return;
     try { await editBlocks("/blocks/merge", { ids: [id, nxt.id] }); }
-    catch (e) { alert(e.message); }
+    catch (e) { baoTin("Không gộp được", e.message); }
   }));
 
   // Khối đáng ngờ nằm ở cả "Khối đáng ngờ" lẫn "Xem toàn bộ" nên data-row trùng
@@ -820,7 +1016,7 @@ function openSplit(id, row) {
   $("[data-dosplit]", row).onclick = async () => {
     const off = ta.selectionStart;
     try { await editBlocks("/blocks/split", { id, offset: off }); }
-    catch (e) { alert(e.message); }
+    catch (e) { baoTin("Không tách được", e.message); }
   };
 }
 
@@ -1126,10 +1322,11 @@ function wireReader() {
      cần cảnh báo giá, chỉ cần nói rõ nó sẽ đổi gì. */
   $("#reparseBtn").onclick = async () => {
     const btn = $("#reparseBtn");
-    if (!confirm("Bóc lại bài từ file PDF gốc bằng bộ bóc mới nhất?\n\n"
-      + "Miễn phí, không gọi model. Bản dịch, ghi chú và vệt bôi vàng giữ nguyên "
-      + "— khối được ghép lại theo nội dung. Phần chữ mới nhặt về sẽ chưa có bản "
-      + "dịch; bấm Dịch tiếp là xong, và đoạn nào từng dịch rồi thì lấy lại miễn phí.")) return;
+    if (!await xacNhan("Bóc lại bài từ file PDF gốc bằng bộ bóc mới nhất?",
+      "Miễn phí, không gọi model. Bản dịch, ghi chú và vệt bôi vàng giữ nguyên "
+      + "— khối được ghép lại theo nội dung.\n\nPhần chữ mới nhặt về sẽ chưa có bản "
+      + "dịch; bấm Dịch tiếp là xong, và đoạn nào từng dịch rồi thì lấy lại miễn phí.",
+      { ok: "Bóc lại" })) return;
     btn.disabled = true;
     const old = btn.textContent;
     btn.textContent = "Đang bóc lại…";
@@ -1147,8 +1344,8 @@ function wireReader() {
       // thấy "xong" mà kết quả kém hẳn — công thức mất ảnh, hiện ra bằng chữ
       // toán vỡ — và không có cách nào đoán ra vì sao.
       if (st.layout_used === false) {
-        alert("Bóc lại bằng ĐƯỜNG LÙI, không dùng mô hình bố cục.\n\n"
-          + "Lý do: " + (st.fallback_why || "không rõ") + ".\n\n"
+        await baoTin("Bóc lại bằng ĐƯỜNG LÙI, không dùng mô hình bố cục",
+          "Lý do: " + (st.fallback_why || "không rõ") + ".\n\n"
           + "Kết quả kém hơn rõ rệt: công thức không được cắt thành ảnh nên hiện "
           + "ra bằng chữ toán vỡ nát, và nhiều đoạn bị cắt vụn hơn.\n\n"
           + "Cách chữa: chạy bằng ./run.sh trên máy (đã có sẵn mô hình), hoặc dựng "
@@ -1167,9 +1364,10 @@ function wireReader() {
      gì — nên chỉ cần một câu xác nhận nhẹ. */
   $("#recropBtn").onclick = async () => {
     const btn = $("#recropBtn");
-    if (!confirm("Vẽ lại mọi ảnh đã cắt, từ file PDF gốc?\n\n"
-      + "Miễn phí, không gọi model. Khối, bản dịch, ghi chú và vệt bôi không bị "
-      + "chạm tới — chỉ pixel của ảnh được vẽ lại, theo đúng khung đã lưu.")) return;
+    if (!await xacNhan("Vẽ lại mọi ảnh đã cắt, từ file PDF gốc?",
+      "Miễn phí, không gọi model. Khối, bản dịch, ghi chú và vệt bôi không bị "
+      + "chạm tới — chỉ pixel của ảnh được vẽ lại, theo đúng khung đã lưu.",
+      { ok: "Cắt lại" })) return;
     btn.disabled = true;
     const old = btn.textContent;
     btn.textContent = "Đang cắt lại…";
@@ -1208,9 +1406,10 @@ function wireReader() {
 
   $("#rebriefBtn").onclick = async () => {
     const btn = $("#rebriefBtn");
-    if (!confirm("Đọc lại toàn bài để chốt lại bảng thuật ngữ?\n\n" +
-                 "Tốn một lượt gọi model. Phần đã dịch giữ nguyên — muốn dịch lại " +
-                 "theo bảng mới thì bấm Dịch tiếp sau khi xoá bộ nhớ dịch.")) return;
+    if (!await xacNhan("Đọc lại toàn bài để chốt lại bảng thuật ngữ?",
+      "TỐN TIỀN: một lượt gọi model đọc cả bài.\n\nPhần đã dịch giữ nguyên — muốn "
+      + "dịch lại theo bảng mới thì bấm Dịch tiếp sau khi xoá bộ nhớ dịch.",
+      { ok: "Dựng lại" })) return;
     btn.disabled = true;
     const old = btn.textContent;
     btn.textContent = "Đang đọc toàn bài…";
@@ -1980,10 +2179,12 @@ function wireOutlineRows() {
       el.onchange = () => saveOlItem(li);
     });
     li.querySelectorAll("[data-act]").forEach((b) => {
-      b.onclick = () => {
+      b.onclick = async () => {
         const oid = li.dataset.oid;
         if (b.dataset.act === "drop") {
-          if (!confirm("Xoá mục này khỏi dàn ý?")) return;
+          if (!await xacNhan("Xoá mục này khỏi dàn ý?",
+            "Dàn ý là bước miễn phí, nhưng sửa tay trên mục này thì mất.",
+            { ok: "Xoá mục", hong: true })) return;
           patchOutline({ drop: oid }, "Đã xoá mục.");
         } else if (b.dataset.act === "add") {
           patchOutline({ add: oid }, "Đã thêm mục trắng.");
@@ -2007,11 +2208,12 @@ function wireOutline() {
   $("#slOutlineBtn").onclick = async () => {
     const btn = $("#slOutlineBtn"), old = btn.textContent;
     const nMiss = untranslatedCount();
-    if (nMiss && !confirm(`Bài còn ${nMiss} khối chưa dịch.\n\n`
-        + "Nội dung soạn từ bản dịch đã soát; phần chưa dịch thì model tự đọc lấy "
-        + "từ bản gốc.\n\nVẫn soạn?")) return;
-    if (outlineOf() && !confirm("Soạn lại dàn ý?\n\nMọi sửa tay trên dàn ý hiện tại"
-        + " sẽ mất. Slide đã dựng thì vẫn còn.")) return;
+    if (nMiss && !await xacNhan(`Bài còn ${nMiss} khối chưa dịch`,
+        "Nội dung soạn từ bản dịch đã soát; phần chưa dịch thì model tự đọc lấy "
+        + "từ bản gốc.", { ok: "Vẫn soạn" })) return;
+    if (outlineOf() && !await xacNhan("Soạn lại dàn ý?",
+        "TỐN TIỀN: một lượt gọi model.\n\nMọi sửa tay trên dàn ý hiện tại sẽ mất. "
+        + "Slide đã dựng thì vẫn còn.", { ok: "Soạn lại", hong: true })) return;
     btn.disabled = true;
     btn.textContent = "Đang soạn…";
     slStatus("Đang đọc lại bài và soạn nội dung buổi nói…");
@@ -2210,13 +2412,14 @@ async function markInsights(tuDong = false) {
   const uoc = Math.max(6, Math.min(90, Math.floor(nPara / moi)));
   // Chạy tự động thì KHÔNG hỏi lại: người dùng đã đồng ý một lần bằng ô tick,
   // hỏi thêm ngay sau khi dịch xong là bắt họ bấm hai lần cho cùng một quyết định.
-  if (!tuDong && !confirm(`Đánh dấu những câu đáng nhớ trong bản dịch?\n\n`
-    + `Bài này có ${nPara} đoạn đã dịch, mật độ đang chọn cho ra khoảng `
-    + `${uoc} câu.\n\nTốn một lượt gọi model — đo trên bài 149 đoạn: `
+  if (!tuDong && !await xacNhan("Đánh dấu những câu đáng nhớ trong bản dịch?",
+    `Bài này có ${nPara} đoạn đã dịch, mật độ đang chọn cho ra khoảng ${uoc} câu.\n\n`
+    + `TỐN TIỀN: một lượt gọi model — đo trên bài 149 đoạn: `
     + `$0,02 ở mức thưa, $0,08 ở mức vừa, khoảng gấp đôi thế ở mức dày.\n\n`
     + `Mỗi câu kèm một dòng nói vì sao chỗ đó đáng nhớ, và màu cho biết loại — `
     + `tím là luận điểm, xanh dương là cơ chế, xanh lá là số liệu, hồng là giới `
-    + `hạn, vàng là khái niệm.\n\nVệt bôi bạn tự tô từ trước vẫn giữ nguyên.`)) return;
+    + `hạn, vàng là khái niệm.\n\nVệt bôi bạn tự tô từ trước vẫn giữ nguyên.`,
+    { ok: "Đánh dấu" })) return;
   btn.disabled = true;
   const old = btn.textContent;
   btn.textContent = "Đang đọc lại bài…";
@@ -2719,8 +2922,10 @@ function wireSlides() {
       slStatus("Chưa có dàn ý. Bấm Soạn nội dung trước, soát xong mới dựng slide.");
       return;
     }
-    if (has && !confirm("Dựng lại bộ slide từ dàn ý?\n\nSlide bạn đã sửa tay thì"
-        + " giữ nguyên, không dựng đè. Phần còn lại dựng mới. Tốn tiền.")) return;
+    if (has && !await xacNhan("Dựng lại bộ slide từ dàn ý?",
+        "TỐN TIỀN: dựng theo mẻ, mỗi mẻ một lượt gọi model.\n\nSlide bạn đã sửa tay "
+        + "thì giữ nguyên, không dựng đè. Phần còn lại dựng mới.",
+        { ok: "Dựng lại" })) return;
     btn.disabled = true;
     btn.textContent = "Đang dựng…";
     try {
@@ -2761,7 +2966,9 @@ function wireSlides() {
 
   $("#slRegen").onclick = async () => {
     const btn = $("#slRegen"), old = btn.textContent;
-    const hint = prompt("Muốn slide này khác đi ở chỗ nào? (để trống cũng được)") ?? null;
+    const hint = await nhapChu("Viết lại slide này",
+      "TỐN TIỀN: một lượt gọi model.\n\nMuốn slide này khác đi ở chỗ nào? Để trống "
+      + "cũng được — khi đó model tự viết lại từ dàn ý.");
     if (hint === null) return;
     btn.disabled = true;
     btn.textContent = "Đang viết lại…";
@@ -2887,7 +3094,9 @@ function wireSlides() {
   };
 
   $("#slDrop").onclick = async () => {
-    if (!confirm("Xoá hẳn slide này?")) return;
+    if (!await xacNhan("Xoá hẳn slide này?",
+      "Dựng lại một slide tốn một lượt gọi model. Muốn giữ mà không trình bày thì "
+      + "chuyển sang bộ dự phòng, đừng xoá.", { ok: "Xoá slide", hong: true })) return;
     try {
       const gone = state.slideSel;
       state.slideSel = null;
@@ -3184,14 +3393,31 @@ function applyCols() {
 const find = { hits: [], i: -1 };
 
 /** Bọc mọi lần khớp trong <mark>, giữ nguyên chữ hoa thường của bản gốc. */
+/** Bỏ dấu để so khớp, nhưng GIỮ NGUYÊN số ký tự.
+
+    Người Việt gõ không dấu là thói quen phổ biến, mà "giam nhieu" trước đây
+    không tìm ra "giảm nhiễu". Dùng NFD rồi bỏ dải dấu tổ hợp U+0300–U+036F,
+    cộng `đ`/`Đ` (chữ này không tách được bằng NFD).
+
+    **Số ký tự phải không đổi**, vì vị trí tìm được trên chuỗi đã bỏ dấu được
+    dùng để cắt chuỗi GỐC — lệch một ký tự là vệt tô lệch khỏi từ. Vì thế
+    `normalize("NFD")` xong phải bỏ **đúng** các dấu tổ hợp chứ không gộp gì
+    thêm, và `đ → d` là phép thay một-đổi-một. */
+function khongDau(t) {
+  return t.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+}
+
 function markUp(text, q) {
-  const low = text.toLowerCase(), needle = q.toLowerCase();
+  // So trên bản bỏ dấu của CẢ HAI phía: gõ có dấu vẫn trúng, gõ không dấu cũng
+  // trúng. Độ dài giữ nguyên nên `slice` trên chuỗi gốc vẫn đúng chỗ.
+  const low = khongDau(text), needle = khongDau(q);
   let out = "", i = 0;
   for (;;) {
     const j = low.indexOf(needle, i);
     if (j < 0) return out + esc(text.slice(i));
-    out += esc(text.slice(i, j)) + `<mark class="hit">${esc(text.slice(j, j + q.length))}</mark>`;
-    i = j + q.length;
+    out += esc(text.slice(i, j)) + `<mark class="hit">${esc(text.slice(j, j + needle.length))}</mark>`;
+    i = j + needle.length;
   }
 }
 
@@ -3213,10 +3439,10 @@ function runFind(q) {
     $("#findCount").textContent = q ? "gõ thêm…" : "";
     return;
   }
-  const needle = q.toLowerCase();
+  const needle = khongDau(q);
   $$("#doc .en, #doc .vi, #doc .gl").forEach((cell) => {
     const text = cell.textContent;
-    if (!text.toLowerCase().includes(needle)) return;
+    if (!khongDau(text).includes(needle)) return;
     cell.dataset.orig = cell.innerHTML;
     cell.innerHTML = markUp(text, q);
   });
@@ -3906,13 +4132,13 @@ async function redoBlock(id) {
   const pair = $(`#p-${CSS.escape(id)}`);
   const cell = $("[data-vi]", pair);
   if (!cell) return;
-  if (!confirm("Dịch lại đoạn này?\n\n"
-    + "Tốn một lượt gọi model. Rẻ nếu bài vừa dịch xong — toàn văn còn trong "
+  if (!await xacNhan("Dịch lại đoạn này?",
+    "TỐN TIỀN: một lượt gọi model. Rẻ nếu bài vừa dịch xong — toàn văn còn trong "
     + "cache; nhưng nếu đã lâu thì phải đọc lại cả bài, đo thật khoảng $0,03.\n\n"
     + "Bản dịch cũ của đoạn bị bỏ khỏi bộ nhớ dịch nên không quay lại nữa, và "
     + "lượt mới chạy ở nhiệt độ cao hơn để không ra đúng kết quả cũ.\n\n"
     + "Vệt bôi vàng trên đoạn này sẽ bị xoá — khoảng ký tự cũ không còn khớp "
-    + "bản dịch mới.")) return;
+    + "bản dịch mới.", { ok: "Dịch lại" })) return;
   const cu = cell.innerHTML;
   cell.innerHTML = `<span class="pending"><span class="spin">◐</span> đang dịch lại…</span>`;
   try {

@@ -836,6 +836,24 @@
     </div>
   </div>
 </section>
+  <!-- Hộp thoại của app, thay cho confirm()/prompt()/alert() của hệ điều hành.
+       Hộp thoại native KHOÁ cả tab (không cuộn, không bấm được gì), không cùng
+       ngôn ngữ thiết kế, và không hiện nổi một đoạn giải thích dài có định dạng
+       — mà mấy chỗ hỏi tốn tiền trong app này đều cần đúng thứ đó. -->
+  <div id="dlgVeil" class="dlg-veil hidden">
+    <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+      <h3 id="dlgTitle"></h3>
+      <div id="dlgBody" class="dlg-body"></div>
+      <input id="dlgInput" class="input hidden" type="text">
+      <textarea id="dlgArea" class="input hidden" rows="8"></textarea>
+      <div class="dlg-act">
+        <button id="dlgCancel" class="btn">Huỷ</button>
+        <button id="dlgOk" class="btn btn-primary">Đồng ý</button>
+      </div>
+    </div>
+  </div>
+
+
 
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/app.js"></script>
