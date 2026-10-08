@@ -17,3 +17,7 @@ SR_presentation_20_slides.pdf
 
 # Báo cáo test (nặng, chứa ảnh chụp màn hình) — không đẩy lên repo
 Loupe testing.xlsx
+
+# PDF bài báo thả vào gốc repo để thử — bài của người khác, không thuộc mã
+# nguồn. Đã có một file lọt vào commit vì `git add -A`; luật này chặn lần sau.
+/*.pdf
