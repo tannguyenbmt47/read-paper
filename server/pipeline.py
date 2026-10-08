@@ -176,20 +176,48 @@ def _label_re(ids) -> "re.Pattern | None":
         re.M)
 
 
+def _close_re(ids) -> "re.Pattern | None":
+    """Dòng chỉ gồm một NHÃN ĐÓNG kiểu thẻ XML — `</b370_g>>>`, `<</b12>>`, `[/b12]`.
+
+    Model đôi khi "đóng" khối như đóng thẻ HTML. Bộ dò nhãn mở không nhận dạng
+    này (cũng không nên: nó không mở khối nào), nên trước đây nó lọt nguyên vào
+    cuối ô — đã thấy `</<b370_g>>>` nằm ở dòng cuối cột giải thích bài CIRAG.
+
+    Dựng từ đúng tập mã của mẻ, như `_label_re`, và cũng đòi đứng MỘT MÌNH trên
+    dòng: một câu nhắc tới mã khối không bao giờ bị cắt nhầm.
+    """
+    ids = [i for i in ids if i]
+    if not ids:
+        return None
+    alt = "|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True))
+    return re.compile(
+        # `<{0,4}` SAU dấu `/`: dạng thật đo trên dữ liệu là `</<b370_g>>>` — model
+        # mở lại ngoặc nhọn ngay sau dấu đóng. Mẫu đầu tiên chỉ nhận `</b370_g>>>`
+        # và bỏ lọt cả 8 ô dính trong `data/`.
+        r"^[ \t]*(?:<{1,4}[ \t]*/[ \t]*<{0,4}[ \t]*(?:" + alt + r")[ \t]*>{1,4}"
+        r"|\[[ \t]*/[ \t]*(?:" + alt + r")[ \t]*\])[ \t]*$\n?",
+        re.M)
+
+
 def _parse_labeled(text: str, ids=None) -> dict[str, str]:
     """Bóc `<<<id>>> nội dung` thành dict, chịu được đầu ra bị cắt giữa chừng.
 
     Có `ids` thì dò theo đúng tập mã đó (xem `_label_re`) — chắc hơn hẳn. Không
     có thì rơi về dạng `<<<id>>>` thuần, cho những chỗ gọi chưa biết trước mã.
+    Nhãn ĐÓNG (`</b12>>>`) thì gỡ khỏi nội dung, xem `_close_re`.
     """
     rx = _label_re(ids) if ids else LABEL
+    dong = _close_re(ids) if ids else None
     out: dict[str, str] = {}
     matches = list(rx.finditer(text))
     for i, m in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         key = next((g for g in m.groups() if g), None) if ids else m.group(1)
         if key:
-            out[key] = text[m.end():end].strip()
+            than = text[m.end():end]
+            if dong is not None:
+                than = dong.sub("", than)
+            out[key] = than.strip()
     return out
 
 

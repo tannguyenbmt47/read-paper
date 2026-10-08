@@ -1327,3 +1327,26 @@ def test_mang_set_trang_dau_khong_lam_trang_hai_cot_thanh_mot_cot():
     # vẫn phải là một cột — đoạn đó mới là thứ quyết định mạch đọc.
     doan_rong = [(71, 100, 524, 400)]
     assert _page_columns(doan_rong + trai + phai[:2], PW) == 1
+
+
+def test_nhan_dong_kieu_the_khong_lot_vao_noi_dung():
+    """Model đôi khi "đóng" khối như đóng thẻ HTML. Bộ dò nhãn mở không nhận
+    dạng này nên trước đây nó lọt nguyên vào cuối ô — và cả vào `tm`, tức quay
+    lại mãi ở mọi bài có đoạn y hệt. Quét `data/` thật: 21 ô, 21 mục `tm`.
+
+    Dạng đo được trên dữ liệu là `</<b370_g>>>` — model mở lại ngoặc nhọn ngay
+    sau dấu `/`. Mẫu đầu tiên chỉ nhận `</b370_g>>>` và bỏ lọt cả 21 ô.
+    """
+    from server.pipeline import _parse_labeled
+
+    t = ("<<<b370>>>\nBản dịch.\n"
+         "<<<b370_g>>>\nRAG trả lời câu hỏi.\n</<b370_g>>>\n"
+         "<<<b371>>>\nĐoạn sau.\n</b371>>>\n"
+         "<<<b372>>>\nĐoạn nữa.\n[/b372]\n")
+    r = _parse_labeled(t, ["b370", "b370_g", "b371", "b372"])
+    assert r == {"b370": "Bản dịch.", "b370_g": "RAG trả lời câu hỏi.",
+                 "b371": "Đoạn sau.", "b372": "Đoạn nữa."}, r
+
+    # Nhắc tới mã khối GIỮA câu thì giữ nguyên — nhãn đóng phải đứng một mình.
+    r = _parse_labeled("<<<b5>>>\nXem </b4> ở phụ lục.\n", ["b4", "b5"])
+    assert r["b5"] == "Xem </b4> ở phụ lục."
