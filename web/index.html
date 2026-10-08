@@ -34,6 +34,8 @@
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-hide" viewBox="0 0 24 24"><path d="M3.5 12s3-6 8.5-6 8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6z"/><circle cx="12" cy="12" r="2.5"/><path d="M4.5 19.5l15-15"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12h10a5 5 0 0 1 0 10h-2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 11.5v5M9.5 14h5"/></symbol>
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.5 3.5h5M10.5 3.5v6L5 18.5a1.5 1.5 0 0 0 1.3 2h11.4a1.5 1.5 0 0 0 1.3-2L13.5 9.5v-6"/><path d="M7.5 14.5h9"/></symbol>
   <!-- Logo: kính lúp soi một trang giấy — "đọc kỹ" bằng hình. -->
   <symbol id="i-loupe" viewBox="0 0 64 64">
@@ -181,6 +183,25 @@
             <option value="tien">Tốn tiền nhất</option>
           </select>
         </div>
+        <button id="selBtn" class="btn btn-nho" type="button"
+                title="Chọn nhiều bài để chuyển thư mục hoặc xoá một lượt (Ctrl+bấm vào thẻ cũng được)">Chọn</button>
+      </div>
+      <!-- Thư mục: lọc thư viện, và là chỗ THẢ thẻ bài vào để chuyển. -->
+      <nav id="folderBar" class="folder-bar" aria-label="Thư mục"></nav>
+      <!-- Thanh thao tác khi đang chọn nhiều. Dính ở đầu khung khi cuộn, để
+           chọn bài ở cuối danh sách xong không phải cuộn ngược lên mới bấm được. -->
+      <div id="selBar" class="sel-bar hidden" role="toolbar" aria-label="Thao tác với các bài đã chọn">
+        <b id="selCount">Chưa chọn bài nào</b>
+        <button id="selAll" class="btn btn-nho" type="button">Chọn hết</button>
+        <div class="menu">
+          <button id="selMove" class="btn btn-nho" type="button">
+            <svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg>Chuyển vào… ▾</button>
+          <div id="selMoveMenu" class="menu-pop hidden"></div>
+        </div>
+        <button id="selDel" class="btn btn-nho btn-danger" type="button">
+          <svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg>Xoá</button>
+        <span class="spacer"></span>
+        <button id="selDone" class="btn btn-nho" type="button" title="Thoát chế độ chọn (Esc)">Xong</button>
       </div>
       <ul id="recentList"></ul>
       <p id="recentEmpty" class="hint hidden">Không có bài nào khớp.</p>

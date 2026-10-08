@@ -144,6 +144,93 @@ async def drop(doc_id: str):
     return {"ok": True}
 
 
+# ---------------------------------------------------- thư viện: chọn nhiều, thư mục
+
+# Trần số bài một lượt chọn. Thư viện cỡ vài trăm bài thì "chọn hết" vẫn lọt;
+# chặn là để một request lỗi không xoá cả kho trong một nhát.
+_MAX_CHON = 500
+
+
+def _ids(body: dict) -> list[str]:
+    """Danh sách mã bài từ body, đã kiểm. Mã phải `isalnum` — cùng hàng rào chống
+    path traversal với `store._check`, vì `store.delete` dựng đường dẫn file từ nó."""
+    ids = body.get("ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(400, "Chưa chọn bài nào")
+    if len(ids) > _MAX_CHON:
+        raise HTTPException(400, f"Chọn tối đa {_MAX_CHON} bài một lượt")
+    if not all(isinstance(i, str) and i.isalnum() for i in ids):
+        raise HTTPException(400, "Mã bài không hợp lệ")
+    return list(dict.fromkeys(ids))          # bỏ trùng, giữ thứ tự
+
+
+def _ten_thu_muc(body: dict, bo_qua: str | None = None) -> str:
+    name = " ".join(str(body.get("name") or "").split())
+    if not name:
+        raise HTTPException(400, "Tên thư mục không được để trống")
+    if len(name) > db.FOLDER_NAME_MAX:
+        raise HTTPException(400, f"Tên thư mục dài quá {db.FOLDER_NAME_MAX} ký tự")
+    # Không cho hai thư mục trùng tên (không phân biệt hoa thường): hai hộp cùng
+    # nhãn "Robot" thì chuyển bài vào đâu cũng là đoán.
+    if any(f["name"].lower() == name.lower() and f["id"] != bo_qua for f in db.list_folders()):
+        raise HTTPException(409, f"Đã có thư mục tên \"{name}\"")
+    return name
+
+
+@app.get("/api/folders")
+async def folders():
+    return db.list_folders()
+
+
+@app.post("/api/folders")
+async def folder_create(body: dict = Body(...)):
+    return db.create_folder(store.new_id(), _ten_thu_muc(body))
+
+
+@app.patch("/api/folders/{folder_id}")
+async def folder_rename(folder_id: str, body: dict = Body(...)):
+    if not folder_id.isalnum() or not db.folder_exists(folder_id):
+        raise HTTPException(404, "Không tìm thấy thư mục")
+    name = _ten_thu_muc(body, bo_qua=folder_id)
+    db.rename_folder(folder_id, name)
+    return {"ok": True, "id": folder_id, "name": name}
+
+
+@app.delete("/api/folders/{folder_id}")
+async def folder_delete(folder_id: str):
+    """Xoá THƯ MỤC, không xoá bài — bài bên trong về "Chưa xếp"."""
+    if not folder_id.isalnum() or not db.folder_exists(folder_id):
+        raise HTTPException(404, "Không tìm thấy thư mục")
+    return {"ok": True, "returned": db.delete_folder(folder_id)}
+
+
+@app.post("/api/docs/move")
+async def docs_move(body: dict = Body(...)):
+    """Chuyển nhiều bài vào một thư mục; `folder_id: null` là đưa về "Chưa xếp"."""
+    ids = _ids(body)
+    fid = body.get("folder_id")
+    if fid is not None and (not isinstance(fid, str) or not fid.isalnum()
+                            or not db.folder_exists(fid)):
+        raise HTTPException(404, "Không tìm thấy thư mục")
+    return {"ok": True, "moved": db.move_docs(ids, fid)}
+
+
+@app.post("/api/docs/delete")
+async def docs_delete(body: dict = Body(...)):
+    """Xoá nhiều bài trong MỘT lượt — một hộp thoại hỏi, một request.
+
+    Xoá từng bài một qua `DELETE /api/doc/{id}` thì giữa chừng mất mạng là thư
+    viện còn một nửa, và người dùng không biết nửa nào. Ở đây bài nào không còn
+    (đã xoá ở tab khác) thì bỏ qua chứ không làm hỏng cả lượt."""
+    ids = _ids(body)
+    xoa = 0
+    for i in ids:
+        if store.exists(i):
+            store.delete(i)
+            xoa += 1
+    return {"ok": True, "deleted": xoa}
+
+
 @app.get("/api/doc/{doc_id}/sections")
 async def sections(doc_id: str):
     """Các mục của bài, kèm số khối và ước lượng chi phí dịch RIÊNG từng mục.
@@ -500,6 +587,19 @@ async def reparse(doc_id: str):
     #
     # Chỉ vá đúng ca cụt đuôi, không đụng tới tên người dùng tự đặt: có nút đổi
     # tên rồi, ghi đè lựa chọn của họ là lỗi nặng hơn hẳn cái nó sửa.
+    stats = _ghep_ban_boc(doc, blocks, imgs, new_title, why_fallback, data)
+    return {"doc": _with_chunks(doc), "stats": stats}
+
+
+def _ghep_ban_boc(doc: dict, blocks: list, imgs: dict, new_title: str,
+                  why_fallback: str, data: bytes) -> dict:
+    """Ghép một bản bóc MỚI vào bài đã có, giữ bản dịch theo NỘI DUNG, rồi lưu.
+
+    Dùng chung cho `reparse` (bóc lại chính file cũ) và cho "ghi đè" lúc nạp bài
+    trùng (bóc file MỚI — arXiv v2, bản PDF sửa lại — vào bài cũ). Cả hai cùng
+    một yêu cầu: đoạn nào văn bản không đổi thì giữ nguyên mã, bản dịch, ghi chú,
+    vệt bôi; đoạn mới hay đã sửa thì chờ dịch. Xem `pipeline.reparse_merge`.
+    """
     fixed_title = ""
     cur = (doc.get("title") or "").strip()
     nt = (new_title or "").strip()
@@ -518,11 +618,12 @@ async def reparse(doc_id: str):
 
     # Ảnh cắt theo mã khối, mà mã khối vừa đổi cho phần mới — ghi lại toàn bộ.
     if imgs:
-        store.save_images(doc_id, imgs)
+        store.save_images(doc["id"], imgs)
     # Bản bóc mới thay luôn bản trong cache, để lần sau nạp cùng file được bản tốt.
-    db.put_parse(db.sha(data), doc.get("title", ""), [b.dict() for b in blocks],
-                 layout.available())
-    return {"doc": _with_chunks(doc), "stats": stats}
+    if data:          # bài dán bằng văn bản thì không có file để khoá cache
+        db.put_parse(db.sha(data), doc.get("title", ""), [b.dict() for b in blocks],
+                     layout.available())
+    return stats
 
 
 @app.post("/api/doc/{doc_id}/confirm")
@@ -1022,6 +1123,63 @@ async def import_progress(job: str):
     })
 
 
+_ARXIV_ID = re.compile(r"(?<![\d.])(\d{4}\.\d{4,5})(?:v\d+)?(?![\d])")
+
+
+def _chuan_ten(t: str) -> str:
+    """Tiêu đề rút gọn để so: chữ thường, bỏ dấu câu, gộp khoảng trắng."""
+    return " ".join(re.sub(r"[^\w\s]", " ", (t or "").lower()).split())
+
+
+def _tom_tat_trung(doc_id: str, kind: str) -> dict:
+    """Những gì hộp thoại "bài trùng" cần để người dùng chọn có căn cứ: đã dịch
+    bao nhiêu, đã tốn bao nhiêu, và họ phiên bản của nó gồm những bản nào."""
+    rows = db.list_docs()
+    r = next(x for x in rows if x["id"] == doc_id)
+    goc_id = r.get("version_of")
+    ho = sorted(((x["version"], x["id"]) for x in rows
+                 if goc_id and x.get("version_of") == goc_id), key=lambda v: v[0])
+    return {
+        "kind": kind,                      # cung_file | cung_bai
+        "id": r["id"],
+        "title": r["title_vi"] or r["title"],
+        "blocks": r["blocks"], "translated": r["translated"],
+        "translatable": r["translatable"], "cost_usd": r["cost_usd"],
+        "version": r.get("version"),
+        "versions": [v for v, _ in ho],
+    }
+
+
+def _cung_bai(title: str, source: str) -> dict | None:
+    """Cùng MỘT BÀI nhưng khác file — arXiv v1 với v2, hay bản PDF sửa lại.
+
+    Phép dò theo SHA chỉ bắt được đúng một file; bản v2 của bài khác SHA nên lọt
+    qua và thành một bài riêng không liên quan gì tới bản dịch v1 đã trả tiền.
+    Hai dấu hiệu, dấu hiệu đầu đáng tin hơn:
+
+    - **mã arXiv gốc** (bỏ hậu tố `v2`) trong nguồn — `arXiv:2604.00965` hay tên
+      file `2604.00965v1.pdf`;
+    - **tiêu đề** trùng sau khi chuẩn hoá, và đủ dài (≥25 ký tự) để không khớp
+      nhầm mấy tiêu đề rác kiểu "(không tiêu đề)" hay "Introduction".
+
+    Lấy bài HOẠT ĐỘNG GẦN NHẤT trong số khớp — thường là phiên bản mới nhất.
+    Khớp nhầm thì người dùng vẫn có lối "Bài riêng", nên ở đây rộng tay được.
+    """
+    rows = db.list_docs()                  # đã xếp theo updated_at giảm dần
+    m = _ARXIV_ID.search(source or "")
+    if m:
+        for r in rows:
+            m2 = _ARXIV_ID.search(r.get("source") or "")
+            if m2 and m2.group(1) == m.group(1):
+                return _tom_tat_trung(r["id"], "cung_bai")
+    t = _chuan_ten(title)
+    if len(t) >= 25:
+        for r in rows:
+            if _chuan_ten(r.get("title")) == t:
+                return _tom_tat_trung(r["id"], "cung_bai")
+    return None
+
+
 @app.post("/api/import")
 async def import_doc(
     file: UploadFile | None = File(None),
@@ -1031,11 +1189,28 @@ async def import_doc(
     model: str = Form(""),
     use_layout: int = Form(1),
     force: int = Form(0),
+    che_do: str = Form(""),
+    goc: str = Form(""),
     job: str = Form(""),
 ):
+    """Nạp một bài. Gặp bài TRÙNG thì dừng lại hỏi, qua `che_do`:
+
+    - `""`        — dò trùng (mặc định). Trùng thì trả `{"duplicate": …}`.
+    - `"moi"`     — nạp thành bài riêng, bỏ qua phép dò (`force=1` cũ).
+    - `"phien_ban"` — nạp thành bài mới, gắn làm phiên bản kế tiếp của `goc`.
+    - `"ghi_de"`  — bóc file mới VÀO bài `goc`: đoạn không đổi giữ bản dịch.
+    """
     model = model or llm.DEFAULT_MODEL
     loop = asyncio.get_running_loop()
     _say(job, "Bắt đầu", "", 2)
+    if force and not che_do:
+        che_do = "moi"
+    if che_do not in ("", "moi", "phien_ban", "ghi_de"):
+        raise HTTPException(400, "Chế độ nạp không hợp lệ")
+    if che_do in ("phien_ban", "ghi_de"):
+        if not goc.isalnum() or not store.exists(goc):
+            raise HTTPException(404, "Không tìm thấy bài gốc để ghi đè hay gắn phiên bản")
+    do_trung = che_do == ""
 
     def _da_co(data: bytes) -> dict | None:
         """Bài này đã nằm trong thư viện chưa? Khoá theo SHA của chính file PDF.
@@ -1048,23 +1223,12 @@ async def import_doc(
         Hỏi TRƯỚC khi bóc, không phải sau: bóc xong mới hỏi thì đã chạy mô hình
         bố cục (6–196 giây) cho một thứ người dùng sắp bỏ đi.
         """
-        if force:
+        if not do_trung:
             return None
         prior = db.doc_by_sha(db.sha(data))
         if not prior:
             return None
-        blocks = prior.get("blocks") or []
-        return {
-            "id": prior["id"],
-            # `_row_to_doc` không trả cột `title_vi` — tên tiếng Việt nằm trong
-            # `brief`, và bài chưa dựng brief thì chưa có tên tiếng Việt nào.
-            "title": ((prior.get("brief") or {}).get("title_vi")
-                      or prior.get("title") or "(không tiêu đề)"),
-            "blocks": len(blocks),
-            "translated": len(prior.get("translations") or {}),
-            "translatable": sum(1 for b in blocks if b.get("translate")),
-            "cost_usd": round(float((prior.get("usage") or {}).get("cost") or 0.0), 5),
-        }
+        return _tom_tat_trung(prior["id"], "cung_file")
 
     pdf_bytes: bytes | None = None
     kieu_nguon = "pdf"          # pdf | text — quyết định câu báo lỗi ở dưới
@@ -1126,6 +1290,17 @@ async def import_doc(
             q.put_nowait(None)
         raise HTTPException(400, str(e))
 
+    # Cùng bài, khác file. Dò ở đây — sau bước bóc nhanh (vài giây, đã có tiêu
+    # đề), TRƯỚC mô hình bố cục (6–196 giây) — vì cần tiêu đề mới dò được, mà
+    # chạy mô hình cho một thứ người dùng có thể bỏ đi là phí.
+    if do_trung and blocks:
+        cu_bai = _cung_bai(title or t, source)
+        if cu_bai:
+            _say(job, "Có vẻ bài này đã có trong thư viện", cu_bai["title"], 100)
+            if (q := _JOBS.get(job or "")) is not None:
+                q.put_nowait(None)
+            return {"duplicate": cu_bai}
+
     if not blocks:
         _say(job, "Lỗi", "không trích được nội dung", None)
         if (q := _JOBS.get(job or "")) is not None:
@@ -1143,7 +1318,10 @@ async def import_doc(
     reused_from = None
     if pdf_bytes:
         file_sha = db.sha(pdf_bytes)
-        cached = db.get_parse(file_sha)
+        # Ghi đè thì KHÔNG lấy cache: ghi đè bằng chính file cũ nghĩa là "bóc lại
+        # bằng bộ bóc mới nhất", mà cache khoá theo SHA giữ đúng bản bóc cũ — cùng
+        # lý do `reparse` bỏ qua nó.
+        cached = db.get_parse(file_sha) if che_do != "ghi_de" else None
         if cached:
             from .parser import Block
             t = cached["title"] or t
@@ -1204,6 +1382,24 @@ async def import_doc(
         _say(job, "⚠ Bóc bằng đường lùi", "mô hình bố cục không chạy được")
 
     _say(job, "Cắt hình và bảng", f"{len(imgs)} ảnh", 85)
+    if che_do == "ghi_de":
+        # Bóc file mới VÀO bài cũ. Ghép theo NỘI DUNG (`reparse_merge`): đoạn
+        # không đổi giữ mã, bản dịch, ghi chú, vệt bôi; đoạn mới chờ dịch. Giữ
+        # tên bài người dùng đã đặt; file PDF gốc thay bằng file mới để lần "Bóc
+        # lại" sau đọc đúng bản này.
+        cu = store.load(goc)
+        _say(job, "Ghép vào bài cũ", "đoạn không đổi giữ nguyên bản dịch", 92)
+        if pdf_bytes:
+            store.save_pdf(goc, pdf_bytes)
+            cu["sha256"] = file_sha
+        stats = _ghep_ban_boc(cu, blocks, imgs, t,
+                              "" if layout_used else "không dùng mô hình bố cục",
+                              pdf_bytes or b"")
+        _say(job, "Xong", f"giữ {stats.get('kept', 0)} đoạn · {stats.get('new', 0)} đoạn mới", 100)
+        await asyncio.sleep(0.05)
+        if (q := _JOBS.get(job or "")) is not None:
+            q.put_nowait(None)
+        return {**_with_chunks(cu), "ghi_de": stats}
     doc = pipeline.build_doc(store.new_id(), title or t, blocks, source, model)
     doc["layout_model"] = layout_used
     if pdf_bytes:
@@ -1219,6 +1415,8 @@ async def import_doc(
     if pdf_bytes:
         store.save_pdf(doc["id"], pdf_bytes)
     store.save(doc)
+    if che_do == "phien_ban":
+        doc["version"] = db.link_version(doc["id"], goc)
     _say(job, "Xong", f"{len(blocks)} khối · {len(imgs)} hình", 100)
     # Nhường một nhịp cho vòng lặp đẩy bước cuối ra dây trước khi đóng kênh —
     # `put_nowait` không nhả quyền điều khiển, đóng ngay thì "Xong" chết trong

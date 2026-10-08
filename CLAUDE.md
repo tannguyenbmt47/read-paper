@@ -1261,6 +1261,57 @@ chọn): hết việc thì nút ghi "✓ Đã dịch xong" và lùi về dáng n
 thêm cột Giải thích thì nó vàng lại.
 `test_bam_dich_tren_bai_da_xong_khong_tu_goi_luot_tinh_tien` canh.
 
+### Thư mục, chọn nhiều, và phiên bản — quan hệ nằm ở BẢNG RIÊNG
+
+Ba thứ cùng một bẫy: **`save_doc` ghi bằng `INSERT OR REPLACE` với danh sách
+cột cố định.** Thêm một cột `folder_id` hay `version` vào `documents` mà
+`save_doc` không mang theo thì mỗi lần lưu bản dịch, dòng bị thay mới và cột đó
+về mặc định — bài **tự rơi khỏi thư mục, im lặng**. Nên quan hệ nằm ở hai bảng
+riêng `doc_folder` và `doc_version` mà `save_doc` không bao giờ chạm tới; bảng
+mới thì `CREATE TABLE IF NOT EXISTS` lo được, không cần `_ADDED_COLS`.
+`test_thu_muc_va_chon_nhieu` lưu lại bài rồi kiểm nó còn trong thư mục — đã
+chứng minh nó đỏ khi cho `save_doc` xoá quan hệ.
+
+Luật của thư mục:
+
+- **Xoá thư mục không xoá bài** — bài về "Chưa xếp", và hộp thoại nói đúng câu
+  đó. "Xoá thư mục" nghe như xoá cả thứ bên trong, mà thứ bên trong là bản dịch
+  đã trả tiền.
+- **Không cho hai thư mục trùng tên** (không phân biệt hoa thường) — hai hộp cùng
+  nhãn thì chuyển bài vào đâu cũng là đoán.
+- Xoá bài phải xoá luôn dòng `doc_folder`/`doc_version` của nó.
+
+Chọn nhiều theo lối trình quản lý file: nút **Chọn**, hoặc **Ctrl/⌘+bấm** thẻ ở
+chế độ thường; **Shift+bấm** chọn cả dải theo đúng thứ tự đang hiện. Kéo thẻ thả
+vào tai thư mục để chuyển — kéo một thẻ ĐÃ CHỌN là kéo cả nhóm. Chuyển có nút
+**Hoàn lại** (theo từng thư mục cũ, vì các bài có thể đến từ nhiều chỗ); xoá
+nhiều thì không, nên hộp thoại kê tên bài và **tổng số tiền đã tốn** cho chúng.
+`POST /api/docs/delete` xoá cả lượt trong một request, bài không còn thì bỏ qua.
+
+**Bài trùng có hai ca, hai bộ lựa chọn** (`chonMot`, hộp thoại nhiều lối):
+
+- **Cùng file** (trùng SHA): Mở bản đang có · Bóc lại vào bản đang có · Bản riêng.
+- **Cùng bài, khác file** — arXiv v2, bản sửa. Phép dò theo SHA không bắt được
+  nên trước đây nó lặng lẽ thành bài riêng. `_cung_bai` dò thêm theo **mã arXiv
+  gốc** (bỏ `vN`, đọc cả tên file `2604.00965v1.pdf`) rồi theo **tiêu đề chuẩn
+  hoá ≥25 ký tự**, chạy sau bước bóc nhanh và TRƯỚC mô hình bố cục. Lựa chọn:
+  Lưu thành phiên bản mới (vN) · Ghi đè bản cũ · Mở bản đang có · Bài khác.
+
+**Ghi đè** bóc file mới VÀO bài cũ qua `_ghep_ban_boc` — dùng chung với
+`reparse` — nên ghép theo NỘI DUNG: đoạn không đổi giữ mã, bản dịch, ghi chú,
+vệt bôi. Ghi đè **bỏ qua `parse_cache`**, cùng lý do với `reparse`: ghi đè bằng
+chính file cũ nghĩa là "bóc lại bằng bộ bóc mới nhất", mà cache giữ đúng bản bóc
+cũ. Ở ca khác file nó có mất mát nên hỏi xác nhận lần hai.
+
+**Phiên bản** là bài mới gắn vào họ của bài cũ; `link_version` luôn quy về bài
+GỐC (nạp v3 từ v2 vẫn cùng họ), bài gốc chưa có dòng thì thành v1, và bài mới
+**theo bài gốc vào đúng thư mục**. Thẻ thư viện có nhãn `vN`, bản mới nhất của
+họ tô dạ quang. Đổi tên ngay trên thẻ phải lấy tên cũ từ DỮ LIỆU, không từ
+`textContent` — thẻ có nhãn "v2" bên trong, lấy chữ trên màn thì tên dính "v2".
+
+Esc / bấm ra ngoài / "Thôi" ở hộp thoại bài trùng là **không làm gì** — không
+tự mở bài nào.
+
 ### Ba dạng hash, một hàm đọc
 
 `location.hash` có ba dạng sống chung: `#survey`, `#doc=<mã>` (survey.js ghi khi

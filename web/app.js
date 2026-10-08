@@ -84,6 +84,10 @@ function dlgMo({ title, body = "", ok = "Đồng ý", cancel = "Huỷ", nhap = n
       else if (e.key === "Enter" && nhieuDong) {
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); nhan(); }
       }
+      // Đang đứng trên một lối của `chonMot` thì để Enter bấm đúng lối ấy.
+      else if (e.key === "Enter" && document.activeElement?.classList.contains("dlg-lua")) {
+        /* để mặc định */
+      }
       else if (e.key === "Enter" && (nhap !== null || document.activeElement !== btnNo)) {
         e.preventDefault(); nhan();
       }
@@ -107,6 +111,44 @@ async function xacNhan(title, body = "", opts = {}) {
 async function nhapChu(title, body = "", value = "", nhieuDong = false) {
   const kq = await dlgMo({ title, body, nhap: value ?? "", ok: "Lưu", nhieuDong });
   return kq === null ? null : String(kq);
+}
+
+/** Hỏi chọn MỘT trong nhiều lối, mỗi lối một nút kèm dòng giải thích. Trả
+    `key` của lối được chọn, hoặc `null` khi huỷ (Esc, bấm ra ngoài, nút Huỷ).
+
+    Dùng cho câu hỏi có hơn hai câu trả lời đúng — "bài này đã có: ghi đè, lưu
+    thành phiên bản mới, hay để riêng?". Ép nó vào Đồng ý/Huỷ là bắt người dùng
+    trả lời một câu hỏi khác câu họ đang có trong đầu.
+
+    `nut`: [{ key, nhan, giai, kieu }] — `kieu` "chinh" là lối nên chọn, "hong" là
+    lối có mất mát. Lối an toàn để ở nút Huỷ, vì Esc rơi về đó. */
+function chonMot(title, body, nut, huy = "Huỷ") {
+  const act = $(".dlg-act");
+  const cu = [...act.children];
+  const hop = document.createElement("div");
+  hop.className = "dlg-chon";
+  hop.innerHTML = nut.map((n, i) => `
+    <button type="button" class="dlg-lua${n.kieu === "chinh" ? " chinh" : ""}${n.kieu === "hong" ? " hong" : ""}"
+        data-i="${i}"><b>${esc(n.nhan)}</b>${n.giai ? `<span>${esc(n.giai)}</span>` : ""}</button>`).join("");
+  return new Promise((xong) => {
+    let kq = null;
+    hop.onclick = (e) => {
+      const b = e.target.closest("[data-i]");
+      if (!b) return;
+      kq = nut[+b.dataset.i].key;
+      $("#dlgCancel").click();             // đóng qua đường huỷ, rồi trả `kq`
+    };
+    act.before(hop);
+    cu.forEach((x) => x.classList.add("hidden"));
+    $("#dlgCancel").classList.remove("hidden");
+    dlgMo({ title, body, cancel: huy, ok: "" }).then(() => {
+      hop.remove();
+      cu.forEach((x) => x.classList.remove("hidden"));
+      xong(kq);
+    });
+    $("#dlgOk").classList.add("hidden");     // chỉ còn các lối + nút Huỷ
+    $(".dlg-lua.chinh", hop)?.focus();
+  });
 }
 
 /** Báo một tin, chỉ có nút đóng. */
@@ -604,6 +646,11 @@ const tiLeDich = (d) => d.translatable ? d.translated / d.translatable : 0;
 
 let recentDocs = [];
 
+/* Trạng thái thư viện. `loc`: "all" | "none" (chưa xếp) | mã thư mục.
+   `chon`: đang ở chế độ chọn nhiều. `moc`: thẻ bấm gần nhất, làm mốc cho
+   Shift+bấm chọn cả dải — cách chọn mà ai dùng trình quản lý file cũng đã quen. */
+const thuVien = { folders: [], loc: "all", chon: false, daChon: new Set(), moc: null };
+
 /** Lọc và sắp thư viện theo ô tìm và ô sắp.
 
     Tìm **không dấu** (`khongDau`), cùng lý do với bộ tìm trong bài: gõ "truy
@@ -612,9 +659,11 @@ let recentDocs = [];
 function loRecent() {
   const q = khongDau(($("#recentFind")?.value || "").trim());
   const xep = RECENT_SORT[$("#recentSort")?.value] || RECENT_SORT.moi;
-  const ra = !q ? [...recentDocs] : recentDocs.filter((d) => khongDau(
+  const loc = thuVien.loc;
+  const trongTM = (d) => loc === "all" || (loc === "none" ? !d.folder_id : d.folder_id === loc);
+  const ra = recentDocs.filter((d) => trongTM(d) && (!q || khongDau(
     [d.title_vi, d.title, tenModel(d.model), d.source].filter(Boolean).join(" ")
-  ).includes(q));
+  ).includes(q)));
   return ra.sort(xep);
 }
 
@@ -640,7 +689,19 @@ function tienDo(d) {
 }
 
 async function loadRecent() {
-  recentDocs = await fetch("/api/docs").then((r) => r.json());
+  [recentDocs, thuVien.folders] = await Promise.all([
+    fetch("/api/docs").then((r) => r.json()),
+    fetch("/api/folders").then((r) => (r.ok ? r.json() : [])),
+  ]);
+  // Thư mục đang lọc đã bị xoá (ở tab khác) thì về "Tất cả", đừng để danh
+  // sách trống không lý do.
+  if (!["all", "none"].includes(thuVien.loc) && !thuVien.folders.some((f) => f.id === thuVien.loc)) {
+    thuVien.loc = "all";
+  }
+  // Bài đã chọn mà không còn nữa thì bỏ khỏi tập chọn.
+  const con = new Set(recentDocs.map((d) => d.id));
+  thuVien.daChon.forEach((id) => { if (!con.has(id)) thuVien.daChon.delete(id); });
+  veFolders();
   $("#recentWrap").classList.toggle("hidden", !recentDocs.length);
   // Có bài thì đổi sang bố cục hai cột kèm thẻ "Đọc tiếp" (xem `#start.has-lib`).
   $("#start").classList.toggle("has-lib", recentDocs.length > 0);
@@ -669,8 +730,229 @@ function veResume() {
   box.onclick = () => openDoc(d.id);
 }
 
+/* ------------------------------------------------- thư mục & chọn nhiều */
+
+/** Hàng tai thư mục: Tất cả · Chưa xếp · từng thư mục · + Thư mục. Mỗi tai vừa
+    là bộ lọc vừa là chỗ THẢ thẻ bài vào ("Tất cả" thì không — thả vào đó không
+    có nghĩa gì). Thư mục đang mở có thêm hai nút đổi tên / xoá ngay cạnh. */
+function veFolders() {
+  const bar = $("#folderBar");
+  const tong = recentDocs.length;
+  const chuaXep = recentDocs.filter((d) => !d.folder_id).length;
+  const tai = (loc, ten, so, icon = "folder") => `
+    <button class="folder${thuVien.loc === loc ? " is-on" : ""}" data-loc="${esc(loc)}" type="button"
+        title="${esc(ten)}">${icon ? ico(icon) : ""}<span class="ten">${esc(ten)}</span><span class="so">${so}</span></button>`;
+  const dangMo = thuVien.folders.find((f) => f.id === thuVien.loc);
+  bar.innerHTML = tai("all", "Tất cả", tong, "")
+    + (thuVien.folders.length ? tai("none", "Chưa xếp", chuaXep, "") : "")
+    + thuVien.folders.map((f) => tai(f.id, f.name, f.n)).join("")
+    + (dangMo ? `<span class="folder-act">
+        <button class="icon-btn" data-tm-ren type="button" title="Đổi tên thư mục “${esc(dangMo.name)}”">${ico("pencil")}</button>
+        <button class="icon-btn" data-tm-del type="button" title="Xoá thư mục “${esc(dangMo.name)}” (bài bên trong về Chưa xếp)">${ico("trash")}</button>
+      </span>` : "")
+    + `<button class="folder them" data-tm-new type="button" title="Tạo thư mục mới">${ico("folder-plus")}<span class="ten">Thư mục</span></button>`;
+
+  $$(".folder[data-loc]", bar).forEach((b) => {
+    b.onclick = () => {
+      thuVien.loc = b.dataset.loc;
+      setPref("libfolder", thuVien.loc);
+      veFolders();
+      veRecent();
+    };
+    if (b.dataset.loc === "all") return;
+    const fid = b.dataset.loc === "none" ? null : b.dataset.loc;
+    b.ondragover = (e) => {
+      if (!e.dataTransfer.types.includes("application/x-loupe-docs")) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move"; b.classList.add("tha-duoc");
+    };
+    b.ondragleave = () => b.classList.remove("tha-duoc");
+    b.ondrop = (e) => {
+      e.preventDefault(); b.classList.remove("tha-duoc");
+      let ids = [];
+      try { ids = JSON.parse(e.dataTransfer.getData("application/x-loupe-docs")); } catch { /* bỏ */ }
+      if (ids.length) chuyenThuMuc(ids, fid);
+    };
+  });
+  const ren = $("[data-tm-ren]", bar), del = $("[data-tm-del]", bar);
+  if (ren) ren.onclick = () => doiTenThuMuc(dangMo);
+  if (del) del.onclick = () => xoaThuMuc(dangMo);
+  $("[data-tm-new]", bar).onclick = () => taoThuMuc();
+}
+
+async function taoThuMuc() {
+  const ten = await nhapChu("Thư mục mới", "Đặt tên theo chủ đề hay theo việc đang làm — "
+    + "\"Robot học\", \"Đọc cho luận văn\"… Bài vẫn tìm được từ \"Tất cả\".", "");
+  if (!ten || !ten.trim()) return null;
+  const r = await fetch("/api/folders", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: ten }),
+  });
+  if (!r.ok) { await baoTin("Chưa tạo được thư mục", await apiErr(r)); return null; }
+  const f = await r.json();
+  await loadRecent();
+  return f;
+}
+
+async function doiTenThuMuc(f) {
+  const ten = await nhapChu("Đổi tên thư mục", "", f.name);
+  if (!ten || !ten.trim() || ten.trim() === f.name) return;
+  const r = await fetch(`/api/folders/${f.id}`, {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: ten }),
+  });
+  if (!r.ok) return baoTin("Chưa đổi được tên", await apiErr(r));
+  loadRecent();
+}
+
+async function xoaThuMuc(f) {
+  // Nói rõ BÀI KHÔNG MẤT: "xoá thư mục" nghe như xoá cả thứ bên trong, mà thứ
+  // bên trong là bản dịch đã trả tiền.
+  if (!await xacNhan(`Xoá thư mục “${f.name}”?`,
+    f.n ? `${f.n} bài bên trong KHÔNG bị xoá — chúng về mục "Chưa xếp".`
+        : "Thư mục đang trống.",
+    { ok: "Xoá thư mục" })) return;
+  const r = await fetch(`/api/folders/${f.id}`, { method: "DELETE" });
+  if (!r.ok) return baoTin("Chưa xoá được thư mục", await apiErr(r));
+  thuVien.loc = "all";
+  setPref("libfolder", "all");
+  await loadRecent();
+  baoNhanh(`Đã xoá thư mục “${f.name}”` + (f.n ? ` · ${f.n} bài về Chưa xếp` : ""));
+}
+
+/** Chuyển bài vào thư mục (`null` = Chưa xếp), kèm nút Hoàn lại — chuyển nhầm
+    chỗ là chuyện thường khi kéo-thả, và đưa về đúng chỗ cũ thì miễn phí. */
+async function chuyenThuMuc(ids, fid) {
+  const cu = new Map(ids.map((id) => [id, recentDocs.find((d) => d.id === id)?.folder_id ?? null]));
+  const goi = (ds, f) => fetch("/api/docs/move", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: ds, folder_id: f }),
+  });
+  const r = await goi(ids, fid);
+  if (!r.ok) return baoTin("Chưa chuyển được", await apiErr(r));
+  const ten = fid ? thuVien.folders.find((f) => f.id === fid)?.name : "Chưa xếp";
+  thuVien.daChon.clear();
+  await loadRecent();
+  baoNhanh(`Đã chuyển ${ids.length} bài vào “${ten}”`, async () => {
+    // Hoàn lại theo TỪNG thư mục cũ — các bài có thể đến từ nhiều chỗ khác nhau.
+    const nhom = new Map();
+    cu.forEach((f, id) => nhom.set(f, [...(nhom.get(f) || []), id]));
+    for (const [f, ds] of nhom) await goi(ds, f);
+    loadRecent();
+  });
+}
+
+function batChon(on) {
+  thuVien.chon = on;
+  if (!on) { thuVien.daChon.clear(); thuVien.moc = null; }
+  $("#selBtn").classList.toggle("is-on", on);
+  $("#selBtn").textContent = on ? "Đang chọn" : "Chọn";
+  veRecent();
+}
+
+function chonBai(id, e) {
+  if (!thuVien.chon) batChon(true);
+  const ds = loRecent().map((d) => d.id);
+  if (e?.shiftKey && thuVien.moc && ds.includes(thuVien.moc)) {
+    // Shift+bấm: chọn cả dải từ mốc tới đây, theo đúng thứ tự đang HIỆN.
+    const [i, j] = [ds.indexOf(thuVien.moc), ds.indexOf(id)].sort((x, y) => x - y);
+    ds.slice(i, j + 1).forEach((x) => thuVien.daChon.add(x));
+  } else if (thuVien.daChon.has(id)) {
+    thuVien.daChon.delete(id);
+  } else {
+    thuVien.daChon.add(id);
+  }
+  thuVien.moc = id;
+  veRecent();
+  // Giữ tiêu điểm trên thẻ vừa chọn — vẽ lại làm mất nó, mà người dùng bàn
+  // phím đang đứng đúng ở đó.
+  $(`#recentList li[data-open="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+}
+
+function capNhatSelBar() {
+  const n = thuVien.daChon.size;
+  $("#selBar").classList.toggle("hidden", !thuVien.chon);
+  $("#selCount").textContent = n ? `Đã chọn ${n} bài` : "Chưa chọn bài nào";
+  $("#selMove").disabled = $("#selDel").disabled = !n;
+  const hien = loRecent().map((d) => d.id);
+  const het = hien.length && hien.every((id) => thuVien.daChon.has(id));
+  $("#selAll").textContent = het ? "Bỏ chọn hết" : `Chọn hết (${hien.length})`;
+}
+
+async function xoaNhieu() {
+  const ds = recentDocs.filter((d) => thuVien.daChon.has(d.id));
+  if (!ds.length) return;
+  const tien = ds.reduce((s, d) => s + (+d.cost_usd || 0), 0);
+  const ten = ds.slice(0, 5).map((d) => "· " + tenBai(d).ten).join("\n")
+    + (ds.length > 5 ? `\n· …và ${ds.length - 5} bài nữa` : "");
+  if (!await xacNhan(`Xoá ${ds.length} bài khỏi máy?`,
+    `${ten}\n\n` + (tien ? `Các bài này đã tốn tổng cộng $${tien.toFixed(4).replace(".", ",")} để dịch.\n` : "")
+    + "Mất cả bản dịch, ghi chú, vệt bôi và bộ slide. Không hoàn lại được.",
+    { ok: `Xoá ${ds.length} bài`, hong: true })) return;
+  const r = await fetch("/api/docs/delete", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: ds.map((d) => d.id) }),
+  });
+  if (!r.ok) return baoTin("Chưa xoá được", await apiErr(r));
+  const { deleted } = await r.json();
+  batChon(false);
+  await loadRecent();
+  baoNhanh(`Đã xoá ${deleted} bài`);
+}
+
+/** Menu "Chuyển vào…": mọi thư mục, "Chưa xếp", và tạo thư mục mới ngay tại chỗ
+    — bắt người dùng thoát ra tạo thư mục rồi chọn lại từ đầu là mất cả lựa chọn. */
+function veMenuChuyen() {
+  const m = $("#selMoveMenu");
+  m.innerHTML = thuVien.folders.map((f) =>
+      `<a href="#" data-to="${esc(f.id)}">${ico("folder")} ${esc(f.name)}</a>`).join("")
+    + (thuVien.folders.length ? `<a href="#" data-to="">Chưa xếp</a><hr>` : "")
+    + `<a href="#" data-to-new>${ico("folder-plus")} Thư mục mới…</a>`;
+  $$("a", m).forEach((x) => (x.onclick = async (e) => {
+    e.preventDefault();
+    m.classList.add("hidden");
+    const ids = [...thuVien.daChon];
+    if (x.hasAttribute("data-to-new")) {
+      const f = await taoThuMuc();
+      if (f) chuyenThuMuc(ids, f.id);
+      return;
+    }
+    chuyenThuMuc(ids, x.dataset.to || null);
+  }));
+}
+
+function wireThuVien() {
+  thuVien.loc = pref("libfolder", "all");
+  $("#selBtn").onclick = () => batChon(!thuVien.chon);
+  $("#selDone").onclick = () => batChon(false);
+  $("#selDel").onclick = xoaNhieu;
+  $("#selAll").onclick = () => {
+    const hien = loRecent().map((d) => d.id);
+    const het = hien.every((id) => thuVien.daChon.has(id));
+    hien.forEach((id) => (het ? thuVien.daChon.delete(id) : thuVien.daChon.add(id)));
+    veRecent();
+  };
+  $("#selMove").onclick = (e) => {
+    e.stopPropagation();
+    veMenuChuyen();
+    $("#selMoveMenu").classList.toggle("hidden");
+  };
+  $("#selMoveMenu").onclick = (e) => e.stopPropagation();
+  document.addEventListener("click", () => $("#selMoveMenu").classList.add("hidden"));
+  // Esc thoát chế độ chọn — nhưng nhường cho hộp thoại và ô đổi tên nếu đang mở.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !thuVien.chon || $("#start").classList.contains("hidden")) return;
+    if (!$("#dlgVeil").classList.contains("hidden") || e.target.closest?.("input:not(.chon-o)")) return;
+    batChon(false);
+  });
+}
+
 function veRecent() {
   const docs = loRecent();
+  // Bản mới nhất của mỗi họ phiên bản — tô nổi để khỏi mở nhầm bản cũ.
+  const moiNhat = new Map();
+  recentDocs.forEach((d) => {
+    if (d.version_of) moiNhat.set(d.version_of, Math.max(moiNhat.get(d.version_of) || 0, d.version));
+  });
   $("#recentEmpty").classList.toggle("hidden", !!docs.length || !recentDocs.length);
   $("#recentList").innerHTML = docs
     .map((d) => {
@@ -678,6 +960,10 @@ function veRecent() {
       const nguon = tenNguon(d.source);
       // Ba con số, mỗi con trả lời một câu khác nhau: còn bao nhiêu việc, đọc
       // lần cuối khi nào, và đã bỏ ra bao nhiêu tiền.
+      // Đang xem "Tất cả" thì thẻ nói nó nằm ở thư mục nào; đang trong một thư
+      // mục thì nói lại là thừa.
+      const tm = thuVien.loc === "all" && d.folder_id
+        && thuVien.folders.find((f) => f.id === d.folder_id);
       const meta = [
         `${d.blocks} khối`,
         pct >= 100 ? "đã dịch xong" : `đã dịch ${pct}%`,
@@ -685,10 +971,16 @@ function veRecent() {
         d.cost_usd ? `$${(+d.cost_usd).toFixed(2).replace(".", ",")}` : "",
       ].filter(Boolean).join(" · ");
       const { ten, voDanh } = tenBai(d);
-      return `<li data-open="${esc(d.id)}" tabindex="0">
+      const chon = thuVien.daChon.has(d.id);
+      return `<li data-open="${esc(d.id)}" tabindex="0" draggable="true"
+          class="${chon ? "da-chon" : ""}"${thuVien.chon ? ` aria-selected="${chon}"` : ""}>
+        ${thuVien.chon ? `<input type="checkbox" class="chon-o" data-chon="${esc(d.id)}"
+            ${chon ? "checked" : ""} aria-label="Chọn bài này">` : ""}
         <span class="rt" data-id="${esc(d.id)}">
-          <b class="${voDanh ? "vo-danh" : ""}">${esc(ten)}</b>
-          <span>${esc(meta)}</span>
+          <b class="${voDanh ? "vo-danh" : ""}">${esc(ten)}${d.version
+            ? `<span class="ver${moiNhat.get(d.version_of) === d.version ? " moi-nhat" : ""}"
+                title="Phiên bản ${d.version} của bài này${moiNhat.get(d.version_of) === d.version ? " — bản mới nhất" : ""}">v${d.version}</span>` : ""}</b>
+          <span>${tm ? `<span class="the-tm">${ico("folder")}${esc(tm.name)}</span> · ` : ""}${esc(meta)}</span>
           ${tienDo(d)}
         </span>
         <span class="rwhen" title="${esc("Nạp " + khiNao(d.created_at)
@@ -699,13 +991,41 @@ function veRecent() {
       </li>`;
     })
     .join("");
-  // CẢ THẺ mở bài — trừ khi bấm trúng nút sửa/xoá hay ô đang đổi tên. Thiếu
-  // phép trừ này thì bấm 🗑 là vừa mở bài vừa hỏi xoá.
+  $("#recentList").classList.toggle("dang-chon", thuVien.chon);
+  capNhatSelBar();
+  /* CẢ THẺ mở bài — trừ khi bấm trúng nút sửa/xoá hay ô đang đổi tên. Thiếu
+     phép trừ này thì bấm 🗑 là vừa mở bài vừa hỏi xoá.
+
+     Ở chế độ chọn thì bấm thẻ là CHỌN. Ctrl/⌘+bấm ở chế độ thường cũng vào
+     chế độ chọn luôn, Shift+bấm chọn cả dải — đúng lối của trình quản lý file. */
   $$("#recentList li[data-open]").forEach((el) => {
-    el.onclick = (e) => { if (!e.target.closest("button, input")) openDoc(el.dataset.open); };
-    el.onkeydown = (e) => {
-      if (e.key === "Enter" && e.target === el) { e.preventDefault(); openDoc(el.dataset.open); }
+    const id = el.dataset.open;
+    el.onclick = (e) => {
+      if (e.target.closest("button")) return;
+      if (e.target.matches(".chon-o")) return chonBai(id, e);   // ô tick tự lo
+      if (e.target.closest("input")) return;                    // ô đổi tên
+      if (thuVien.chon || e.ctrlKey || e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        return chonBai(id, e);
+      }
+      openDoc(id);
     };
+    el.onkeydown = (e) => {
+      if (e.target !== el) return;
+      if (e.key === "Enter" || (e.key === " " && thuVien.chon)) {
+        e.preventDefault();
+        return thuVien.chon ? chonBai(id, e) : openDoc(id);
+      }
+    };
+    /* Kéo thẻ thả vào tai thư mục để chuyển. Kéo một thẻ ĐÃ CHỌN là kéo cả
+       nhóm đang chọn — thả một mình nó thì nhóm còn lại bị bỏ quên. */
+    el.ondragstart = (e) => {
+      const ids = thuVien.daChon.has(id) ? [...thuVien.daChon] : [id];
+      e.dataTransfer.setData("application/x-loupe-docs", JSON.stringify(ids));
+      e.dataTransfer.effectAllowed = "move";
+      el.classList.add("dang-keo");
+    };
+    el.ondragend = () => el.classList.remove("dang-keo");
   });
   /* Tiêu đề đoán từ khối đầu trang nên hay sai — dính tên hội nghị, dính số
      trang, hoặc cụt còn vài chữ. Nó hiện ở danh sách này, ở đầu bản xuất ra và
@@ -719,9 +1039,14 @@ function veRecent() {
     const id = el.dataset.ren;
     const nhan = $(`#recentList .rt[data-id="${id}"] b`);
     if (!nhan || nhan.querySelector("input")) return;
-    const cu = nhan.textContent;
+    // Tên cũ lấy từ DỮ LIỆU, không từ `textContent`: thẻ còn chứa nhãn "v2",
+    // lấy chữ trên màn thì tên lưu lại dính luôn "v2". Bài vô danh thì ô nhập
+    // để trống — điền sẵn tên nguồn ("paper.docx") là mời lưu nhầm nó làm tên.
+    const d0 = recentDocs.find((x) => x.id === id) || {};
+    const { ten: hien, voDanh } = tenBai(d0);
+    const cu = voDanh ? "" : hien;
     const inp = Object.assign(document.createElement("input"), {
-      className: "input input-inline", value: cu,
+      className: "input input-inline", value: cu, placeholder: voDanh ? `Đặt tên — đang hiện "${hien}"` : "",
     });
     nhan.textContent = "";
     nhan.append(inp);
@@ -730,18 +1055,20 @@ function veRecent() {
     // Chặn click nổi lên `.rt` — không thì bấm vào ô nhập là mở bài.
     inp.onclick = (e) => e.stopPropagation();
     let xong = false;
-    const thoi = () => { if (!xong) { xong = true; nhan.textContent = cu; } };
+    // Huỷ hay không đổi gì thì vẽ lại thẻ, không gán chữ trơn — gán chữ là mất
+    // nhãn phiên bản và kiểu chữ nghiêng của bài vô danh.
+    const thoi = () => { if (!xong) { xong = true; veRecent(); } };
     const luu = async () => {
       if (xong) return;
       xong = true;
       const t = inp.value.trim();
-      if (!t || t === cu) { nhan.textContent = cu; return; }
+      if (!t || t === cu) { veRecent(); return; }
       nhan.textContent = t;
       const r = await fetch(`/api/doc/${id}/title`, {
         method: "PATCH", headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: t }),
       });
-      if (!r.ok) { nhan.textContent = cu; baoNhanh(await apiErr(r, "Không lưu được tên.")); return; }
+      if (!r.ok) { veRecent(); baoNhanh(await apiErr(r, "Không lưu được tên.")); return; }
       loadRecent();
     };
     inp.onblur = luu;
@@ -786,6 +1113,7 @@ function wireStart() {
     veRecent();
   };
   $("#recentSort").value = pref("recentsort", "moi");
+  wireThuVien();
 
   $$(".tab").forEach((t) => (t.onclick = () => {
     $$(".tab").forEach((x) => x.classList.toggle("is-on", x === t));
@@ -932,14 +1260,27 @@ async function doImport() {
         prog.done(true);
       } catch (e) { prog.done(false); throw e; }
       if (doc.duplicate) {
-        const tiep = await hoiTrung(doc.duplicate);
-        if (!tiep) return;
-        fd.set("force", "1");
+        const chon = await hoiTrung(doc.duplicate);   // { che_do, goc } | null
+        if (!chon) return;
+        fd.delete("force");
+        fd.set("che_do", chon.che_do);
+        fd.set("goc", chon.goc || "");
         continue;
       }
       sachNguon();
       location.hash = doc.id;
-      mountReview(doc);          // bước 1 trước, dịch sau
+      if (doc.ghi_de) {
+        // Ghi đè trả về CHÍNH bài cũ: đã qua bước soát thì vào thẳng màn đọc.
+        const st = doc.ghi_de;
+        if (doc.prepared) mountDoc(doc); else mountReview(doc);
+        // "giữ N đoạn không đổi", không "giữ N đoạn kèm bản dịch": bài chưa dịch
+        // thì câu sau nói quá điều đã xảy ra.
+        baoNhanh(`Đã ghi đè: ${st.kept} đoạn không đổi được giữ nguyên · ${st.new} đoạn mới`
+          + (st.to_translate ? ` · ${st.to_translate} đoạn chờ dịch` : ""));
+      } else {
+        mountReview(doc);        // bước 1 trước, dịch sau
+        if (doc.version) baoNhanh(`Đã lưu thành phiên bản v${doc.version}`);
+      }
       return;
     }
   } catch (e) {
@@ -960,31 +1301,56 @@ async function doImport() {
     if (fn) fn.textContent = "";
   }
 
-  /* Bài đã có trong thư viện. Server dừng TRƯỚC khi bóc, nên tới đây chưa tốn
-     gì và chưa có bản ghi nào — việc còn lại chỉ là hỏi người dùng muốn gì.
+  /* Bài trùng. Server dừng TRƯỚC bước tốn thời gian (mô hình bố cục), chưa tạo
+     bản ghi nào — việc còn lại là hỏi người dùng muốn gì. Hai ca, hai bộ lựa
+     chọn, vì câu hỏi trong đầu người dùng khác nhau:
 
-     Nạp trùng không hỏng gì về kỹ thuật (`parse_cache` làm bước bóc gần như
-     miễn phí), nhưng nó đẻ ra một bản thứ hai TRỐNG cạnh bản đã dịch; mở nhầm
-     bản mới là tưởng mất sạch bản dịch đã trả tiền.
+     - CÙNG FILE: "nạp lại cái này làm gì?" — mở bản cũ, bóc lại vào bản cũ
+       bằng bộ bóc mới nhất, hay (hiếm) một bản riêng.
+     - CÙNG BÀI, KHÁC FILE (arXiv v2, bản sửa): "bản mới này quan hệ thế nào với
+       bản cũ?" — phiên bản kế tiếp, thay hẳn bản cũ, hay thật ra là bài khác.
 
-     Trả `true` nếu người dùng vẫn muốn nạp bản mới. */
+     Esc / bấm ra ngoài / "Thôi" là KHÔNG LÀM GÌ, kể cả không tự mở bài nào.
+     Trả `{ che_do, goc }` để gửi lại, hoặc `null`. */
   async function hoiTrung(d) {
     const pct = d.translatable ? Math.round(d.translated / d.translatable * 100) : 0;
-    const gia = d.cost_usd
-      ? ` và đã tốn $${d.cost_usd.toFixed(4).replace(".", ",")}` : "";
-    /* Nút ĐỒNG Ý là "nạp thêm bản mới", nút HUỶ là "mở bản đang có" — ngược
-       với cách đọc tự nhiên, và cố ý. Escape và bấm ra ngoài đều rơi về nhánh
-       huỷ, nên nhánh huỷ phải là nhánh an toàn: mở bài đã có. Để ngược lại thì
-       lỡ tay gõ Escape là đẻ thêm một bản trùng. */
-    const them = await xacNhan("Bài này đã có trong thư viện",
-      `${d.title}\n\nBản đang có: ${d.blocks} khối, đã dịch ${pct}%${gia}.\n\n`
-      + "Nạp thêm một bản nữa thì bản mới CHƯA DỊCH GÌ, và hai bản nằm cạnh "
-      + "nhau trong thư viện — mở nhầm bản mới là tưởng mất bản dịch cũ.",
-      { ok: "Vẫn nạp bản mới", cancel: "Mở bản đang có" });
-    if (them) return true;
-    sachNguon();
-    await openDoc(d.id);
-    return false;
+    const gia = d.cost_usd ? `, đã tốn $${(+d.cost_usd).toFixed(4).replace(".", ",")}` : "";
+    const vs = d.versions || [];
+    const ver = vs.length > 1 ? ` Họ bài này đã có ${vs.length} phiên bản (v${vs.join(", v")}).` : "";
+    const than = `${d.title}${d.version ? ` · v${d.version}` : ""}\n\n`
+      + `Bản đang có: ${d.blocks} khối, đã dịch ${pct}%${gia}.${ver}`;
+    const mo = { key: "mo", nhan: "Mở bản đang có", giai: "Không nạp gì thêm." };
+    const chon = d.kind === "cung_file"
+      ? await chonMot("Bài này đã có trong thư viện", than + "\n\nĐúng y file này đã được nạp trước đây.", [
+        { ...mo, kieu: "chinh" },
+        { key: "ghi_de", nhan: "Bóc lại vào bản đang có",
+          giai: "Dùng bộ bóc mới nhất cho chính bài cũ. Đoạn nào chữ không đổi giữ nguyên bản dịch, ghi chú, vệt bôi. Miễn phí." },
+        { key: "moi", nhan: "Tạo một bản riêng",
+          giai: "Bài mới CHƯA DỊCH GÌ, nằm cạnh bản cũ — dễ mở nhầm rồi tưởng mất bản dịch." },
+      ], "Thôi")
+      : await chonMot("Có vẻ đây là bài đã có", than
+          + "\n\nFile khác, nhưng cùng tiêu đề hoặc cùng mã arXiv — có thể là phiên bản mới hay bản đã sửa.", [
+        { key: "phien_ban", kieu: "chinh",
+          nhan: `Lưu thành phiên bản mới (v${(vs.length ? Math.max(...vs) : 1) + 1})`,
+          giai: "Bài mới, đánh dấu là phiên bản kế tiếp, vào cùng thư mục với bản cũ. Bản cũ giữ nguyên." },
+        { key: "ghi_de", kieu: "hong", nhan: "Ghi đè bản cũ bằng bản này",
+          giai: "Đoạn nào chữ không đổi giữ bản dịch; đoạn mới hay đã sửa phải dịch lại. Nội dung bản cũ không còn." },
+        mo,
+        { key: "moi", nhan: "Đây là bài khác", giai: "Nạp thành bài riêng, không liên quan tới bài trên." },
+      ], "Thôi");
+    if (!chon) return null;
+    if (chon === "mo") {
+      sachNguon();
+      await openDoc(d.id);
+      return null;
+    }
+    // Ghi đè là việc có mất mát ở ca khác file — hỏi lại một lần, nói rõ mất gì.
+    if (chon === "ghi_de" && d.kind === "cung_bai" && !await xacNhan("Ghi đè bản cũ?",
+        `${d.title}\n\nNội dung bản cũ được thay bằng bản này. Bản dịch của các đoạn không đổi `
+        + "được giữ lại; đoạn đã sửa hoặc bị bỏ thì mất bản dịch. Không hoàn lại được.\n\n"
+        + "Muốn giữ cả hai thì chọn \"Lưu thành phiên bản mới\".",
+        { ok: "Ghi đè", hong: true })) return null;
+    return { che_do: chon, goc: d.id };
   }
 }
 

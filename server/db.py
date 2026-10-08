@@ -77,6 +77,32 @@ CREATE TABLE IF NOT EXISTS tm (
     created_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tm_model ON tm(model);
+
+-- Thư mục của thư viện. Quan hệ bài–thư mục nằm ở BẢNG RIÊNG chứ không phải
+-- một cột `folder_id` trên `documents`: `save_doc` ghi bằng INSERT OR REPLACE
+-- với danh sách cột cố định, nên cột nào nó không mang theo sẽ bị đặt lại về
+-- mặc định mỗi lần lưu — tức mỗi lần lưu bản dịch là bài tự rơi khỏi thư mục,
+-- im lặng. Bảng riêng thì `save_doc` không bao giờ chạm tới.
+CREATE TABLE IF NOT EXISTS folders (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    created_at REAL
+);
+CREATE TABLE IF NOT EXISTS doc_folder (
+    doc_id    TEXT PRIMARY KEY,      -- mỗi bài nằm trong TỐI ĐA một thư mục
+    folder_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_doc_folder ON doc_folder(folder_id);
+
+-- Phiên bản của cùng một bài (arXiv v1 → v2, bản PDF sửa lại). Bảng riêng vì
+-- cùng lý do với `doc_folder`: cột trên `documents` bị INSERT OR REPLACE của
+-- `save_doc` đặt lại mỗi lần lưu.
+CREATE TABLE IF NOT EXISTS doc_version (
+    doc_id TEXT PRIMARY KEY,
+    goc_id TEXT NOT NULL,          -- bài đầu tiên của họ phiên bản này
+    so     INTEGER NOT NULL        -- 1, 2, 3…
+);
+CREATE INDEX IF NOT EXISTS idx_doc_version ON doc_version(goc_id);
 """
 
 
@@ -173,13 +199,107 @@ def doc_exists(doc_id: str) -> bool:
 def delete_doc(doc_id: str) -> None:
     with conn() as c:
         c.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        # Xoá bài phải kéo theo thứ trỏ tới nó (cùng luật với `drop_run` bên kho
+        # survey): sót dòng này thì thư mục đếm cả bài đã xoá.
+        c.execute("DELETE FROM doc_folder WHERE doc_id = ?", (doc_id,))
+        c.execute("DELETE FROM doc_version WHERE doc_id = ?", (doc_id,))
+
+
+# ------------------------------------------------------------ phiên bản
+
+def link_version(new_id: str, goc_id: str) -> int:
+    """Gắn `new_id` làm phiên bản kế tiếp của họ mà `goc_id` thuộc về.
+
+    `goc_id` có thể là bất kỳ phiên bản nào trong họ — luôn quy về bài GỐC, nên
+    nạp v3 từ v2 hay từ v1 đều ra cùng một họ. Bài gốc chưa có dòng nào thì nó
+    thành v1. Trả về số phiên bản của bài mới. Cũng đưa bài mới vào đúng thư mục
+    của bài gốc — hai phiên bản của một bài nằm hai chỗ là kiểu lộn xộn thư mục
+    sinh ra để tránh.
+    """
+    with conn() as c:
+        row = c.execute("SELECT goc_id FROM doc_version WHERE doc_id = ?", (goc_id,)).fetchone()
+        root = row["goc_id"] if row else goc_id
+        if not row:
+            c.execute("INSERT OR IGNORE INTO doc_version (doc_id, goc_id, so) VALUES (?, ?, 1)",
+                      (root, root))
+        so = c.execute("SELECT COALESCE(MAX(so), 1) + 1 FROM doc_version WHERE goc_id = ?",
+                       (root,)).fetchone()[0]
+        c.execute("INSERT OR REPLACE INTO doc_version (doc_id, goc_id, so) VALUES (?, ?, ?)",
+                  (new_id, root, so))
+        tm = c.execute("SELECT folder_id FROM doc_folder WHERE doc_id = ?", (root,)).fetchone()
+        if tm:
+            c.execute("INSERT OR REPLACE INTO doc_folder (doc_id, folder_id) VALUES (?, ?)",
+                      (new_id, tm["folder_id"]))
+    return so
+
+
+# ------------------------------------------------------------- thư mục
+
+FOLDER_NAME_MAX = 80
+
+
+def list_folders() -> list[dict]:
+    """Thư mục kèm số bài, xếp theo tên (không phân biệt hoa thường)."""
+    rows = conn().execute(
+        "SELECT f.id, f.name, f.created_at, COUNT(d.id) AS n"
+        " FROM folders f"
+        " LEFT JOIN doc_folder m ON m.folder_id = f.id"
+        " LEFT JOIN documents d ON d.id = m.doc_id"
+        " GROUP BY f.id ORDER BY lower(f.name)").fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_folder(folder_id: str, name: str) -> dict:
+    with conn() as c:
+        c.execute("INSERT INTO folders (id, name, created_at) VALUES (?, ?, ?)",
+                  (folder_id, name, time.time()))
+    return {"id": folder_id, "name": name, "n": 0}
+
+
+def rename_folder(folder_id: str, name: str) -> bool:
+    with conn() as c:
+        return c.execute("UPDATE folders SET name = ? WHERE id = ?",
+                         (name, folder_id)).rowcount > 0
+
+
+def delete_folder(folder_id: str) -> int:
+    """Xoá THƯ MỤC, không xoá bài. Bài bên trong về "Chưa xếp".
+
+    Xoá một cái hộp mà kéo theo mọi thứ trong hộp là kiểu bất ngờ tệ nhất — nhất
+    là khi thứ trong hộp là bản dịch đã trả tiền. Trả về số bài được trả lại.
+    """
+    with conn() as c:
+        n = c.execute("DELETE FROM doc_folder WHERE folder_id = ?", (folder_id,)).rowcount
+        c.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
+    return n
+
+
+def folder_exists(folder_id: str) -> bool:
+    return conn().execute("SELECT 1 FROM folders WHERE id = ?", (folder_id,)).fetchone() is not None
+
+
+def move_docs(doc_ids: list[str], folder_id: str | None) -> int:
+    """Chuyển bài vào thư mục; `None` là đưa về "Chưa xếp". Trả số bài đã chuyển."""
+    with conn() as c:
+        have = {r[0] for r in c.execute(
+            f"SELECT id FROM documents WHERE id IN ({','.join('?' * len(doc_ids))})", doc_ids)}
+        for d in have:
+            if folder_id is None:
+                c.execute("DELETE FROM doc_folder WHERE doc_id = ?", (d,))
+            else:
+                c.execute("INSERT OR REPLACE INTO doc_folder (doc_id, folder_id) VALUES (?, ?)",
+                          (d, folder_id))
+    return len(have)
 
 
 def list_docs() -> list[dict]:
     """Danh sách bài — chỉ đọc cột cần, không nạp cả nội dung như bản JSON cũ."""
     rows = conn().execute(
-        "SELECT id, title, title_vi, model, source, usage, created_at, updated_at,"
-        " blocks, translations FROM documents ORDER BY updated_at DESC"
+        "SELECT d.id, d.title, d.title_vi, d.model, d.source, d.usage, d.created_at,"
+        " d.updated_at, d.blocks, d.translations, m.folder_id, v.goc_id, v.so"
+        " FROM documents d LEFT JOIN doc_folder m ON m.doc_id = d.id"
+        " LEFT JOIN doc_version v ON v.doc_id = d.id"
+        " ORDER BY d.updated_at DESC"
     ).fetchall()
     out = []
     for r in rows:
@@ -203,6 +323,9 @@ def list_docs() -> list[dict]:
             "source": r["source"] or "",
             "cost_usd": round(cost, 5),
             "created_at": r["created_at"] or r["updated_at"] or 0,
+            "folder_id": r["folder_id"],
+            "version": r["so"],          # None = bài không có phiên bản nào khác
+            "version_of": r["goc_id"],
             "updated_at": r["updated_at"] or 0,
         })
     return out

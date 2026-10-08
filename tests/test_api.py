@@ -622,6 +622,159 @@ def test_bam_dich_tren_bai_da_xong_khong_tu_goi_luot_tinh_tien():
     assert '? "Dịch tiếp" : "Dịch"' not in app, "còn chỗ đặt nhãn theo kiểu cũ"
 
 
+def _bai_thu(app_client, ten):
+    r = app_client.post("/api/import", data={
+        "text": f"{ten}\n\nĐoạn thân bài đủ dài để thành một khối riêng của {ten}.",
+        "model": "test/model"})
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def test_thu_muc_va_chon_nhieu(app_client):
+    """Thư mục và chọn-nhiều của thư viện, đủ vòng CRUD.
+
+    Hai chỗ được canh riêng vì cả hai hỏng CÂM:
+
+    - **Lưu bài không được làm bài rơi khỏi thư mục.** `save_doc` ghi bằng
+      INSERT OR REPLACE với danh sách cột cố định; quan hệ bài–thư mục mà nằm
+      trên một cột của `documents` thì mỗi lần lưu bản dịch là bị đặt lại.
+    - **Xoá thư mục không xoá bài** — bài về "Chưa xếp".
+    """
+    from server import store
+    a, b, c = (_bai_thu(app_client, t) for t in ("Bài A thư mục", "Bài B thư mục", "Bài C thư mục"))
+
+    r = app_client.post("/api/folders", json={"name": "  Robot   học máy "})
+    assert r.status_code == 200, r.text
+    fid = r.json()["id"]
+    assert r.json()["name"] == "Robot học máy", "phải gộp khoảng trắng thừa"
+    # trùng tên (không phân biệt hoa thường) thì từ chối
+    assert app_client.post("/api/folders", json={"name": "robot HỌC máy"}).status_code == 409
+    assert app_client.post("/api/folders", json={"name": "   "}).status_code == 400
+
+    assert app_client.post("/api/docs/move", json={"ids": [a, b], "folder_id": fid}).json()["moved"] == 2
+    rows = {d["id"]: d for d in app_client.get("/api/docs").json()}
+    assert rows[a]["folder_id"] == fid and rows[b]["folder_id"] == fid and rows[c]["folder_id"] is None
+    assert [f["n"] for f in app_client.get("/api/folders").json() if f["id"] == fid] == [2]
+
+    # LƯU lại bài (đúng đường mà mọi lượt dịch đi qua) — vẫn phải còn trong thư mục
+    store.save(store.load(a))
+    assert {d["id"]: d for d in app_client.get("/api/docs").json()}[a]["folder_id"] == fid, \
+        "lưu bài làm bài rơi khỏi thư mục"
+
+    # đổi tên; trùng với chính nó thì được
+    assert app_client.patch(f"/api/folders/{fid}", json={"name": "Robot"}).status_code == 200
+    assert app_client.patch(f"/api/folders/{fid}", json={"name": "ROBOT"}).status_code == 200
+
+    # đưa một bài về "Chưa xếp"
+    app_client.post("/api/docs/move", json={"ids": [b], "folder_id": None})
+    assert {d["id"]: d for d in app_client.get("/api/docs").json()}[b]["folder_id"] is None
+
+    # chuyển vào thư mục không tồn tại / mã bẩn
+    assert app_client.post("/api/docs/move", json={"ids": [a], "folder_id": "khongco"}).status_code == 404
+    assert app_client.post("/api/docs/move", json={"ids": ["../etc"], "folder_id": fid}).status_code == 400
+
+    # xoá THƯ MỤC: bài vẫn còn, về "Chưa xếp"
+    r = app_client.delete(f"/api/folders/{fid}")
+    assert r.status_code == 200 and r.json()["returned"] == 1
+    rows = {d["id"]: d for d in app_client.get("/api/docs").json()}
+    assert a in rows and rows[a]["folder_id"] is None, "xoá thư mục đã xoá luôn bài"
+
+    # xoá NHIỀU bài một lượt; mã không còn thì bỏ qua chứ không hỏng cả lượt
+    r = app_client.post("/api/docs/delete", json={"ids": [a, b, "khongconnua"]})
+    assert r.status_code == 200 and r.json()["deleted"] == 2
+    con = {d["id"] for d in app_client.get("/api/docs").json()}
+    assert a not in con and b not in con and c in con
+    assert app_client.post("/api/docs/delete", json={"ids": []}).status_code == 400
+    assert app_client.post("/api/docs/delete", json={"ids": ["a/b"]}).status_code == 400
+    app_client.delete(f"/api/doc/{c}")
+
+
+def test_bai_trung_ghi_de_phien_ban_hoac_bai_rieng(app_client):
+    """Bài trùng có ba lối ra, và mỗi lối phải làm đúng việc của nó.
+
+    - Cùng BÀI khác file (v2, bản sửa) — phép dò theo SHA không bắt được, nên dò
+      thêm theo tiêu đề / mã arXiv; trước bản này nó lặng lẽ thành bài riêng.
+    - **Ghi đè** bóc file mới VÀO bài cũ: cùng mã bài, đoạn không đổi GIỮ bản
+      dịch đã trả tiền, đoạn mới chờ dịch, số bài trong thư viện không đổi.
+    - **Phiên bản** là bài mới gắn v2 vào họ của bài cũ, và theo bài cũ vào đúng
+      thư mục của nó.
+    """
+    from server import store
+    TEN = "Phiên bản thử nghiệm của bài báo về điều khiển robot"
+    GIU = "Đoạn này giữ nguyên giữa hai phiên bản, bản dịch của nó phải còn."
+    v1 = app_client.post("/api/import", data={
+        "text": f"{TEN}\n\n{GIU}\n\nĐoạn chỉ có ở phiên bản một, sẽ bị bỏ ở bản sau.",
+        "model": "test/model"}).json()["id"]
+    # Có bản dịch cho đoạn giữ nguyên — thứ ghi đè không được làm mất.
+    d = store.load(v1)
+    bid = next(b["id"] for b in d["blocks"] if b["text"].startswith("Đoạn này giữ nguyên"))
+    d["translations"][bid] = "BẢN DỊCH ĐÃ TRẢ TIỀN"
+    store.save(d)
+    fid = app_client.post("/api/folders", json={"name": "Thư mục của v1"}).json()["id"]
+    app_client.post("/api/docs/move", json={"ids": [v1], "folder_id": fid})
+
+    v2_text = f"{TEN}\n\n{GIU}\n\nĐoạn mới chỉ có ở phiên bản hai, chưa dịch."
+    # 1) cùng bài, khác nội dung → hỏi, kind = cung_bai, chưa tạo gì
+    n0 = len(app_client.get("/api/docs").json())
+    r = app_client.post("/api/import", data={"text": v2_text, "model": "test/model"}).json()
+    assert r.get("duplicate", {}).get("kind") == "cung_bai", r
+    assert r["duplicate"]["id"] == v1
+    assert len(app_client.get("/api/docs").json()) == n0, "đã tạo bài trước khi hỏi"
+
+    # 2) ghi đè → cùng mã, giữ bản dịch đoạn không đổi, đoạn mới chờ dịch
+    r = app_client.post("/api/import", data={"text": v2_text, "model": "test/model",
+                                            "che_do": "ghi_de", "goc": v1})
+    assert r.status_code == 200, r.text
+    g = r.json()
+    assert g["id"] == v1 and "ghi_de" in g, "ghi đè phải trả về CHÍNH bài cũ"
+    assert len(app_client.get("/api/docs").json()) == n0, "ghi đè đã đẻ thêm bài"
+    d = store.load(v1)
+    assert d["translations"].get(bid) == "BẢN DỊCH ĐÃ TRẢ TIỀN", "ghi đè làm mất bản dịch"
+    texts = [b["text"] for b in d["blocks"]]
+    assert any("phiên bản hai" in t for t in texts)
+    assert not any("phiên bản một" in t for t in texts)
+
+    # 3) phiên bản → bài mới v2, bài cũ thành v1, cùng thư mục
+    r = app_client.post("/api/import", data={"text": v2_text + "\n\nThêm một đoạn nữa.",
+                                            "model": "test/model",
+                                            "che_do": "phien_ban", "goc": v1})
+    assert r.status_code == 200, r.text
+    v2 = r.json()["id"]
+    rows = {x["id"]: x for x in app_client.get("/api/docs").json()}
+    assert rows[v1]["version"] == 1 and rows[v2]["version"] == 2
+    assert rows[v2]["version_of"] == v1
+    assert rows[v2]["folder_id"] == fid, "phiên bản mới không theo bài gốc vào thư mục"
+    # nạp v3 từ v2 vẫn cùng một họ
+    v3 = app_client.post("/api/import", data={"text": v2_text + "\n\nBản ba.", "model": "test/model",
+                                             "che_do": "phien_ban", "goc": v2}).json()["id"]
+    rows = {x["id"]: x for x in app_client.get("/api/docs").json()}
+    assert rows[v3]["version"] == 3 and rows[v3]["version_of"] == v1
+
+    # 4) bài riêng → không phiên bản, không hỏi
+    r = app_client.post("/api/import", data={"text": v2_text, "model": "test/model", "che_do": "moi"}).json()
+    assert "duplicate" not in r
+    rieng = r["id"]
+    assert {x["id"]: x for x in app_client.get("/api/docs").json()}[rieng]["version"] is None
+
+    # 5) mã gốc bậy / chế độ lạ
+    assert app_client.post("/api/import", data={"text": v2_text, "che_do": "ghi_de",
+                                               "goc": "khongco"}).status_code == 404
+    assert app_client.post("/api/import", data={"text": v2_text, "che_do": "xoa_het"}).status_code == 400
+
+    app_client.post("/api/docs/delete", json={"ids": [v1, v2, v3, rieng]})
+    app_client.delete(f"/api/folders/{fid}")
+
+
+def test_ma_arxiv_nhan_ra_phien_ban():
+    """`2604.00965v1.pdf` và `arXiv:2604.00965v2` là cùng một bài; số khác thì không."""
+    from server.main import _ARXIV_ID
+    g = lambda s: (m.group(1) if (m := _ARXIV_ID.search(s)) else None)
+    assert g("2604.00965v1.pdf") == g("arXiv:2604.00965v2") == "2604.00965"
+    assert g("arXiv:1706.03762") == "1706.03762"
+    assert g("paper.pdf") is None
+    assert g("12604.00965") is None, "không được bắt dính vào một dãy số dài hơn"
+
+
 def test_khong_con_hop_thoai_native(app_client):
     """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
     cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi
