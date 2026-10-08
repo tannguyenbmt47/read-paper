@@ -1493,3 +1493,43 @@ def test_doan_van_khong_bi_nhan_nham_la_bang():
     ds = [dong(54 + 80 * k, 100 + 12 * i, w) for i, w2 in enumerate(
           [("alpha", "beta"), ("gamma", "delta"), ("eps", "zeta")]) for k, w in enumerate(w2)]
     assert P._bang_khong_vien(ds) is None
+
+
+def test_manh_so_vun_bi_an_va_khong_chan_viec_noi_cau():
+    """World Models: chú thích chân trang + năm khối `10^{3}`… chen giữa một câu
+    bị cắt đôi. Năm mảnh số hiện thành năm dòng trơ trọi, và vì chúng mà phần
+    đuôi "can learn a highly compact policy…" không được nối — thành một khối
+    riêng, bị dịch và giải thích riêng, tốn tiền cho nửa câu."""
+    from server.parser import Block, an_manh_so, stitch_hyphenated
+    bl = [Block("b18", "para", "Training the agent through its world model, we show that it",
+                "Intro", 0, 1, True),
+          Block("b19", "meta", "^{1}Typical model-free RL models have in the order of to",
+                "Intro", 0, 1, False)]
+    bl += [Block(f"b{20 + k}", "meta", f"10^{{{e}}}", "Intro", 0, 1, False)
+           for k, e in enumerate((3, 6, 7, 9, 8))]
+    bl.append(Block("b25", "para", "can learn a highly compact policy to perform its task.",
+                    "Intro", 0, 1, True))
+    assert an_manh_so(bl) == 5
+    stitch_hyphenated(bl)
+    con = [b for b in bl if b.text and not b.hidden]
+    assert [b.id for b in con] == ["b18", "b19"]
+    assert con[0].text.endswith("we show that it can learn a highly compact policy to perform its task.")
+    # kết quả ngắn có thập phân / phần trăm thì KHÔNG ẩn — có thể là số chính của bài
+    kq = [Block("x1", "para", "57.3%", "", 0, 0, True), Block("x2", "para", "(4)", "", 0, 0, True)]
+    an_manh_so(kq)
+    assert not kq[0].hidden and kq[1].hidden
+
+
+def test_nhan_ngoai_me_la_cho_model_chep_lai_prefix():
+    """Model viết xong ô của nó rồi chép tiếp toàn văn bài trong prefix
+    (`<<<b26>>> [loại: para | mục: …]` …). Nhãn ngoài mẻ không được dồn vào ô
+    trước — đo trên `data/`: một ô giải thích phình tới 66.205 ký tự."""
+    from server.pipeline import _parse_labeled
+    ra = ("<<<b25_g>>>\nGiải thích thật của đoạn này.\n\n"
+          "<<<b26>>> [loại: para | mục: 2.1]\nScaling Up Motion Tracking. In Fig. 2…\n"
+          "<<<b27>>> [loại: para | mục: 2.1]\nMore source text…\n")
+    out = _parse_labeled(ra, ["b25", "b25_g"])
+    assert out == {"b25_g": "Giải thích thật của đoạn này."}
+    # câu NHẮC tới mã khối giữa dòng thì không bị cắt
+    ra2 = "<<<b25_g>>>\nĐoạn này nối với <<<b8>>> ở trên.\n"
+    assert "nối với" in _parse_labeled(ra2, ["b25_g"])["b25_g"]

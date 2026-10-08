@@ -1665,6 +1665,7 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
     # Hai phễu chạy cuối cùng, sau khi mọi khối đã có loại và có ảnh: gom mảnh
     # bị cắt giữa từ, rồi tắt cờ dịch cho khối rác. Cả hai đều nhắm vào cùng một
     # cái giá — mỗi khối là một lượt dịch cộng một lượt giải thích.
+    an_manh_so(blocks)
     stitch_hyphenated(blocks)
     mark_continuations(blocks)
     mark_noise(blocks)
@@ -2170,6 +2171,35 @@ def _ngoac_ho(t: str) -> bool:
 _INTERLEAVED = ("caption", "equation", "figure", "table")
 
 
+# Mảnh số vụn: chỉ chữ số, có thể kèm chỉ số trên/dưới hoặc ngoặc. Cố ý KHÔNG
+# nhận dấu thập phân hay `%` — `57.3%` một mình có thể là kết quả chính của bài
+# (xem `mark_noise`), còn `10^{3}` một mình thì không bao giờ là gì cả.
+_MANH_SO = re.compile(r"^\(?\d{1,4}\)?(?:[\^_]\{[\d\s\-−+]{1,6}\})?$")
+
+
+def an_manh_so(blocks: list[Block]) -> int:
+    """ẨN hẳn những khối chỉ là mảnh số vụn tách ra khỏi câu chứa nó.
+
+    Đo trên bài World Models: chú thích chân trang *"…in the order of 10³ to 10⁶
+    model parameters"* bị PyMuPDF tách số mũ ra (cỡ chữ khác), thành năm khối
+    `10^{3}`, `10^{6}`, `10^{7}`, `10^{9}`, `10^{8}` xếp dọc giữa bài — người đọc
+    thấy năm dòng số trơ trọi. `mark_noise` chỉ tắt cờ dịch, chúng vẫn hiện.
+
+    Ẩn (`hidden`) chứ không xoá: cùng lối với nút ⊘, thanh "đang ẩn" vẫn cho bật
+    lại. Và ẩn TRƯỚC khi nối đoạn — năm khối này chen giữa một câu bị cắt đôi,
+    chính chúng làm `_stitch_runon` vượt trần nhảy và bỏ không nối.
+    """
+    hit = 0
+    for b in blocks:
+        if b.type not in ("para", "meta") or b.hidden or b.figure:
+            continue
+        if _MANH_SO.match(b.text.strip()):
+            b.hidden = True
+            b.translate = False
+            hit += 1
+    return hit
+
+
 def stitch_hyphenated(blocks: list[Block], max_gap: int = 4) -> int:
     """Nối lại đoạn bị cắt giữa từ, kể cả khi có hình chen vào giữa.
 
@@ -2261,14 +2291,18 @@ def _stitch_runon(blocks: list[Block]) -> int:
         # phần tử trôi, trong bản in đoạn văn chảy vòng qua chúng. **Không** nhảy
         # qua `equation`: công thức nằm trong mạch lập luận (`…sorted as` → công
         # thức → `where T_V is…`) và được cắt thành ảnh phải đứng giữa hai nửa.
-        j = i + 1
-        while j < len(blocks) and blocks[j].type in ("caption", "figure", "table", "meta"):
+        j, nhay = i + 1, 0
+        while j < len(blocks) and (blocks[j].hidden
+                                   or blocks[j].type in ("caption", "figure", "table", "meta")):
+            # Khối ĐÃ ẨN (mảnh số vụn của `an_manh_so`) không tính vào trần: người
+            # đọc không thấy nó, nên nó không cắt mạch đọc của ai.
+            nhay += not blocks[j].hidden
             j += 1
         # Trần 4, không phải 3: chú thích chân trang nằm ở ĐÁY cột nên chúng
         # chen vào đúng chỗ đoạn văn vắt sang cột sau. Đo trên CIRAG: giữa hai
         # nửa của đoạn mở bài có `^{*} Corresponding author..`,
         # `^{1}Our code…` và chú thích Hình 1 — đúng ba khối, trần 3 loại trượt.
-        if j >= len(blocks) or j - i > 4:
+        if j >= len(blocks) or nhay > 3:
             i += 1
             continue
 
@@ -2617,6 +2651,7 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
     # bị cắt giữa từ, rồi tắt cờ dịch cho khối rác. Cả hai nhắm vào cùng một cái
     # giá — mỗi khối là MỘT lượt dịch cộng MỘT lượt giải thích, nên một mảnh vụn
     # không gom lại là hai lượt gọi model trả cho thứ không đọc được.
+    an_manh_so(keep)
     stitch_hyphenated(keep)
     mark_continuations(keep)
     mark_noise(keep)
@@ -2785,6 +2820,7 @@ def parse_text(raw: str, name: str = "") -> tuple[str, list[Block], dict[str, by
     else:
         title, blocks = _parse_plain(raw)
 
+    an_manh_so(blocks)
     stitch_hyphenated(blocks)
     mark_continuations(blocks)
     mark_noise(blocks)

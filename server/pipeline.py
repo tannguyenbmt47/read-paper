@@ -208,6 +208,7 @@ def _parse_labeled(text: str, ids=None) -> dict[str, str]:
     """
     rx = _label_re(ids) if ids else LABEL
     dong = _close_re(ids) if ids else None
+    trong_me = set(ids or ())
     out: dict[str, str] = {}
     matches = list(rx.finditer(text))
     for i, m in enumerate(matches):
@@ -215,10 +216,25 @@ def _parse_labeled(text: str, ids=None) -> dict[str, str]:
         key = next((g for g in m.groups() if g), None) if ids else m.group(1)
         if key:
             than = text[m.end():end]
+            if trong_me:
+                # Nhãn của khối NGOÀI mẻ đứng đầu dòng = model bắt đầu CHÉP LẠI
+                # toàn văn bài trong prefix (cùng dạng `<<<id>>> [loại: … | mục:
+                # …]`). Cắt ô tại đó. Đo trên `data/`: 3 ô giải thích, ô lớn nhất
+                # 66.205 ký tự chứa 111 khối nguyên văn tiếng Anh — `_label_re`
+                # chỉ dò mã TRONG mẻ nên mọi nhãn lạ dồn hết vào ô trước nó.
+                for n in _NHAN_BAT_KY.finditer(than):
+                    if n.group(1) not in trong_me:
+                        than = than[:n.start()]
+                        break
             if dong is not None:
                 than = dong.sub("", than)
             out[key] = than.strip()
     return out
+
+
+# Nhãn mở của BẤT KỲ khối nào, đứng đầu dòng — chỉ dùng để phát hiện nhãn ngoài
+# mẻ (xem `_parse_labeled`), không dùng để tách ô.
+_NHAN_BAT_KY = re.compile(r"^[ \t]*<{2,4}[ \t]*([A-Za-z]+\d+(?:_g)?)[ \t]*>{2,4}", re.M)
 
 
 def build_doc(doc_id: str, title: str, blocks: list[Block], source: str, model: str) -> dict:

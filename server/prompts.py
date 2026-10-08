@@ -508,6 +508,11 @@ Ký hiệu toán ở cột này cũng theo đúng luật của cột dịch: **k
 ký tự (∈ → ≤ · × α τ). Cột này là văn xuôi giải thích, một cục LaTeX giữa câu là
 đúng thứ làm nó khó đọc hơn cả bản gốc.
 
+### Không nhắc mã khối
+Mã như `b8`, `b18` là nhãn NỘI BỘ để ghép câu trả lời, người đọc không thấy nó.
+Đừng viết "luận điểm ở đoạn b8" — nói nội dung của đoạn đó ("luận điểm ở trên
+rằng nhận thức là quá trình chủ động") hoặc vị trí ("đoạn ngay trước").
+
 ### Không dùng markdown
 Viết văn xuôi thuần. **Không** dùng `**in đậm**`, `*nghiêng*`, `#` tiêu đề, hay
 gạch đầu dòng — giao diện hiển thị nguyên văn nên dấu sao sẽ hiện ra thành rác.

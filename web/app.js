@@ -715,6 +715,19 @@ function tienDo(d) {
     style="width:${pct}%"></span></div>`;
 }
 
+/** Con dấu tiến độ ở lề trái mỗi dòng thư viện: vòng tròn tô dần theo phần đã
+    dịch, xong thì thành dấu ✓ xanh. Thanh dài bên dưới tên bài của bản trước
+    lặp lại mười lần một vạch y hệt nhau (gần hết bài đều đã xong), chiếm cả một
+    dòng mỗi bài mà mắt không học thêm được gì — con dấu nói cùng điều đó trong
+    một ô 26px, và bài CHƯA xong thì nổi lên vì nó là vòng hở. */
+function dauTienDo(d) {
+  const pct = Math.round(tiLeDich(d) * 100);
+  const nhan = pct >= 100 ? "Đã dịch xong" : `Đã dịch ${pct}%`;
+  return `<span class="dau-td${pct >= 100 ? " xong" : pct === 0 ? " chua" : ""}"
+    style="--p:${pct}" role="img" aria-label="${nhan}" title="${nhan}">${
+    pct >= 100 ? ico("check") : ""}</span>`;
+}
+
 async function loadRecent() {
   [recentDocs, thuVien.folders] = await Promise.all([
     fetch("/api/docs").then((r) => r.json()),
@@ -991,9 +1004,10 @@ function veRecent() {
       // mục thì nói lại là thừa.
       const tm = thuVien.loc === "all" && d.folder_id
         && thuVien.folders.find((f) => f.id === d.folder_id);
+      // "đã dịch xong" không nhắc lại — con dấu ở lề đã nói; còn dở thì nói số.
       const meta = [
         `${d.blocks} khối`,
-        pct >= 100 ? "đã dịch xong" : `đã dịch ${pct}%`,
+        pct >= 100 ? "" : `dịch ${pct}%`,
         tenModel(d.model),
         d.cost_usd ? `$${(+d.cost_usd).toFixed(2).replace(".", ",")}` : "",
       ].filter(Boolean).join(" · ");
@@ -1002,13 +1016,12 @@ function veRecent() {
       return `<li data-open="${esc(d.id)}" tabindex="0" draggable="true"
           class="${chon ? "da-chon" : ""}"${thuVien.chon ? ` aria-selected="${chon}"` : ""}>
         ${thuVien.chon ? `<input type="checkbox" class="chon-o" data-chon="${esc(d.id)}"
-            ${chon ? "checked" : ""} aria-label="Chọn bài này">` : ""}
+            ${chon ? "checked" : ""} aria-label="Chọn bài này">` : dauTienDo(d)}
         <span class="rt" data-id="${esc(d.id)}">
           <b class="${voDanh ? "vo-danh" : ""}">${esc(ten)}${d.version
             ? `<span class="ver${moiNhat.get(d.version_of) === d.version ? " moi-nhat" : ""}"
                 title="Phiên bản ${d.version} của bài này${moiNhat.get(d.version_of) === d.version ? " — bản mới nhất" : ""}">v${d.version}</span>` : ""}</b>
           <span>${tm ? `<span class="the-tm">${ico("folder")}${esc(tm.name)}</span> · ` : ""}${esc(meta)}</span>
-          ${tienDo(d)}
         </span>
         <span class="rwhen" title="${esc("Nạp " + khiNao(d.created_at)
           + (nguon ? " từ " + nguon : ""))}">${esc(khiNao(d.updated_at))}${
@@ -4363,6 +4376,38 @@ function renderDoc() {
   host.onscroll = onDocScroll;
 }
 
+/** Mã khối nội bộ (`b8`) mà model nhắc tới trong cột giải thích → tên đọc được.
+
+    Model thấy bài dưới dạng `<<<b8>>> …` nên hay viết *"củng cố luận điểm ở
+    đoạn b8"* — người đọc không có cách nào biết b8 là gì. Prompt giờ cấm (xem
+    `_PLAIN_BODY`), nhưng ô đã sinh ra rồi thì chữa ở đây, miễn phí: thay bằng
+    mấy chữ đầu của chính đoạn đó, bấm vào thì nhảy tới.
+
+    Thay trên chuỗi THÔ bằng ký tự giữ chỗ rồi mới `sci()` — thay trên HTML đã
+    dựng thì có nguy cơ đụng vào thuộc tính của thẻ `sci()` sinh ra. */
+const MA_KHOI_RE = /(?:(?:đoạn|khối|block|Đoạn|Khối|Block)\s+)?\(?\b(b\d{1,4})(?:_g)?\b\)?/g;
+
+function dauDoan(id) {
+  const b = state.doc?.blocks?.find((x) => x.id === id);
+  if (!b) return "";
+  const t = String(state.doc.translations?.[id] || b.text || "")
+    .replace(/[\^_]\{([^}]*)\}/g, "$1").replace(/\s+/g, " ").trim();
+  return catGon(t, 34);
+}
+
+function sciGoiKhoi(t) {
+  const ids = [];
+  const tho = String(t || "").replace(MA_KHOI_RE, (whole, id) => {
+    if (!dauDoan(id)) return whole;          // không phải mã khối có thật: để nguyên
+    ids.push(id);
+    return `\u0001${ids.length - 1}\u0001`;
+  });
+  return sci(tho).replace(/\u0001(\d+)\u0001/g, (_, i) => {
+    const id = ids[+i];
+    return `<a class="ref-khoi" data-goto="${esc(id)}" title="Nhảy tới đoạn này">đoạn “${esc(dauDoan(id))}”</a>`;
+  });
+}
+
 function pairHTML(b, vi, note, inFlow = false) {
   // `cont` = nửa sau của một đoạn bị công thức chen vào giữa. Ba khối vẫn là ba
   // khối (ảnh công thức phải đứng giữa hai nửa, và mỗi khối vẫn là một đơn vị
@@ -4422,7 +4467,7 @@ function pairHTML(b, vi, note, inFlow = false) {
     ${fig}${tools}
     <div class="en">${mk}${bodyHTML(b)}</div>
     <div class="vi" data-vi>${mk}${viHTML}</div>
-    <div class="gl" data-gl>${sci(gl)}</div>
+    <div class="gl" data-gl>${sciGoiKhoi(gl)}</div>
     ${note ? noteHTML(note) : ""}
   </div>`;
 }
@@ -4537,6 +4582,8 @@ function wirePairs() {
         gl.classList.toggle("mo-rong");
         return;
       }
+      const goto = e.target.closest("a.ref-khoi[data-goto]");
+      if (goto) { e.preventDefault(); jumpToBlock(goto.dataset.goto); return; }
       const cite = e.target.closest("[data-cite]");
       if (cite) {
         e.stopPropagation();
@@ -5005,7 +5052,7 @@ function streamChunk(i, refine, mode, only) {
       if (plain !== undefined) {
         (state.doc.plain ||= {})[id] = plain;
         const g = $(`#p-${CSS.escape(id)} [data-gl]`);
-        if (g) g.innerHTML = sci(plain);
+        if (g) g.innerHTML = sciGoiKhoi(plain);
         return;
       }
       state.doc.translations[id] = vi;

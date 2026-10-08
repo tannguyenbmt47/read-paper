@@ -1,297 +1,196 @@
 # Loupe
 
-**A local research environment for scientific papers. Two tools that share a
-codebase but not a workflow: a *reader* that translates one paper English →
-Vietnamese while preserving its argument, and a *corpus* that indexes dozens of
-papers and answers questions about them with citations down to the passage.**
+**Read scientific papers in Vietnamese without losing the argument.**
 
-Version 1.6.0 · runs locally · models called through
-[OpenRouter](https://openrouter.ai) · [CHANGELOG](CHANGELOG.md) ·
-[Docker](DOCKER.md)
+Loupe is a local web app with two tools that share one codebase:
 
-A loupe is the lens a jeweller holds to one stone at a time. Machine translation
-gives you the words at a glance; this is for the reading where you need to see
-exactly what every claim rests on.
+- **Reader** — translates one paper English → Vietnamese, paragraph by paragraph,
+  next to the original, with a plain-language explanation of what each paragraph
+  does in the paper's argument.
+- **Survey corpus** — indexes dozens of papers and answers questions across them,
+  with every claim cited down to the passage.
 
-| | Reader | Survey corpus |
-|---|---|---|
-| Scale | one paper, read closely | 20–50 papers, queried |
-| Output | bilingual columns, explanations, slides | answers with per-passage citations |
-| Translation | full, and it is the point | none — indexing instead |
-| Cost | ~$0.30 per paper | ~$0.034 per paper, then ~$0.03 per question |
+Version 1.18.0 · runs on your machine · models via [OpenRouter](https://openrouter.ai)
+· [Changelog](CHANGELOG.md) · [Docker](DOCKER.md)
 
 ```bash
-./run.sh          # creates .env on first run; add your key and run again
-# open http://localhost:8010   (change the port with PORT=9000 ./run.sh)
+./run.sh                      # first run creates .env — add your key, run again
+# → http://localhost:8010     (PORT=9000 ./run.sh to change the port)
 ```
 
 ---
 
-## Why this exists
+## Contents
 
-Existing PDF translators (Immersive Translate, PDFMathTranslate/BabelDOC)
-preserve **layout**. This tool preserves **reasoning**, and explains what each
-paragraph contributes to the paper's argument.
+1. [Why Loupe](#why-loupe)
+2. [The reader](#the-reader)
+3. [The survey corpus](#the-survey-corpus)
+4. [What it costs](#what-it-costs)
+5. [Installation and configuration](#installation-and-configuration)
+6. [Limitations](#limitations)
+7. [Project layout](#project-layout)
+8. [Development](#development)
 
-Machine translation of scientific papers loses the argument for four specific,
-nameable reasons:
+---
 
-| Failure | How it shows up | How this tool addresses it |
+## Why Loupe
+
+PDF translators such as Immersive Translate or PDFMathTranslate preserve the
+**layout** of a paper. Loupe preserves its **reasoning**. Machine translation of
+research papers fails in four predictable ways, and each one has a specific
+counter-measure here:
+
+| Failure | What you see | What Loupe does |
 |---|---|---|
-| Paragraphs translated in isolation | Discourse connectives are lost; `while` and `since` are rendered with the wrong sense | The **full text** is held in context, with a mandatory connective mapping table |
-| Terminology never fixed | One term rendered three different ways in the same paper | A separate pass **fixes the glossary before translation begins** |
-| Claim strength drifts | `may` → "will", `suggests` → "proves" | A hedging table forbids strengthening or weakening claims |
-| No way to check the translation | You cannot trace a Vietnamese sentence back to its source | Paragraph-aligned bilingual columns plus an explanation layer |
+| Paragraphs translated in isolation | Connectives like *while* and *since* take the wrong sense | The **full paper** stays in context for every request |
+| Terminology drifts | One term rendered three ways in one paper | A **glossary is fixed** before translation starts |
+| Claims change strength | *may* → "will", *suggests* → "proves" | Explicit rules forbid strengthening or weakening a claim |
+| Nothing to check against | A Vietnamese sentence cannot be traced to its source | **Paragraph-aligned columns**: source · translation · explanation |
 
-## How it works: two separate stages
-
-```
-╔═ STAGE 1 · PREPROCESSING ══════════ no model calls, no cost ══════╗
-║  PDF / arXiv / pasted text                                        ║
-║    ├─ classify text: body text  vs  text inside figures           ║
-║    ├─ segment into blocks: paragraphs, headings, captions,        ║
-║    │  equations, references                                       ║
-║    ├─ crop figures and tables to images                           ║
-║    └─ drop proceedings headers/footers, footnotes, figure labels  ║
-║                          ↓                                        ║
-║  Review screen: check the crops, drop junk blocks,                ║
-║  and see the estimated cost before committing                     ║
-╚═══════════════════════════════════════════════════════════════════╝
-                           ↓  you confirm
-╔═ STAGE 2 · TRANSLATION ═══════════════════════════════════════════╗
-║  Pass 1   read the whole paper → summary + argument chain         ║
-║           + FIXED GLOSSARY + diagrams                             ║
-║  Pass 2   translate batch by batch, carrying the full text,       ║
-║           summary, and glossary                                   ║
-║  Pass 2b  (optional) review against the source                    ║
-║  Pass 3   explain a paragraph on demand, with a diagram           ║
-║  Pass 4   draft a talk outline, then render it into slides        ║
-╚═══════════════════════════════════════════════════════════════════╝
-```
-
-The two stages are separate because they fail in different ways and are fixed in
-different ways. If segmentation is wrong, no amount of translation quality can
-save the result — and segmentation is **free**, so it is worth reviewing before
-spending anything on stage 2.
-
-### Figure and table extraction: two tiers
-
-**Tier 1 — layout model (recommended).** With `docling` installed, the tool uses
-a layout-detection model to obtain a bounding box for each table and figure. This
-is the only approach that handles pages containing several tables and figures
-packed together; caption-relative heuristics cannot separate them.
-
-```bash
-.venv/bin/pip install docling      # ~5GB, uses the GPU if one is available
-```
-
-Measured on an ACL 2023 paper (9 figures/tables, one page holding three objects):
-
-| | Correctly extracted | Overlapping box pairs |
+| | Reader | Survey corpus |
 |---|---|---|
-| Heuristic | 8/9 | 1 |
-| Layout model | **9/9** | **0** |
+| Scale | one paper, read closely | 20–50 papers, queried |
+| Produces | bilingual columns, explanations, slides | cited answers, a synthesis, per-paper lectures |
+| Translates? | yes — that is the point | no — it indexes instead |
 
-The first run after installation takes a few minutes (downloading weights and
-compiling). The server warms the model at startup, so subsequent imports take
-about 5 seconds. Disable it with the *Layout model* checkbox on the import
-screen, or `LAYOUT_BACKEND=off` in `.env`.
+---
 
-**Tier 2 — heuristic, used when docling is absent: after PDFFigures 2.0**
+## The reader
 
-The intuitive approach — "crop from the caption up to the nearest paragraph" —
-fails constantly, because text *inside* a figure is also a valid text block as
-far as PyMuPDF is concerned: diagram labels, table cells, even complete sentences
-sitting inside an illustration.
+### Two stages, deliberately separate
 
-[PDFFigures 2.0](https://ai2-website.s3.amazonaws.com/publications/pdf2.0.pdf)
-(Allen AI, in production for Semantic Scholar, 94% precision / 90% recall)
-inverts the order: **classify the text first, then infer the figure region**.
-Most text in a paper is body text set consistently, so anything that deviates
-from that norm is likely to be inside a figure:
+```
+ STAGE 1 · PREPARE                                     free, no model calls
+ ─────────────────────────────────────────────────────────────────────────
+ PDF · arXiv link · Markdown · pasted text
+   → blocks: paragraphs, headings, lists, captions, equations, tables
+   → figures, tables and display equations cropped to images
+   → headers, footers, reference list and stray fragments set aside
+ Review screen: fix crops, merge or split blocks, see the price
+                                    │ you confirm
+                                    ▼
+ STAGE 2 · TRANSLATE                                   paid, priced per step
+ ─────────────────────────────────────────────────────────────────────────
+ Pass 1   read the whole paper → summary, argument chain, fixed glossary
+ Pass 2   translate in batches (three in parallel)
+ Pass 2b  optional review against the source
+ Pass 3   explain any paragraph on demand
+ Pass 4   draft a talk outline, then build slides from it
+ Pass 5   highlight the sentences worth remembering, each with a reason
+```
 
-| Signal | Conclusion |
-|---|---|
-| Overlaps a graphics cluster | text inside a figure |
-| Smaller than the paper's body font | text inside a figure |
-| Many unusually wide inter-word gaps | table body |
-| Multi-line and exactly one column wide | body text |
-| Larger than body font, flush or centered | paper title or section heading |
-| Aligned to the column edge | body text |
-
-Only then: expand from the caption to the nearest **body-text** block, and shrink
-back around the largest graphics cluster inside that region. The shrink step is
-what stops a crop from swallowing the paper's title and author list — those are
-body text, but separated from the figure by whitespace.
-
-**On cost.** The system prompt (translation rules + full paper text + glossary)
-is byte-identical across every request for a given paper and always precedes the
-cache breakpoint. Measured in practice: **99% of the system prompt is served from
-cache**, shared across all four tasks (translate, review, explain, ask). For
-`anthropic/*` models the breakpoint is marked explicitly; OpenAI, Gemini, and
-DeepSeek cache automatically. A `session_id` keeps every request on the same
-provider endpoint — without it the cache almost never hits.
-
-## Features
-
-### Preprocessing and review
-
-- **Review screen before any spending** — verify the figure crops, drop junk
-  blocks, and see the estimated cost using live model prices from OpenRouter.
-- **Adjustable crop boxes** — press ✂ on a bad crop and the PDF page appears with
-  the current box; drag any of the eight handles and save. Re-cropping happens at
-  a higher DPI, so the result is sharper than the automatic one. Captions the
-  tool missed entirely can be cropped by hand.
-- **Block editing** — delete junk blocks, merge a paragraph split across a column
-  break, split two paragraphs that were glued together.
-- **Realignment with a cheap model** — PDFs store neither spaces nor structure,
-  so extracted text often runs words together (`=∅or`), breaks at hyphens, or
-  scrambles equation fragments. A cheap model cleans this up (~$0.001 per paper).
-  It may **only** change whitespace and ordering: alphanumeric character
-  multisets must match before and after, and any mismatch is rejected in favour
-  of the original.
-- **List structure preserved** — each bullet becomes its own block, translated
-  separately and displayed as a list, rather than being flattened into one long
-  paragraph.
-- **Sub- and superscripts preserved** — `D = {dᵢ}ᴺᵢ₌₁` is stored as
-  `D = {d_{i}}^{N}_{i=1}` rather than collapsing to `D = {di}N i=1`, and `ˆa` is
-  recombined into `â`. This structure is what the model needs to translate and
-  explain the formula correctly.
+Segmentation errors cannot be fixed by better translation, and segmentation is
+free — so you review it before spending anything.
 
 ### Reading
 
-- **Paragraph-aligned bilingual columns** — the columns share grid rows, so they
-  stay aligned while scrolling without any scroll synchronisation.
-- **Original figures and tables**, cropped straight from the PDF and shown above
-  their captions.
-- **Mermaid diagrams** for the paper's argument chain, the proposed mechanism,
-  and individual paragraphs on request.
-- **Glossary** fixed before translation, searchable, with definitions.
-- **Argument explanations** per paragraph: main point · role in the paper · how
-  it connects to what came before · detailed explanation · a concrete image ·
-  what the authors are *not* claiming · a self-check question.
-- **A plain-language column for readers without background** — restates the
-  passage in ordinary words, defines new concepts in place, and explains both the
-  mechanism and its role in the argument. Metaphors are forbidden; clarification
-  must come from concrete examples taken from the paper itself.
-- **Question answering** about the paper, with the full text already in context.
-- **Highlights and notes** — five colours, editable notes that behave like
-  comments, and an option to have the model explain exactly the highlighted span.
-- **Side-by-side original PDF** — opens in a right-hand pane, follows the
-  paragraph you are reading, and jumps to a paragraph's page when you click it.
-- **Search across all three columns** (Ctrl+F), resume position, adjustable font
-  size and column width, light and dark themes.
+- **Three aligned columns** — source, Vietnamese, and a plain-language
+  explanation. Each column can be switched off, and a column that is off is
+  **never generated**, so it costs nothing.
+- **Figures, tables and equations** cropped from the PDF; click *Figure 3* in the
+  text to preview it, zoom and pan.
+- **Glossary, summary and argument chain** in the side panel, with Mermaid
+  diagrams.
+- **Highlights and notes** in five colours; ask the model about exactly the span
+  you highlighted.
+- **Ask about this paper** — a chat with the full text already in context.
+- **Original PDF side by side**, following the paragraph you are reading.
+- **Edit or re-translate** a single paragraph; your edits are remembered across
+  papers.
+- Search across all columns, resume where you stopped, light and dark themes.
 
 ### Cost control
 
-- **Three independently toggleable columns** — Source · Vietnamese · Explanation.
-  A disabled column is **never generated**, so it costs nothing. Turning off the
-  Vietnamese column produces explanations only.
-- **Section-level translation** — the ☑ button lists the paper's sections with
-  the number of blocks already translated and the cost of each; tick a section to
-  translate only that one. Long papers usually need Methods and Results only;
-  leaving the appendix alone means not paying for what you will not read.
-- **Per-request pricing** — every translation batch and every explanation shows
-  its own cost, the session total, and the running total for the paper.
-- **Stop mid-translation** — pressing Stop finishes the batch in flight (already
-  paid for) and then halts. Reopening the paper resumes; completed work is never
-  redone.
+- **Translate by section** — tick Methods and Results, skip the appendix.
+- **Price on every action** — each batch, explanation and slide build shows its
+  own cost and the running total for the paper.
+- **Stop at any time** — finished work is kept; resuming never redoes it.
+- **Translation memory** — a paragraph translated once is reused for free,
+  in any paper.
 
 ### Slides
 
-- **Two-step generation.** *Draft content* produces an **outline**: what the talk
-  argues, how it divides into sections, what each slide proves, and which
-  evidence supports it. You review and edit at the level of ideas — rewrite an
-  assertion, add or remove points, choose a different figure, reorder — and only
-  then press *Build slides*. Drafting is far cheaper than rendering, so editing
-  at that stage is effectively free. Slides you have edited by hand are never
-  overwritten by a rebuild.
-- **Assertion–evidence design**, following Garner & Alley: each headline is a
-  complete sentence stating what the slide proves, and the body is the evidence.
-- **Direct editing on the slide**, plus per-slide free layout with drag, resize,
-  snapping, and alignment guides.
-- **Presentation mode** and export to PDF, HTML, or PPTX. In the PPTX, Mermaid
-  diagrams are redrawn as native PowerPoint shapes, so they remain editable.
+Two steps: first an **outline** you edit at the level of ideas (what each slide
+claims and which evidence proves it), then the **slides** themselves. Slides
+follow the assertion–evidence design (Garner & Alley): every headline is a full
+sentence, every body is evidence. Edit directly on the slide, present in the
+browser, or export to **PDF, HTML or PPTX** — in the PPTX, diagrams are native
+shapes you can still edit.
+
+### Library
+
+Folders, multi-select to move or delete, search and sort. Importing a paper you
+already have asks first, and offers to open it, re-parse it, overwrite it, or
+keep the new file as **a new version** (v2, v3 …) of the same paper.
 
 ### Export
 
-**PDF, HTML, or Markdown**, bilingual or Vietnamese only. Images are embedded
-directly, so the file keeps its figures wherever it is opened; the HTML export is
-a single self-contained file that reads offline with working diagrams. PDF export
-goes through the browser's print dialog — the only route that preserves both the
-Mermaid diagrams and the two-column grid.
+Bilingual or Vietnamese-only **PDF, HTML or Markdown**. Images are embedded, so
+the HTML file is self-contained and works offline with diagrams intact.
+
+---
 
 ## The survey corpus
 
-The reader puts one paper's full text into the system prompt. That design is
-what makes close reading work, and it is exactly what cannot answer *"how do
-these approaches differ?"* — that needs thirty papers, and thirty papers do not
-fit in a prompt.
-
-So the corpus is a **second mechanism**, sharing infrastructure but not a single
-line of the reader's pipeline. Its governing constraint: translating fifty
-papers is not financially viable, so it **does not translate**. It indexes, and
-it compresses each paper into a structured ~600-token *card*.
+The reader works because one paper fits in the prompt. Thirty papers do not, and
+translating fifty is not affordable — so the corpus **does not translate**. It
+indexes each paper and compresses it into a structured ~600-token *card*.
 
 ```
-PDF → passages → context sentence → vectors → RAPTOR tree → card → entity graph
-                                            ↓
-  question → plan → search → read → check gaps → search again → answer → verify
+ PDF → passages → context sentence → vectors → summary tree → card → entity graph
+                                        │
+ question → plan → search → read → check gaps → search again → answer → verify
 ```
 
-**Retrieval is hybrid and every stage is there for a measured reason.**
+**Retrieval is hybrid**, and each part is there for a measured reason:
 
-- **BM25 (SQLite FTS5) + dense (BGE-M3), fused with Reciprocal Rank Fusion.**
-  RRF reads only ranks, so it mixes BM25's unbounded negative scores with
-  cosine's narrow band without any normalisation — and lets the dense retriever
-  be switched off entirely without branching the code.
-- **Embeddings run on your machine.** OpenRouter serves no embedding endpoint,
-  so the alternative was a second paid API key. BGE-M3 is multilingual by
-  construction, which is the whole problem here: the corpus is English, the
-  questions are Vietnamese. Measured on this repo's own papers, Vietnamese
-  queries retrieve the right English passages in 9–71 ms; BM25 alone returns
-  noise for the same queries.
-- **Contextual retrieval.** Each passage gets a generated English sentence
-  placed beside it before indexing. A passage reading *"we reach 62.3 EM"*
-  contains no method name, no dataset, no word a person would search for; the
-  context sentence supplies them.
-- **query2doc.** The planner writes a short fake English paragraph in the voice
-  of a paper answering the question, then searches with it. This is also how a
-  Vietnamese question reaches English text without a translation step.
-- **A RAPTOR tree per paper.** Passages are clustered and summarised
-  recursively. Queries hit *every level at once* — the original paper found that
-  this "collapsed tree" beats walking down from the root, because a question
-  often needs a number from a leaf and framing from a higher level together.
-- **An entity graph across papers.** Extracted once per paper, with no community
-  summaries (the part that makes full GraphRAG prohibitively expensive). It is
-  used to *expand* results after retrieval, not as a parallel search path:
-  plain vector search wins on single-fact lookup, graphs win on multi-hop, and
-  expansion gets both.
-- **Two rerank stages.** A cross-encoder cuts 60 candidates to 20 for free on
-  the GPU; a model call then cuts 20 to 10 while seeing the sub-questions, which
-  a cross-encoder cannot. A cap of 3 passages per paper enforces coverage.
+| Component | Why |
+|---|---|
+| BM25 (SQLite FTS5) + BGE-M3 vectors, fused with RRF | Rank fusion needs no score normalisation, and the vector side can be switched off without changing code |
+| Embeddings on your own machine | No second API key; BGE-M3 puts Vietnamese questions and English papers in one vector space |
+| A generated context sentence per passage | *"we reach 62.3 EM"* alone contains nothing anyone would search for |
+| query2doc | A short fake English answer is searched instead of the raw Vietnamese question |
+| RAPTOR summary tree, searched as one flat index | A question often needs a number from a leaf and framing from a summary at once |
+| Entity graph, used to expand results | Vectors win on single facts, graphs on multi-hop questions; expansion gets both |
+| Cross-encoder, then a model rerank | 60 → 20 for free on the GPU, then 20 → 10 with the sub-questions in view |
 
-**The deep-dive loop is bounded and honest.** It plans a checklist of
-sub-questions, then searches, reads, marks which items now have evidence, and
-searches again for the ones that do not — at most five rounds, carrying the two
-best passages forward each time. Every round streams to the screen, the budget
-is checked *before* each model call, and if the loop stops early the answer says
-so. Items that never found evidence are stated as not found rather than papered
-over; that failure — fluent prose covering a gap — is the one that makes a
-research tool actively harmful.
+**The search loop is bounded and honest.** It plans a checklist of
+sub-questions, then searches, reads and re-searches for the gaps — at most five
+rounds, with the budget checked before every call. Anything never found is
+**stated as not found** in the answer instead of being papered over.
 
-**Answers are verified mechanically before you see them.** Every number must
-appear verbatim in a cited passage; every citation must be a passage that was
-actually retrieved this run; citations are clickable and open the exact text.
-An optional entailment pass catches the subtler failure where the citation is
-real but does not support the claim. Warnings are shown, not enforced — you have
-the screen to judge for yourself.
+**Answers are checked before you see them.** Every number must appear verbatim
+in a cited passage, and every citation must be a passage actually retrieved for
+this question. Citations open the exact text. Problems are shown as warnings,
+not hidden.
 
-**Cost.** Parsing, chunking, indexing and embedding are free. Enrichment costs
-about $0.034 per paper, once. A three-round question costs about $0.03, and
-asking the same question again while the corpus is unchanged is free.
+Three views per corpus: **Q&A**, a **synthesis** of the whole corpus (approaches,
+tensions, gaps, a reading order), and a **lecture** that teaches one paper —
+including how its own authors describe each work they cite, pulled free from
+Semantic Scholar.
 
-## Installation
+---
+
+## What it costs
+
+Measured on real papers with the default model (DeepSeek V4 Flash).
+
+| Action | Typical cost |
+|---|---|
+| Import, segmentation, figure crops, review | free |
+| Translate a full paper (translation + explanation) | ~$0.04–0.10 (DeepSeek V4 Pro: ~$1–3) |
+| Explain one paragraph | ~$0.003 |
+| Add a paper to a corpus | ~$0.034, once |
+| A three-round corpus question | ~$0.03 (asking it again is free) |
+
+The prompt prefix (rules + summary + glossary + full paper) is byte-identical for
+every request on the same paper, so up to 99% of input tokens are read from the
+provider's cache. The first batch runs alone to warm that cache before the
+others start in parallel.
+
+---
+
+## Installation and configuration
 
 Requires Python 3.10+.
 
@@ -299,123 +198,114 @@ Requires Python 3.10+.
 ./run.sh
 ```
 
-The script creates `.venv`, installs dependencies, and generates `.env` from the
-template. Open `.env`, add a key from <https://openrouter.ai/keys>, and run it
-again.
+This creates `.venv`, installs dependencies and generates `.env`. Add a key from
+<https://openrouter.ai/keys> and run it again. For Docker, see
+[DOCKER.md](DOCKER.md).
 
-Configuration in `.env`:
+### Layout models (optional, recommended)
 
-| Variable | Meaning |
+Without a layout model, Loupe uses PyMuPDF heuristics. With one, figures,
+tables and display equations are detected far more reliably. Measured on a
+36-page paper with 7 numbered equations:
+
+| Backend | Equations cropped as images | Time |
+|---|---|---|
+| Heuristic only | 0 / 7 | 2.8 s |
+| Docling | 7 / 7 | ~196 s |
+| **MinerU** (layout stage only) | **7 / 7** | **6.2 s** |
+
+```bash
+.venv/bin/pip install "mineru[pipeline]"    # or: pip install docling
+```
+
+Loupe picks MinerU first when both are present. Force a choice with
+`LAYOUT_BACKEND=mineru | docling | off`. A GPU helps but is not required.
+
+### `.env`
+
+| Variable | Purpose |
 |---|---|
-| `OPENROUTER_API_KEY` | Required |
-| `OR_MODEL` | Translation model. Defaults to `~deepseek/deepseek-v4-flash-latest` |
-| `OR_MODEL_FAST` | Model for light tasks (reserved, not yet used) |
-| `OPENROUTER_BASE_URL` | Change when routing through an internal proxy |
-| `PAPER_DATA_DIR` | Where papers are stored. Defaults to `./data` |
+| `OPENROUTER_API_KEY` | **Required** |
+| `OR_MODEL` | Translation model (default `~deepseek/deepseek-v4-flash-latest`) |
+| `OR_MODEL_FAST` | Cheap model for text clean-up and light tasks (default `qwen/qwen3.7-flash`) |
+| `SURVEY_MODEL`, `SURVEY_FAST_MODEL` | Corpus models; empty means use the two above |
+| `SURVEY_BUDGET` | Spending cap per corpus question, in USD (default `0.50`) |
+| `EMBED_BACKEND`, `RERANK_BACKEND` | `auto` or `off`; `off` falls back to BM25 only |
+| `LAYOUT_BACKEND` | `mineru`, `docling` or `off` |
+| `PAPER_DATA_DIR` | Where papers are stored (default `./data`) |
 
-The model can also be changed from the interface: at import, on the review screen
-(the cost estimate recalculates), and from the toolbar while reading. Switching
-mid-way does not re-translate finished work; only pending batches use the new
-model.
+The model can also be changed in the interface — at import, on the review screen
+(the estimate updates) and while reading. Switching mid-paper never re-translates
+finished work.
 
-| Model | Input/output per 1M tokens | Notes |
+| Model | Input / output per 1M tokens | Notes |
 |---|---|---|
-| `~deepseek/deepseek-v4-flash-latest` | $0.09 / $0.18 | Default. 1M context. Abstract + introduction costs about $0.005. Slower on the whole-paper pass (~60–75s). |
-| `openai/gpt-5.6-luna` | $0.10 / $0.60 | Nearly as cheap as DeepSeek, 1M context |
-| `deepseek/deepseek-v4-pro` | $0.43 / $0.87 | Better, still inexpensive |
-| `openai/gpt-5.6-terra` | $1 / $6 | 1M context. The `-pro` variant costs the same with deeper reasoning |
-| `anthropic/claude-sonnet-4.5` | $3 / $15 | Fluent Vietnamese, roughly 33× the cost of DeepSeek |
-| `openai/gpt-5.6-sol` | $5 / $30 | Top of the 5.6 line |
+| `~deepseek/deepseek-v4-flash-latest` | $0.09 / $0.18 | Default, 1M context |
+| `openai/gpt-5.6-luna` | $0.10 / $0.60 | Similar price, 1M context |
+| `deepseek/deepseek-v4-pro` | $0.43 / $0.87 | Better, still cheap |
+| `openai/gpt-5.6-terra` | $1 / $6 | 1M context |
+| `anthropic/claude-sonnet-4.5` | $3 / $15 | Very fluent Vietnamese |
 
-The leading `~` is part of the model name — OpenRouter uses it for
-self-updating aliases.
+The leading `~` is part of the name: OpenRouter's self-updating alias.
 
-## Known limitations
+---
 
-- **Scanned PDFs are not readable** — run OCR first (`ocrmypdf`).
-- Unusual layouts (three columns, magazine spreads, posters) segment less
-  reliably than standard one- and two-column papers.
-- The heuristics are tuned for computer-science conference papers (ACL, NeurIPS,
-  and similar), matching the scope PDFFigures 2.0 targeted. Other fields may
-  behave differently.
-- Equations are kept as text and **not rendered as LaTeX**. Sub- and superscripts
-  survive (`x^{2}`, `d_{i}`), but for multi-level fractions, sums, and integrals
-  the original PDF pane remains the better view.
-- **Reasoning models need to be held back.** DeepSeek V4 and the GPT-5.x line can
-  spend their entire token budget on internal reasoning and return an empty
-  response or truncated JSON. The tool disables reasoning for translation passes
-  and keeps it low for the whole-paper pass.
-- **Chinese-origin models may answer in Chinese** even when prompted in
-  Vietnamese. The tool states the language rule explicitly, detects leaked Han
-  characters, and retries once — but only relative to the source, so genuine
-  Chinese quotations are preserved.
+## Limitations
+
+- **Scanned PDFs need OCR first** (for example `ocrmypdf`).
+- Tuned for one- and two-column computer-science papers. Posters, magazines and
+  three-column layouts segment less reliably.
+- Equations stay as text with sub- and superscripts (`x^{2}`, `d_{i}`); display
+  equations are shown as images only when a layout model is installed. Inline
+  formulas with fractions or sums read best in the original-PDF pane.
 - Reference lists are deliberately **not** translated.
+- Reasoning models (DeepSeek V4, GPT-5.x) are run with reasoning off or low;
+  otherwise they can spend the whole budget thinking and return nothing.
 
-This is precisely why stage 1 exists: when a heuristic gets something wrong, you
-see it and fix it immediately, instead of discovering it after paying to
-translate the entire paper.
+When segmentation gets something wrong, the review screen is where you see it —
+before paying to translate it.
 
-### Verified on
+---
 
-| Paper | Figures & tables extracted | Junk blocks remaining |
-|---|---|---|
-| Attention Is All You Need (NeurIPS 2017, 2 columns) | 6/6 | 0 |
-| Precise Zero-Shot Dense Retrieval (ACL 2023, 2 columns) | 8/9, one overlapping box pair | 0 |
-
-Two tables set close together can still share a single box. When that happens,
-stage 1 shows two identical images, which you separate with ✂. The tool
-deliberately does **not** discard one of them automatically: doing so would lose
-a table without telling you.
-
-## Repository layout
+## Project layout
 
 ```
 server/
-  parser.py    PDF/text → structured blocks; crops figures and tables to images
-  prompts.py   every prompt for the reader — where quality is decided
-  llm.py       OpenRouter wrapper: streaming, cache breakpoints, sticky sessions
-  pipeline.py  orchestrates the reader's passes and assembles shared context
-  layout.py    layout-detection model (Docling), optional
-  db.py        SQLite: documents, parse cache, translation memory
-  store.py     facade over db.py; images and source PDFs stay on disk
-  main.py      HTTP API, SSE, and PDF/HTML/Markdown/PPTX export
-  survey/      the corpus tool — separate mechanism, shares only infrastructure
-    db.py      its own tables + FTS5 index + vectors + entity graph
-    ingest.py  PDF → passages → context → vectors → tree → card → graph
-    tree.py    per-paper RAPTOR tree (recursive cluster and summarise)
-    graph.py   entity and relation extraction, cross-paper edges
-    embed.py   BGE-M3 embeddings and cross-encoder reranking, on your own GPU
-    search.py  hybrid retrieval: BM25 + dense → RRF → two rerank stages
-    agent.py   the budgeted deep-dive loop
-    verify.py  citation and number grounding — the guard rail for answers
-    prompts.py every prompt for the corpus tool
-  survey_api.py  its routes, mounted into the same app
-web/           front end, no framework (app.js = reader, survey.js = corpus)
+  main.py        HTTP API, server-sent events, exports (PDF/HTML/Markdown/PPTX)
+  parser.py      PDF/text → blocks; reading order; figure and table crops
+  layout.py      optional layout models (MinerU, Docling)
+  pipeline.py    the reader's passes and the shared, cache-friendly context
+  prompts.py     every reader prompt — where translation quality is decided
+  llm.py         OpenRouter client: streaming, cache breakpoints, sticky sessions
+  depth.py       checks that catch empty, generic or circular explanations
+  pptx_out.py    PowerPoint export with native, editable diagrams
+  db.py, store.py  SQLite storage; images and source PDFs stay on disk
+  survey/        the corpus tool — separate pipeline, shared infrastructure
+    ingest.py  search.py  agent.py  verify.py  synth.py  lecture.py  …
+  survey_api.py  corpus routes, mounted into the same app
+web/             front end, no framework (app.js = reader, survey.js = corpus)
+tests/           268 tests; no network, no model calls, never touch ./data
 ```
 
-To change translation quality, edit `server/prompts.py`; for the corpus tool,
-`server/survey/prompts.py`. Everything else is plumbing.
+To change translation quality, edit `server/prompts.py` (reader) or
+`server/survey/prompts.py` (corpus). The rest is plumbing.
+
+---
 
 ## Development
 
 ```bash
-.venv/bin/python -m pytest                          # 114 tests, ~3 minutes
-.venv/bin/python -m pytest tests/test_unit.py -q    # pure logic, ~3 seconds
-.venv/bin/python -m pytest tests/test_survey.py -q  # corpus tool, ~4 seconds
+.venv/bin/python -m pytest                           # full suite, ~3 minutes
+.venv/bin/python -m pytest tests/test_unit.py -q     # pure logic, ~2 seconds
+.venv/bin/python -m pytest tests/test_survey.py -q   # corpus, ~2 seconds
 node --check web/app.js web/survey.js
 ```
 
-`tests/test_api.py` and `tests/test_survey.py` exercise the real API against a
-temporary `PAPER_DATA_DIR`, so they never touch your own `data/`, and they make
-no model calls, so they cost nothing. The corpus tests run with
-`EMBED_BACKEND=off`: the BM25-only path has to work on its own, because that is
-the path a machine without a GPU takes.
+Tests run against a temporary `PAPER_DATA_DIR`, replace every model call with a
+fake, and therefore cost nothing. The corpus tests run with `EMBED_BACKEND=off`
+because the BM25-only path is what a machine without a GPU uses.
 
-Note that the source comments, prompts, and user-facing strings are written in
-Vietnamese — that is the audience the tool is built for. This README and
-[CHANGELOG](CHANGELOG.md) are the English-facing documentation.
-
-Note on conventions: docstrings, comments, button labels, and user-facing error
-messages are written **in Vietnamese**, since that is the audience the tool
-serves. `CLAUDE.md` documents the architecture and the traps worth knowing about,
-also in Vietnamese.
+Source comments, prompts and interface text are in **Vietnamese** — that is who
+the tool is for. [`CLAUDE.md`](CLAUDE.md) documents the architecture and the
+traps already found, also in Vietnamese; read it before changing the parser,
+the prompt prefix or the translation protocol.

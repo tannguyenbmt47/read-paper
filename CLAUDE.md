@@ -11,7 +11,7 @@ PORT=9000 ./run.sh       # đổi cổng
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 266 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 268 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
 node --check web/app.js web/survey.js   # chưa có test cho frontend
@@ -161,6 +161,20 @@ cuối ô — **và vào `tm`**, vì chốt chặn `dirty` cũng không biết n
 dấu `/`; mẫu đầu tiên chỉ nhận `</b370_g>>>` và bỏ lọt cả 21. Cũng dựng từ tập mã
 của mẻ và cũng đòi đứng một mình trên dòng. Dữ liệu cũ đã được dọn (kèm bản sao
 lưu `data/papers.db.bak-*`).
+
+**Nhãn của khối NGOÀI mẻ = model đang chép lại prefix.** Prefix chứa toàn văn bài
+đúng dạng `<<<b26>>> [loại: para | mục: …]`, và model đôi khi viết xong ô của nó
+rồi chép tiếp nguyên văn. `_label_re` chỉ dò mã TRONG mẻ nên mọi nhãn lạ dồn vào
+ô trước: quét `data/` ra 3 ô giải thích, ô lớn nhất **66.205 ký tự** chứa 111
+khối tiếng Anh, cộng 27 mục `tm` nhiễm. `_parse_labeled` giờ cắt ô ở dòng nhãn
+đầu tiên không thuộc mẻ (`_NHAN_BAT_KY`). Dữ liệu cũ đã dọn, kèm bản sao lưu.
+
+**Mã khối trong cột giải thích.** Model thấy bài dưới dạng `<<<b8>>>` nên viết
+*"củng cố luận điểm ở đoạn b8"* — người đọc không biết b8 là gì. Chữa hai đầu:
+`_PLAIN_BODY` cấm (nằm ở `*_TASK`, không đụng prefix), còn `sciGoiKhoi()` bên
+`app.js` đổi mã có thật thành *đoạn "mấy chữ đầu…"* bấm được. Thay trên chuỗi
+THÔ bằng ký tự giữ chỗ rồi mới `sci()` — thay trên HTML đã dựng là có nguy cơ
+đụng vào thuộc tính thẻ.
 
 Mẫu dựng từ mã, nên mã dài phải xếp trước (`sorted(key=len, reverse=True)`) —
 không thì `b1` khớp trước và `b12` mất phần đuôi.
@@ -451,6 +465,15 @@ danh sách tài liệu. Luật chép từ `survey/ingest.py` vì đã hiệu ch�
 liệu thật ở đó: dấu hiệu bắt buộc là **nơi công bố**, không phải mật độ năm hay
 `et al.` — đoạn văn *"(Lewis et al., 2020; Lin et al., 2024; Ram et al., 2023)"*
 có mật độ năm CAO HƠN cả thư mục thật. Sau khi lọc: 32.701 → 26.382 ký tự.
+
+**`an_manh_so()` — ẨN mảnh số vụn, và phải chạy TRƯỚC khi nối đoạn.** Bài World
+Models: chú thích *"…in the order of 10³ to 10⁶ parameters"* bị tách số mũ ra
+thành năm khối `10^{3}`… xếp dọc giữa bài. Chúng còn chen giữa một câu bị cắt
+đôi, đẩy `_stitch_runon` vượt trần nhảy, nên đuôi câu *"can learn a highly
+compact policy…"* thành khối riêng — bị dịch và giải thích riêng, trả tiền cho
+nửa câu. Giờ mảnh chỉ gồm chữ số (kèm `^{}`/ngoặc) bị ẩn, và khối ẩn không tính
+vào trần nhảy. Cố ý KHÔNG ẩn số có thập phân hay `%` — `57.3%` một mình có thể
+là kết quả chính của bài.
 
 **`mark_noise()` — tắt cờ dịch, KHÔNG xoá.** Bắt: mảnh dưới 12 ký tự, khối chỉ
 gồm số và dấu (`57.3%`, `(4) ...`), dòng email tác giả, ORCID, và chú thích
@@ -1294,6 +1317,13 @@ thanh tiến độ, nút mở to) lên đầu, rồi hai cột — nạp bài b�
 cuộn, ô thả gọn lại), thư viện bên phải. Thư viện rỗng thì giữ dạng một cột với
 lời giới thiệu và ô thả lớn. Sau khi đổi: **5 bài** thấy trọn khi chưa cuộn.
 Dưới 1100px xếp chồng lại.
+
+**Thư viện là MỘT trang mục lục, không phải chồng thẻ.** Mười thẻ viền mực +
+bóng cứng xếp chồng, cộng mười thanh tiến độ gần y hệt nhau, làm cả cột nặng
+trịch (người dùng: "chưa gọn và không có nghệ thuật"). Giờ khung mực chỉ còn một
+lần cho cả tờ; bên trong là dòng kẻ chì, lề đỏ, và **con dấu tiến độ** trong lề
+(`dauTienDo`: vòng tô dần, xong thì dấu ✓ xanh). Mỗi dòng 76 → 55px. Ô tick của
+chế độ chọn đứng đúng chỗ con dấu để dòng không nhảy khi bật chọn.
 
 Bốn chỗ người mới vấp, đã sửa:
 

@@ -298,40 +298,82 @@ body { padding-left: var(--rail-w); }
 /* Không viết hoa: bản cũ `uppercase` + giãn chữ — dấu chồng tầng của "THƯ VIỆN"
    sát dòng trên. Chất "tiêu đề mục" lấy từ font và độ đậm. */
 .recent h2 { font-family: var(--display); font-weight: 800; font-size: 1.45rem; line-height: 1.3; color: var(--ink); margin: 0; }
-/* `minmax(0, 1fr)`, không để rãnh ngầm `auto`: rãnh `auto` co giãn theo nội
-   dung, mà tiêu đề bài `nowrap` dài hơn cột nên kéo cả thẻ tràn ra ngoài. */
-.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; grid-template-columns: minmax(0, 1fr); }
-/* Mỗi bài là một TẤM THẺ thư viện: khung mực, bóng cứng, nhấc lên khi rê chuột. */
-.recent li {
-  display: flex; align-items: center; gap: .7rem; padding: .65rem .8rem;
-  background: var(--surface); border: 2px solid var(--muc); border-radius: 12px;
-  box-shadow: 3px 3px 0 var(--bong); transition: transform .08s, box-shadow .08s;
+/* Thư viện là MỘT TRANG MỤC LỤC trong sổ, không phải chồng thẻ.
+
+   Bản trước mỗi bài một tấm thẻ viền mực 2px + bóng cứng: mười khung đậm xếp
+   chồng, cộng mười thanh tiến độ gần như y hệt nhau — cả cột nặng trịch mà mắt
+   không có chỗ nghỉ, và mỗi bài tốn ~76px. Người dùng nói thẳng: "chưa gọn và
+   không có nghệ thuật".
+
+   Giờ khung mực + bóng cứng chỉ còn MỘT lần, cho cả tờ. Bên trong là dòng kẻ
+   bút chì như trang vở, một nét lề đỏ, và con dấu tiến độ nằm trong lề — đúng
+   chỗ người ta đánh dấu ✓ bên lề danh sách việc. Rê chuột thì vệt dạ quang quét
+   qua dòng. Mỗi bài còn ~54px.
+
+   `minmax(0, 1fr)`, không để rãnh ngầm `auto`: rãnh `auto` co giãn theo nội
+   dung, mà tiêu đề bài `nowrap` dài hơn cột nên kéo cả tờ tràn ra ngoài. */
+.recent ul {
+  --le: 2.9rem;                     /* bề rộng lề, nơi đặt con dấu */
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 0;
+  grid-template-columns: minmax(0, 1fr);
+  background-color: var(--surface);
+  background-image: linear-gradient(90deg, transparent var(--le), var(--le-do) var(--le),
+                                    var(--le-do) calc(var(--le) + 1.5px), transparent calc(var(--le) + 1.5px));
+  border: 2px solid var(--muc); border-radius: 12px; box-shadow: 4px 4px 0 var(--bong);
+  overflow: hidden;
 }
-.recent li:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--bong); }
-/* CẢ THẺ là nút mở bài. Thẻ nhấc lên khi rê chuột tức là hứa "bấm được" — bản
-   trước chỉ vùng chữ tiêu đề (451×50 trên thẻ 680×75) mới mở bài, bấm phần còn
-   lại không có gì xảy ra. */
+.recent li {
+  display: flex; align-items: center; gap: .75rem; min-height: 3.35rem;
+  padding: .45rem .7rem .45rem 0;
+  border-bottom: 1.5px dashed var(--line);
+  transition: background-color .1s;
+}
+.recent li:last-child { border-bottom: 0; }
+/* Vệt dạ quang quét qua cả dòng — nhưng dừng ở lề đỏ, như bút dạ thật. */
+.recent li:hover {
+  background-image: linear-gradient(90deg, transparent calc(var(--le) + 2px),
+    color-mix(in srgb, var(--hl) 28%, transparent) calc(var(--le) + 2px));
+}
+/* CẢ DÒNG là nút mở bài — bản trước chỉ vùng chữ tiêu đề mới mở được. */
 .recent li { cursor: pointer; }
-.recent li:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--hl), 3px 3px 0 var(--bong); }
-.recent li .tien-do { margin-top: .35rem; max-width: 18rem; height: 6px; }
-/* Sửa/xoá chỉ hiện khi rê chuột hoặc khi thẻ được chọn bằng bàn phím — ở máy
+.recent li:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--hl); }
+/* Sửa/xoá chỉ hiện khi rê chuột hoặc khi dòng được chọn bằng bàn phím — ở máy
    có chuột. Máy cảm ứng không có "rê", nên ở đó chúng luôn hiện. Xoá tách xa
    sửa hơn: bản trước cách nhau 11px. */
 @media (hover: hover) {
   .recent li .icon-btn { opacity: 0; transition: opacity .12s; }
   .recent li:hover .icon-btn, .recent li:focus-within .icon-btn { opacity: 1; }
 }
-.recent li [data-del] { margin-left: .5rem; }
+.recent li .icon-btn { padding: .2rem; }
+.recent li [data-del] { margin-left: .1rem; }
 .recent li [data-del]:hover { color: var(--red); }
 /* Bài chưa có tên đọc được: hiện nguồn thay vào, nghiêng, để người dùng thấy
    ngay là bài này cần đặt tên. */
 .recent .rt b.vo-danh, .resume-t.vo-danh { font-style: italic; font-weight: 500; color: var(--muted); }
 .recent .rt { flex: 1; cursor: pointer; min-width: 0; }
 .recent .rt b {
-  display: block; font-family: var(--read); font-weight: 600; font-size: 1.02rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: block; font-family: var(--read); font-weight: 600; font-size: .98rem; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink);
 }
-.recent .rt span { color: var(--muted); font-size: .82em; }
+/* Dòng phụ viết tay: nó là ghi chú bên cạnh tên bài, không phải dữ liệu bảng. */
+.recent .rt > span { display: block; color: var(--muted); font-family: var(--hand); font-size: .9rem; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Con dấu tiến độ (`dauTienDo`) — căn giữa trong lề. Vòng tô dần bằng
+   `conic-gradient` theo `--p`; xong thì thành dấu ✓ đóng mực xanh, hơi nghiêng
+   như con dấu đóng tay; chưa dịch chữ nào thì vòng nét đứt. */
+.dau-td {
+  flex: none; width: 1.55rem; height: 1.55rem; margin: 0 calc((var(--le) - 1.55rem) / 2);
+  margin-right: calc((var(--le) - 1.55rem) / 2 + .55rem);
+  border-radius: 50%; border: 2px solid var(--muc);
+  background: conic-gradient(var(--hl) calc(var(--p) * 1%), var(--surface) 0);
+  display: grid; place-items: center;
+}
+.dau-td.xong { background: var(--ok); border-color: var(--ok); color: #fff; transform: rotate(-8deg); }
+.dau-td.xong .ico { width: .95rem; height: .95rem; stroke-width: 3; }
+.dau-td.chua { border-style: dashed; border-color: var(--muted); background: transparent; }
+/* Ô tick của chế độ chọn đứng đúng chỗ con dấu, để dòng không nhảy khi bật chọn. */
+.recent li > .chon-o { margin: 0 calc((var(--le) - 1.15rem) / 2); margin-right: calc((var(--le) - 1.15rem) / 2 + .55rem); }
 
 /* ---------------------------------------------- màn đầu: bố cục hai cột
 
@@ -435,7 +477,7 @@ body { padding-left: var(--rail-w); }
    nên để nó giãn chỉ làm cột tiêu đề hẹp lại vô cớ. */
 .rwhen {
   flex: none; text-align: right; color: var(--muted);
-  font-size: .76em; line-height: 1.35; white-space: nowrap;
+  font-family: var(--hand); font-size: .88rem; line-height: 1.25; white-space: nowrap;
 }
 .rwhen em { display: block; font-style: normal; opacity: .75; }
 @media (max-width: 560px) { .rwhen { display: none; } }
@@ -2028,8 +2070,11 @@ mark.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muc) 30%, transpa
    hiện trên MỌI thẻ chứ không chỉ thẻ đang rê chuột. */
 .chon-o { flex: none; width: 1.15rem; height: 1.15rem; accent-color: var(--accent); cursor: pointer; margin: 0; }
 #recentList.dang-chon li { cursor: default; }
-#recentList.dang-chon li:hover { transform: none; box-shadow: 3px 3px 0 var(--bong); }
-#recentList li.da-chon { background: color-mix(in srgb, var(--hl) 38%, var(--surface)); }
+#recentList li.da-chon,
+#recentList li.da-chon:hover {
+  background-image: linear-gradient(90deg, transparent calc(var(--le) + 2px),
+    color-mix(in srgb, var(--hl) 55%, transparent) calc(var(--le) + 2px));
+}
 #recentList.dang-chon li .icon-btn { display: none; }
 /* Thẻ đang được kéo: mờ đi tại chỗ để biết cái gì đang được cầm. */
 #recentList li.dang-keo { opacity: .45; }
@@ -2104,3 +2149,12 @@ a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: trans
   padding-left: 1.2rem; background: linear-gradient(90deg, transparent, var(--gl-bg) 1rem);
 }
 .pair.caption .gl.mo-rong::after { content: "Thu lại ▴"; position: static; display: block; text-align: right; }
+
+/* Mã khối model nhắc tới trong cột giải thích, đã đổi thành mấy chữ đầu của
+   đoạn đó (`sciGoiKhoi`). Gạch chân chấm như chú dẫn chéo trong sổ — đọc liền
+   mạch trong câu, nhưng vẫn thấy là bấm được. */
+.ref-khoi {
+  color: var(--accent); cursor: pointer; text-decoration: underline dotted;
+  text-underline-offset: .18em;
+}
+.ref-khoi:hover { text-decoration-style: solid; }
