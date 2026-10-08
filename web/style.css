@@ -308,12 +308,114 @@ body { padding-left: var(--rail-w); }
   box-shadow: 3px 3px 0 var(--bong); transition: transform .08s, box-shadow .08s;
 }
 .recent li:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--bong); }
+/* CẢ THẺ là nút mở bài. Thẻ nhấc lên khi rê chuột tức là hứa "bấm được" — bản
+   trước chỉ vùng chữ tiêu đề (451×50 trên thẻ 680×75) mới mở bài, bấm phần còn
+   lại không có gì xảy ra. */
+.recent li { cursor: pointer; }
+.recent li:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--hl), 3px 3px 0 var(--bong); }
+.recent li .tien-do { margin-top: .35rem; max-width: 18rem; height: 6px; }
+/* Sửa/xoá chỉ hiện khi rê chuột hoặc khi thẻ được chọn bằng bàn phím — ở máy
+   có chuột. Máy cảm ứng không có "rê", nên ở đó chúng luôn hiện. Xoá tách xa
+   sửa hơn: bản trước cách nhau 11px. */
+@media (hover: hover) {
+  .recent li .icon-btn { opacity: 0; transition: opacity .12s; }
+  .recent li:hover .icon-btn, .recent li:focus-within .icon-btn { opacity: 1; }
+}
+.recent li [data-del] { margin-left: .5rem; }
+.recent li [data-del]:hover { color: var(--red); }
+/* Bài chưa có tên đọc được: hiện nguồn thay vào, nghiêng, để người dùng thấy
+   ngay là bài này cần đặt tên. */
+.recent .rt b.vo-danh, .resume-t.vo-danh { font-style: italic; font-weight: 500; color: var(--muted); }
 .recent .rt { flex: 1; cursor: pointer; min-width: 0; }
 .recent .rt b {
   display: block; font-family: var(--read); font-weight: 600; font-size: 1.02rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .recent .rt span { color: var(--muted); font-size: .82em; }
+
+/* ---------------------------------------------- màn đầu: bố cục hai cột
+
+   Bản trước là một cột dọc: giới thiệu → form nạp bài → tuỳ chọn → thống kê →
+   thư viện. Đúng cho người MỚI, sai cho người QUAY LẠI — mà người quay lại mới
+   là phần lớn số lần mở app. Đo ở laptop 1366×768 với 36 bài: thư viện bắt đầu
+   ở y=680, không thấy trọn bài nào khi chưa cuộn, trang dài 4.113px.
+
+   Giờ: có bài thì `#start.has-lib` bật — thẻ "Đọc tiếp" lên đầu, rồi hai cột:
+   nạp bài bên trái (dính khi cuộn, ô thả gọn lại), thư viện bên phải. Thư viện
+   rỗng thì giữ nguyên dạng một cột với ô thả lớn và lời giới thiệu — lúc ấy nạp
+   bài đầu tiên mới đúng là việc duy nhất cần làm. */
+#start.has-lib .start-wrap { max-width: 1180px; padding-top: 2.2rem; }
+#start.has-lib .lede { display: none; }
+#start.has-lib .brand { margin-bottom: 1rem; }
+#start.has-lib .ico.start-logo { width: 52px; height: 52px; }
+#start.has-lib .start-head h1 { font-size: 2.4rem; }
+.start-h {
+  font-family: var(--display); font-weight: 800; font-size: 1.3rem; line-height: 1.3;
+  margin: 0 0 .7rem; color: var(--ink);
+}
+#start:not(.has-lib) .start-h { display: none; }
+#start.has-lib .start-grid {
+  display: grid; grid-template-columns: minmax(0, 390px) minmax(0, 1fr);
+  gap: 2.2rem; align-items: start;
+}
+#start.has-lib .start-add { position: sticky; top: 1rem; }
+#start.has-lib .drop { padding: 1.3rem 1rem; }
+#start.has-lib .ico.drop-icon { width: 54px; height: 54px; }
+#start.has-lib .recent { margin-top: 0; border-top: 0; padding-top: 0; }
+@media (max-width: 1100px) {
+  #start.has-lib .start-wrap { max-width: 720px; }
+  #start.has-lib .start-grid { display: block; }
+  #start.has-lib .start-add { position: static; }
+  #start.has-lib .recent { margin-top: 2rem; }
+}
+
+/* Hàng nút nạp: tuỳ chọn gập bên trái, nút chính bên phải. Mở tuỳ chọn ra thì
+   nó chiếm trọn một dòng phía trên nút. */
+.imp-go { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem 1rem; margin-top: 1rem; }
+.imp-go .btn-primary { margin-left: auto; }
+.imp-opts { min-width: 0; }
+.imp-opts[open] { flex-basis: 100%; order: -1; }
+.imp-opts summary {
+  cursor: pointer; font-family: var(--hand); font-size: 1.12rem; line-height: 1.3;
+  color: var(--accent); list-style: none;
+}
+.imp-opts summary::-webkit-details-marker { display: none; }
+.imp-opts summary::before { content: "▸ "; }
+.imp-opts[open] summary::before { content: "▾ "; }
+.imp-opts summary .muted { font-family: var(--sans); font-size: .78rem; }
+.imp-opts-body {
+  display: grid; gap: .7rem; margin-top: .6rem; padding: .8rem .9rem;
+  border: 2px dashed var(--line); border-radius: 12px; background: var(--surface);
+}
+.imp-opts-body .check { white-space: normal; align-items: flex-start; }
+.imp-opts-body .check input { margin-top: .3rem; }
+.db-stats { margin: 2.6rem 0 0; font-size: .8em; text-align: center; }
+
+/* Thẻ "Đọc tiếp": bài vừa đọc, nút mở to, thanh tiến độ dịch. Đây là thứ duy
+   nhất trên màn đầu được làm NỔI nhất — vì nó là việc hay làm nhất. */
+.resume {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem 1.2rem; align-items: center;
+  margin: 0 0 2rem; padding: 1rem 1.2rem 1.05rem;
+  background: var(--note-bg); border: 2.5px solid var(--muc); border-radius: 14px;
+  box-shadow: 5px 5px 0 var(--bong); cursor: pointer; color: var(--gl-ink);
+  transition: transform .08s, box-shadow .08s;
+}
+.resume:hover { transform: translate(-1px, -1px); box-shadow: 6px 6px 0 var(--bong); }
+.resume-tag { grid-column: 1 / -1; font-family: var(--hand); font-size: 1.15rem; line-height: 1.3; color: var(--accent); }
+.resume-t {
+  font-family: var(--read); font-weight: 700; font-size: 1.22rem; line-height: 1.35; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.resume-meta { grid-column: 1; font-size: .84em; color: var(--ink-2); }
+.resume .btn { grid-column: 2; grid-row: 2 / span 2; }
+.resume .tien-do { grid-column: 1 / -1; margin-top: .35rem; }
+
+/* Thanh tiến độ dịch — dùng ở thẻ "Đọc tiếp" và ở từng thẻ thư viện. Con số
+   "đã dịch 72%" phải đọc mới hiểu; một vạch thì liếc là thấy. */
+.tien-do { height: 8px; border: 1.5px solid var(--muc); border-radius: 99px; background: var(--surface); overflow: hidden; }
+.tien-do > span { display: block; height: 100%; background: var(--hl); border-right: 1.5px solid var(--muc); }
+.tien-do > span.xong { background: var(--ok); border-right: 0; }
+.tien-do > span[style="width:0%"] { border-right: 0; }
 
 /* Thanh công cụ thư viện. `flex-wrap` vì ở màn hẹp ô tìm và ô sắp không đủ chỗ
    trên một hàng với tiêu đề — mà ô tìm bị bóp còn 80px thì không gõ nổi. */
@@ -1794,3 +1896,16 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
    giấy nhớ vàng của cột giải thích. */
 mark.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muc) 30%, transparent); }
 
+/* Bài đã dịch xong thì nút Dịch LÙI về dáng nút thường — nút vàng to nhất màn
+   phải là việc nên làm tiếp, không phải việc đã xong (xem `capNhatNutDich`). */
+.trans-group .btn-primary.da-xong { background: var(--surface); color: var(--ok); }
+.trans-group:has(.da-xong) .caret { background: var(--surface); color: var(--ink); }
+
+/* Hai tính năng đáng giá nhất — Hỏi đáp và Dựng slide — trước đây chỉ là hai
+   icon nhỏ giữa sáu icon khác; người mới phải rê chuột chờ tooltip mới biết
+   chúng tồn tại. Màn đủ rộng thì kèm chữ; hẹp thì lùi về icon. */
+.icon-btn.co-chu { width: auto; padding: 0 .55rem; gap: .35rem; display: inline-flex; align-items: center; font-size: .9rem; font-weight: 600; }
+@media (max-width: 1320px) {
+  .icon-btn.co-chu { width: 2.2rem; padding: 0; justify-content: center; }
+  .icon-btn.co-chu .lb { display: none; }
+}

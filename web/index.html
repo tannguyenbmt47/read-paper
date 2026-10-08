@@ -98,6 +98,16 @@
       <code>.env</code>, điền key từ <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>, rồi khởi động lại server.
     </div>
 
+    <!-- Bài đọc gần nhất. Người QUAY LẠI cần đúng một thứ: đọc tiếp bài dở —
+         bản cũ bắt họ cuộn qua cả form nạp bài mới thấy (thư viện bắt đầu ở
+         y=680 trên màn 768, không thấy trọn bài nào khi chưa cuộn). -->
+    <div id="resume" class="resume hidden"></div>
+
+    <!-- Hai cột ở màn rộng: nạp bài mới bên trái (dính khi cuộn), thư viện bên
+         phải. Màn hẹp thì xếp chồng. Thư viện rỗng thì chỉ còn cột nạp bài. -->
+    <div class="start-grid">
+    <div class="start-add">
+    <h2 class="start-h">Thêm bài mới</h2>
     <div class="tabs" role="tablist">
       <button class="tab is-on" data-tab="file" role="tab">Tải PDF lên</button>
       <button class="tab" data-tab="url" role="tab">arXiv / link PDF</button>
@@ -124,14 +134,22 @@
         placeholder="Dán toàn văn bài báo vào đây. Giữ dòng trống giữa các đoạn để tách đoạn cho đúng."></textarea>
     </div>
 
-    <div class="row">
-      <label class="check" id="layoutWrap" title="Dùng mô hình phát hiện bố cục (Docling) để xác định khung hình và bảng. Chính xác hơn nhiều ở trang có nhiều bảng/hình xếp sát nhau. Chậm hơn vài giây mỗi bài.">
-        <input type="checkbox" id="useLayout" checked> Mô hình bố cục
-      </label>
-      <div class="field">
-        <label for="modelSelect">Model dịch</label>
-        <select id="modelSelect" class="input"></select>
-      </div>
+    <!-- Tuỳ chọn kỹ thuật GẬP lại: người mới không biết "mô hình bố cục" là gì
+         và mặc định đã đúng cho hầu hết bài. Model đổi được về sau (nút ▾ cạnh
+         nút Dịch, và ở bước soát) nên không cần bắt chọn ngay từ cửa. -->
+    <div class="imp-go">
+      <details class="imp-opts">
+        <summary>Tuỳ chọn <span id="impOptSum" class="muted"></span></summary>
+        <div class="imp-opts-body">
+          <div class="field">
+            <label for="modelSelect">Model dịch</label>
+            <select id="modelSelect" class="input"></select>
+          </div>
+          <label class="check" id="layoutWrap" title="Dùng mô hình phát hiện bố cục (Docling) để xác định khung hình và bảng. Chính xác hơn nhiều ở trang có nhiều bảng/hình xếp sát nhau. Chậm hơn vài giây mỗi bài.">
+            <input type="checkbox" id="useLayout" checked> Dò bố cục bằng mô hình (cắt hình, bảng, công thức chuẩn hơn)
+          </label>
+        </div>
+      </details>
       <button id="importBtn" class="btn btn-primary">Nạp bài báo</button>
     </div>
     <div id="impProg" class="imp hidden">
@@ -145,9 +163,7 @@
       <ol id="impSteps" class="imp-steps"></ol>
     </div>
     <p id="startErr" class="err hidden"></p>
-
-    <p id="dbStats" class="hint"></p>
-
+    </div>
     <div id="recentWrap" class="recent hidden">
       <div class="recent-h">
         <h2>Thư viện</h2>
@@ -169,6 +185,8 @@
       <ul id="recentList"></ul>
       <p id="recentEmpty" class="hint hidden">Không có bài nào khớp.</p>
     </div>
+    </div>
+    <p id="dbStats" class="hint db-stats"></p>
 
     <!-- Lối vào chính là thanh bên trái. Khối này chỉ để người mới biết công cụ
          thứ hai tồn tại và nó khác gì — bấm vào cũng ra cùng chỗ. -->
@@ -310,8 +328,8 @@
           </div>
         </div>
       </div>
-      <button id="askBtn" class="icon-btn" title="Hỏi đáp về bài"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></button>
-      <button id="slidesBtn" class="icon-btn" title="Dựng bộ slide để trình bày lại bài này"><svg class="ico" aria-hidden="true"><use href="#i-slides"/></svg></button>
+      <button id="askBtn" class="icon-btn co-chu" title="Hỏi đáp về bài"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg><span class="lb">Hỏi</span></button>
+      <button id="slidesBtn" class="icon-btn co-chu" title="Dựng bộ slide để trình bày lại bài này"><svg class="ico" aria-hidden="true"><use href="#i-slides"/></svg><span class="lb">Slide</span></button>
       <div class="menu">
         <button id="exportBtn" class="icon-btn" title="Tải về"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg></button>
         <div class="menu-pop hidden" id="exportMenu">
@@ -349,7 +367,7 @@
     <aside id="side" class="side">
       <nav class="side-tabs">
         <button class="side-tab is-on" data-side="brief">Tóm lược</button>
-        <button class="side-tab" data-side="chain">Mạch lập luận</button>
+        <button class="side-tab" data-side="chain" title="Mạch lập luận: bài đi từ luận điểm nào, qua bằng chứng nào, tới kết luận nào">Lập luận</button>
         <button class="side-tab" data-side="terms">Thuật ngữ</button>
         <button class="side-tab" data-side="outline">Mục lục</button>
         <button id="sideClose" class="icon-btn" title="Đóng cột này (mở lại bằng nút ba gạch trên thanh công cụ)">✕</button>

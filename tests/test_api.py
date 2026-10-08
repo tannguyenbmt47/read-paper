@@ -601,6 +601,27 @@ def test_moi_cho_doc_hash_deu_qua_mot_luat():
     assert "location.hash.slice(1)" not in ngoai, "còn chỗ đọc thẳng location.hash"
 
 
+def test_bam_dich_tren_bai_da_xong_khong_tu_goi_luot_tinh_tien():
+    """Bài đã dịch xong mà bấm "Dịch tiếp" — đúng thứ người mới hay bấm, vì nút ấy
+    to và vàng nhất màn — thì vòng dịch chạy qua không làm gì. Bản cũ khi ấy vẫn
+    tự gọi lượt đánh dấu câu đáng nhớ: TÍNH TIỀN, và thay hết vệt cũ bằng bộ khác,
+    vì điều kiện chỉ hỏi "đã dịch hết chưa", không hỏi "lượt này có dịch gì không".
+
+    Phép kiểm cấu trúc, vì lỗi này không hiện ra ở đâu ngoài hoá đơn.
+    """
+    import re
+    from pathlib import Path
+    app = (Path(__file__).resolve().parents[1] / "web/app.js").read_text()
+    than = re.sub(r"(?m)//.*$", "", app)
+    goi = re.search(r"if \(([^{]*?)\)\s*\{\s*await markInsights\(true\)", than, re.S)
+    assert goi, "không thấy chỗ tự gọi markInsights(true)"
+    assert "can.length" in goi.group(1), (
+        "tự đánh dấu phải đòi lượt này có mẻ để dịch (can.length > 0)")
+    # Và nhãn nút phải tính theo VIỆC CÒN LẠI, không theo việc đã làm.
+    assert "function capNhatNutDich()" in app
+    assert '? "Dịch tiếp" : "Dịch"' not in app, "còn chỗ đặt nhãn theo kiểu cũ"
+
+
 def test_khong_con_hop_thoai_native(app_client):
     """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
     cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi

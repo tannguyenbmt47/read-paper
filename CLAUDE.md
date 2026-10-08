@@ -1222,6 +1222,45 @@ canh. Màu bôi khai ở **bốn** khối theme (`:root`, `@media dark`, `[data-
 Ai còn lưu `docdoc:theme = "bao"` thì `applyTheme` chuyển sang `light` — để
 nguyên giá trị lạ thì không nút nào trong menu sáng lên, trông như chưa chọn gì.
 
+### Màn đầu xếp cho người QUAY LẠI, không chỉ cho người mới
+
+Soát bằng cách đóng vai người lần đầu mở app, ở laptop 1366×768 với 36 bài:
+thư viện bắt đầu ở **y=680**, không thấy trọn bài nào khi chưa cuộn, trang dài
+4.113px — vì một cột dọc giới thiệu → form nạp → tuỳ chọn → thống kê → thư viện
+đúng cho lần mở ĐẦU TIÊN, mà người quay lại mới là phần lớn số lần mở app.
+
+Có bài thì `#start.has-lib` bật: thẻ **"Đọc tiếp"** (bài có hoạt động gần nhất,
+thanh tiến độ, nút mở to) lên đầu, rồi hai cột — nạp bài bên trái (dính khi
+cuộn, ô thả gọn lại), thư viện bên phải. Thư viện rỗng thì giữ dạng một cột với
+lời giới thiệu và ô thả lớn. Sau khi đổi: **5 bài** thấy trọn khi chưa cuộn.
+Dưới 1100px xếp chồng lại.
+
+Bốn chỗ người mới vấp, đã sửa:
+
+- **Thẻ nhấc lên khi rê chuột nhưng chỉ vùng chữ tiêu đề mới mở bài** (451×50
+  trên thẻ 680×75). Giờ cả thẻ là nút — và handler phải TRỪ nút sửa/xoá và ô
+  đổi tên, không thì bấm 🗑 là vừa mở bài vừa hỏi xoá. Thẻ nhận `tabindex` +
+  Enter. Sửa/xoá chỉ hiện khi rê chuột, nhưng chỉ ở `@media (hover: hover)` —
+  máy cảm ứng không có "rê".
+- **Tuỳ chọn kỹ thuật bắt chọn ngay từ cửa** ("Model dịch", "Mô hình bố cục").
+  Gập vào `<details>`, và dòng tóm tắt của nó **phải nói đang chọn gì** — gập mà
+  giấu luôn lựa chọn thì không biết bài sẽ dịch bằng gì.
+- **11/36 tên bài là rác** (`(không tiêu đề)`, `# …`). `tenBai()` gỡ dấu `#` và
+  thay tên rỗng bằng NGUỒN, in nghiêng. Bộ bóc hiện tại đã đúng; số rác này là
+  bài nạp trước khi có bộ bóc Markdown, nên sửa ở tầng hiển thị.
+- **Hai tính năng đáng giá nhất là hai icon trơn** giữa sáu icon khác. Nút Hỏi
+  và Slide kèm chữ khi màn ≥1320px.
+
+**Và một lỗi TỐN TIỀN lộ ra từ đúng lối dùng ấy.** Bài đã dịch xong vẫn treo
+nút vàng to nhất màn ghi "Dịch tiếp"; bấm vào thì vòng dịch chạy qua không làm
+gì — rồi **tự gọi lượt đánh dấu câu đáng nhớ, tính tiền**, và thay hết vệt cũ,
+vì điều kiện chỉ hỏi "đã dịch hết chưa" chứ không hỏi "lượt này có dịch gì
+không". Giờ điều kiện đòi thêm `can.length > 0`, và `capNhatNutDich()` đặt nhãn
+theo **việc còn lại** (đúng theo `chunkDone`, tức theo cột đang bật và phần đang
+chọn): hết việc thì nút ghi "✓ Đã dịch xong" và lùi về dáng nút thường; bật
+thêm cột Giải thích thì nó vàng lại.
+`test_bam_dich_tren_bai_da_xong_khong_tu_goi_luot_tinh_tien` canh.
+
 ### Ba dạng hash, một hàm đọc
 
 `location.hash` có ba dạng sống chung: `#survey`, `#doc=<mã>` (survey.js ghi khi

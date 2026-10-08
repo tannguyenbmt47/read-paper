@@ -444,6 +444,16 @@ async function init() {
   if (!known.has(cfg.model)) cfg.models.unshift({ id: cfg.model, label: cfg.model + " (từ .env)" });
   state.models = cfg.models;
   fillModels($("#modelSelect"), cfg.model);
+  // Mục "Tuỳ chọn" gập sẵn, nên dòng tóm tắt của nó phải nói đang chọn gì —
+  // gập mà giấu luôn lựa chọn thì người dùng không biết bài sẽ dịch bằng gì.
+  const tomTat = () => {
+    const tt = [tenModel($("#modelSelect").value)];
+    if (cfg.layout_model && $("#useLayout").checked) tt.push("dò bố cục");
+    $("#impOptSum").textContent = "· " + tt.join(" · ");
+  };
+  $("#modelSelect").addEventListener("change", tomTat);
+  $("#useLayout").addEventListener("change", tomTat);
+  tomTat();
   loadRecent();
   loadDbStats();
   wireStart();
@@ -608,12 +618,55 @@ function loRecent() {
   return ra.sort(xep);
 }
 
+/** Tên hiện ra cho một bài, kèm cờ "chưa có tên đọc được".
+
+    Đếm trong thư viện thật: 11/36 tiêu đề là rác — `(không tiêu đề)`, tiêu đề
+    còn dính dấu Markdown (`# Contrastive Pretraining…`), `Tiêu đề thử`. Dấu `#`
+    thì gỡ đi; bài không có tên thì hiện NGUỒN thay vào (tên file, tên miền) và
+    đánh dấu để giao diện in nghiêng — người dùng thấy ngay bài nào cần đặt tên,
+    thay vì năm dòng "(không tiêu đề)" giống hệt nhau. */
+function tenBai(d) {
+  const t = String(d.title_vi || d.title || "").replace(/^\s*#{1,6}\s+/, "").trim();
+  if (t && t !== "(không tiêu đề)") return { ten: t, voDanh: false };
+  return { ten: tenNguon(d.source) || "Bài chưa có tên", voDanh: true };
+}
+
+/** Thanh tiến độ dịch. Con số "đã dịch 72%" phải đọc mới hiểu, vạch thì liếc. */
+function tienDo(d) {
+  const pct = Math.round(tiLeDich(d) * 100);
+  return `<div class="tien-do" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0"
+    aria-valuemax="100" aria-label="Đã dịch ${pct}%"><span class="${pct >= 100 ? "xong" : ""}"
+    style="width:${pct}%"></span></div>`;
+}
+
 async function loadRecent() {
   recentDocs = await fetch("/api/docs").then((r) => r.json());
   $("#recentWrap").classList.toggle("hidden", !recentDocs.length);
+  // Có bài thì đổi sang bố cục hai cột kèm thẻ "Đọc tiếp" (xem `#start.has-lib`).
+  $("#start").classList.toggle("has-lib", recentDocs.length > 0);
   // Thanh công cụ chỉ đáng hiện khi danh sách đã dài tới mức phải tìm.
   $("#recentTools").classList.toggle("hidden", recentDocs.length < 6);
+  veResume();
   veRecent();
+}
+
+/** Thẻ "Đọc tiếp": bài có hoạt động gần nhất. Người quay lại cần đúng một thứ
+    là đọc tiếp bài dở, nên nó đứng đầu màn và bấm được cả thẻ. */
+function veResume() {
+  const box = $("#resume");
+  const d = [...recentDocs].sort((x, y) => y.updated_at - x.updated_at)[0];
+  box.classList.toggle("hidden", !d);
+  if (!d) return;
+  const { ten, voDanh } = tenBai(d);
+  const pct = Math.round(tiLeDich(d) * 100);
+  box.innerHTML = `
+    <div class="resume-tag">Đọc tiếp</div>
+    <b class="resume-t${voDanh ? " vo-danh" : ""}" title="${esc(ten)}">${esc(ten)}</b>
+    <div class="resume-meta">${esc([pct >= 100 ? "đã dịch xong" : `đã dịch ${pct}%`,
+      "mở " + khiNao(d.updated_at)].join(" · "))}</div>
+    <button class="btn btn-primary" type="button">Mở tiếp →</button>
+    ${tienDo(d)}`;
+  box.onclick = () => openDoc(d.id);
 }
 
 function veRecent() {
@@ -631,10 +684,12 @@ function veRecent() {
         tenModel(d.model),
         d.cost_usd ? `$${(+d.cost_usd).toFixed(2).replace(".", ",")}` : "",
       ].filter(Boolean).join(" · ");
-      return `<li>
+      const { ten, voDanh } = tenBai(d);
+      return `<li data-open="${esc(d.id)}" tabindex="0">
         <span class="rt" data-id="${esc(d.id)}">
-          <b>${esc(d.title_vi || d.title)}</b>
+          <b class="${voDanh ? "vo-danh" : ""}">${esc(ten)}</b>
           <span>${esc(meta)}</span>
+          ${tienDo(d)}
         </span>
         <span class="rwhen" title="${esc("Nạp " + khiNao(d.created_at)
           + (nguon ? " từ " + nguon : ""))}">${esc(khiNao(d.updated_at))}${
@@ -644,7 +699,14 @@ function veRecent() {
       </li>`;
     })
     .join("");
-  $$("#recentList .rt").forEach((el) => (el.onclick = () => openDoc(el.dataset.id)));
+  // CẢ THẺ mở bài — trừ khi bấm trúng nút sửa/xoá hay ô đang đổi tên. Thiếu
+  // phép trừ này thì bấm 🗑 là vừa mở bài vừa hỏi xoá.
+  $$("#recentList li[data-open]").forEach((el) => {
+    el.onclick = (e) => { if (!e.target.closest("button, input")) openDoc(el.dataset.open); };
+    el.onkeydown = (e) => {
+      if (e.key === "Enter" && e.target === el) { e.preventDefault(); openDoc(el.dataset.open); }
+    };
+  });
   /* Tiêu đề đoán từ khối đầu trang nên hay sai — dính tên hội nghị, dính số
      trang, hoặc cụt còn vài chữ. Nó hiện ở danh sách này, ở đầu bản xuất ra và
      ở slide tiêu đề, nên sai một chỗ là sai khắp nơi. Đổi tên không đụng nội
@@ -1467,7 +1529,7 @@ function mountDoc(doc) {
   renderSide();
   renderUsage();
   const done = Object.keys(doc.translations || {}).length;
-  $("#translateBtn").textContent = done ? "Dịch tiếp" : "Dịch";
+  capNhatNutDich();
   state.slideSel = null;
   syncSlidesBtn();
   restorePos();
@@ -3650,6 +3712,7 @@ function applyCols() {
   $("#doc").className = "doc cols-" + shown.length +
     shown.map(([k]) => " show-" + k).join("");
   applyReaderPrefs();      // bề rộng mặc định phụ thuộc số cột đang bật
+  capNhatNutDich();        // bật thêm cột Giải thích là có thêm việc để làm
 }
 
 /* --------------------------------------------------- tìm trong bài */
@@ -4224,7 +4287,7 @@ async function runTranslate() {
   if (!wantVi && !wantGl) {
     status("Bật ít nhất một trong hai cột Việt hoặc Giải thích thì mới có gì để sinh.");
     state.translating = false; btn.disabled = false; $("#docModel").disabled = false;
-    btn.textContent = Object.keys(state.doc.translations || {}).length ? "Dịch tiếp" : "Dịch";
+    capNhatNutDich();
     $("#progress").classList.add("hidden");
     return;
   }
@@ -4320,7 +4383,11 @@ async function runTranslate() {
     // Ba điều kiện, cần cả ba: không dừng giữa chừng, MỌI đoạn đã có bản dịch
     // (dịch một mục thì chưa đủ ngữ cảnh để chọn câu cho cả bài), và cột tiếng
     // Việt đang bật — vệt neo vào ô đó, tắt cột thì không có chỗ để neo.
-    if (stoppedAt < 0 && $("#insightAuto")?.checked && wantVi && allTranslated()) {
+    // Và điều kiện thứ tư: lượt này THẬT SỰ có mẻ để dịch (`can.length`). Thiếu
+    // nó thì bấm "Dịch tiếp" trên bài đã xong — đúng thứ người mới hay bấm, vì
+    // nút ấy to và vàng nhất màn — là vòng dịch chạy qua không làm gì rồi tự
+    // gọi lại lượt đánh dấu, TÍNH TIỀN, và thay hết vệt cũ bằng một bộ khác.
+    if (can.length > 0 && stoppedAt < 0 && $("#insightAuto")?.checked && wantVi && allTranslated()) {
       await markInsights(true);
     }
   } catch (e) {
@@ -4334,7 +4401,7 @@ async function runTranslate() {
     state.stopping = false;
     btn.disabled = false;
     $("#docModel").disabled = false;
-    btn.textContent = "Dịch tiếp";
+    capNhatNutDich();
     $("#progress").classList.add("hidden");
     renderSide();
     renderUsage();
@@ -4349,6 +4416,26 @@ async function runTranslate() {
     Khác `chunkDone`: hàm kia hỏi về MỘT mẻ và tôn trọng phần đang chọn, còn ở
     đây phải là cả bài — chọn câu đáng nhớ cho một bài mới dịch nửa chừng thì
     ngân sách tính trên số đoạn sai và model không thấy được mạch lập luận. */
+/** Đặt nhãn cho nút Dịch theo việc CÒN LẠI, không theo việc đã làm.
+
+    Bản cũ chỉ hỏi "đã dịch đoạn nào chưa", nên bài dịch xong 100% vẫn treo nút
+    vàng to nhất màn hình ghi "Dịch tiếp". Người mới hỏi "dịch tiếp cái gì?" — và
+    bấm thử. Giờ hết việc thì nút nói thẳng "Đã dịch xong" và lùi về dáng nút
+    thường; còn việc (kể cả khi vừa bật thêm cột Giải thích) thì nó vàng lại.
+    Tính theo đúng `chunkDone`, tức theo các cột đang bật và phần đang chọn. */
+function capNhatNutDich() {
+  const btn = $("#translateBtn");
+  if (!btn || !state.doc || state.translating) return;
+  const coBan = Object.keys(state.doc.translations || {}).length > 0;
+  let conViec = false;
+  for (let i = 0; i < state.chunks; i++) if (!chunkDone(i)) { conViec = true; break; }
+  btn.textContent = !coBan ? "Dịch" : conViec ? "Dịch tiếp" : "✓ Đã dịch xong";
+  btn.classList.toggle("da-xong", coBan && !conViec);
+  btn.title = coBan && !conViec
+    ? "Mọi đoạn đã có bản dịch cho các cột đang bật. Bật thêm cột Giải thích, hoặc chọn mục khác ở nút ▾, thì nút này sáng lại."
+    : "";
+}
+
 function allTranslated() {
   const tr = state.doc.translations || {};
   const b = (state.doc.blocks || []).filter(
