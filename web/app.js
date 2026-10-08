@@ -4157,6 +4157,12 @@ function requestStop() {
   status("Đang huỷ lượt gọi hiện tại… Phần đã dịch xong vẫn được giữ.");
 }
 
+/* Số mẻ dịch chạy cùng lúc. Ba, không hơn: mỗi mẻ giữ một `EventSource`, mà
+   trình duyệt chỉ mở 6 kết nối HTTP/1.1 tới một máy chủ — để dành chỗ cho các
+   request khác của chính trang này (ảnh, giải thích đoạn, hỏi đáp). Vượt trần
+   đó thì kết nối thứ bảy XẾP HÀNG im lặng, và mọi thứ trên trang trông như treo. */
+const SONG_SONG = 3;
+
 async function runTranslate() {
   if (state.translating) return;
   // Dịch xong sẽ ghi đè textContent của ô — bỏ đánh dấu tìm kiếm trước, không
@@ -4203,28 +4209,70 @@ async function runTranslate() {
       reportCost("Đọc toàn bài xong", res.run, res.total);
     }
 
-    let stoppedAt = -1;
+    /* Dịch SONG SONG, nhưng mẻ đầu chạy MỘT MÌNH.
+
+       Song song được vì không mẻ nào cần kết quả của mẻ trước: tóm lược và bảng
+       thuật ngữ đã chốt sẵn trong prefix, và phía server mỗi lần ghi là
+       `load → sửa → save` liền mạch, không `await` chen giữa — nên hai mẻ về
+       đích cùng lúc cũng không đè nhau (`test_hai_me_dich_chay_xen_nhau_…`).
+
+       Mẻ đầu chạy một mình vì CACHE. Mọi mẻ mở đầu bằng cùng một prefix — luật
+       dịch + tóm lược + bảng thuật ngữ + TOÀN VĂN bài, ~24k token trên CIRAG.
+       Bắn cả loạt lúc cache còn nguội thì mẻ nào cũng trả giá đầy đủ cho chừng
+       ấy token đọc vào. Chờ mẻ đầu xong là prefix đã nằm trong cache, các mẻ
+       sau đọc lại với giá rẻ — đúng như lúc chạy tuần tự, chỉ nhanh hơn. */
+    const can = [];
+    let xong = 0;
     for (let i = 0; i < state.chunks; i++) {
-      if (state.stopping) { stoppedAt = i; break; }
-      if (chunkDone(i)) { bar((i + 1) / state.chunks); continue; }
       // mẻ nào không chứa khối nào trong phần đã chọn thì bỏ hẳn, khỏi gọi model
-      if (only && !(state.doc.chunk_ids?.[i] || []).some((id) => only.has(id))) {
-        bar((i + 1) / state.chunks); continue;
-      }
-      status(`Đang dịch phần ${i + 1}/${state.chunks}${refine ? " (có soát lại)" : ""}…`);
+      const ngoai = only && !(state.doc.chunk_ids?.[i] || []).some((id) => only.has(id));
+      if (chunkDone(i) || ngoai) xong++;
+      else can.push(i);
+    }
+    bar(xong / state.chunks);
+    const soat = refine ? " (có soát lại)" : "";
+
+    const chay1 = async (i) => {
       const d = await streamChunk(i, refine, mode, only);
       if (d?.reused) reusedTotal += d.reused;
+      xong++;
       const tag = d?.reused
         ? ` (${d.reused} đoạn lấy lại từ bộ nhớ dịch, ${d.generated || 0} đoạn dịch mới)`
         : "";
-      reportCost(`Xong phần ${i + 1}/${state.chunks}${tag}`, d?.run, d?.usage);
-      bar((i + 1) / state.chunks);
+      reportCost(`Xong phần ${i + 1} · ${xong}/${state.chunks}${tag}`, d?.run, d?.usage);
+      bar(xong / state.chunks);
+    };
+
+    const hang = [...can];
+    if (hang.length) {
+      const dau = hang.shift();
+      status(`Đang dịch phần ${dau + 1}/${state.chunks}${soat} — mẻ đầu chạy một mình `
+        + "để nạp bài vào cache, các mẻ sau sẽ chạy song song…");
+      await chay1(dau);
     }
+
+    /* Một mẻ hỏng (mạng, model trả lỗi) thì THÔI NHẬN mẻ mới nhưng để các mẻ
+       đang chạy về đích: chúng đã sinh token, tức đã bị tính tiền rồi, huỷ
+       ngang là mất trắng phần đó. Bấm Dừng thì khác — người dùng muốn dừng
+       NGAY, nên `AbortError` lan ra và huỷ cả loạt. */
+    let loi = null;
+    const tho = async () => {
+      while (hang.length && !state.stopping && !loi) {
+        const i = hang.shift();
+        status(`Đang dịch song song${soat}: ${xong}/${state.chunks} phần xong · `
+          + `${Math.min(SONG_SONG, hang.length + 1)} mẻ cùng lúc…`);
+        try { await chay1(i); }
+        catch (e) { if (e.name === "AbortError") throw e; loi ||= e; }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(SONG_SONG, hang.length) }, tho));
+    if (loi) throw loi;
+    const stoppedAt = state.stopping && hang.length ? xong : -1;
     const spent = ` — phiên này tốn ${money(state.session)}` +
       (reusedTotal ? `, ${reusedTotal} đoạn lấy lại miễn phí từ bộ nhớ dịch` : "") +
       (state.doc.usage?.cost ? `, cả bài ${money(state.doc.usage.cost)}` : "");
     status(stoppedAt >= 0
-      ? `Đã dừng ở phần ${stoppedAt + 1}/${state.chunks}${spent}.` +
+      ? `Đã dừng — xong ${stoppedAt}/${state.chunks} phần${spent}.` +
         " Bấm Dịch tiếp để chạy nốt — phần đã xong không dịch lại."
       : `Dịch xong${spent}. Bấm 💡 trên từng đoạn để xem nó đang làm gì trong lập luận.`);
 

@@ -162,6 +162,47 @@ cột nào tắt thì **không sinh ra**, tức không trả tiền. Heading và
 không có cột giải thích; `chunkDone()` bên `web/app.js` phải biết điều đó, nếu
 không mẻ nào cũng bị coi là chưa xong và dịch lại từ đầu.
 
+### Dịch song song — mẻ đầu chạy một mình
+
+`runTranslate` chạy các mẻ **song song**, trần `SONG_SONG = 3`. Được vì không
+mẻ nào cần kết quả của mẻ trước: tóm lược và bảng thuật ngữ đã chốt sẵn trong
+`cached_prefix`, và `translate_user` chỉ chứa khối của chính mẻ đó.
+
+**Mẻ đầu chạy MỘT MÌNH, rồi mới mở loạt song song.** Mọi mẻ mở đầu bằng cùng
+một prefix chứa toàn văn bài (~24k token trên CIRAG). Bắn cả loạt lúc cache còn
+nguội thì mẻ nào cũng trả giá đầy đủ cho chừng ấy token đọc vào; chờ mẻ đầu xong
+thì prefix đã nằm trong cache và các mẻ sau đọc lại với giá rẻ — đúng như chạy
+tuần tự, chỉ nhanh hơn. Bỏ bước làm ấm này là đổi thời gian lấy tiền mà không ai
+thấy, vì hoá đơn chỉ lộ ra ở chân cột trái.
+
+**Phía server an toàn vì một bất biến, và có test canh nó.** Mỗi lần ghi trong
+`stream_chunk` là `load → sửa → save` LIỀN MẠCH, không `await`/`yield` nào chen
+giữa — một tiến trình, một event loop, nên đoạn đó nguyên tử và hai mẻ về đích
+cùng lúc không đè nhau. Ai chèn một `await` vào giữa (gọi DB qua executor, đẩy
+tiến trình lên giữa chừng…) là mẻ xong sau ghi đè mẻ xong trước bằng bản
+`translations` cũ nó đã nạp: mất bản dịch đã trả tiền, **không lỗi nào**.
+`test_hai_me_dich_chay_xen_nhau_khong_mat_ban_dich` canh đúng chỗ đó.
+
+Bẫy trong chính test ấy, đã vấp: bản đầu để mỗi mẻ giả tự stream theo độ dài
+của nó, nên mẻ ngắn về đích trước và **cửa sổ ghi của hai mẻ không bao giờ chồng
+lên nhau** — test xanh cả khi đã cố ý chèn `await` vào giữa load và save. Giờ
+model giả giữ mọi mẻ ở cửa (`asyncio.Event`) cho tới khi mẻ cuối stream xong rồi
+thả cùng lúc; chèn `await` vào là đỏ ngay (mất 74/160 bản dịch). **Một phép thử
+không biết đỏ thì không canh được gì** — chứng minh nó đỏ trước khi tin nó xanh.
+
+Ba nhánh của hàng đợi, đã soát bằng `streamChunk` giả trong trình duyệt:
+
+- **Chạy hết**: 5 mẻ × 300ms hết 908ms thay vì ~1500ms (1 + 3 + 1), đồng thời
+  tối đa đúng 3, mẻ thứ hai bắt đầu 301ms sau mẻ đầu.
+- **Bấm Dừng**: `AbortError` lan ra, huỷ **cả loạt** đang chạy, và không nhận
+  mẻ mới — người dùng muốn dừng NGAY.
+- **Một mẻ hỏng** (mạng, model trả lỗi): **thôi nhận mẻ mới nhưng để các mẻ đang
+  chạy về đích**. Chúng đã sinh token tức đã bị tính tiền, huỷ ngang là mất trắng.
+
+Trần 3, không hơn: mỗi mẻ giữ một `EventSource`, mà trình duyệt chỉ mở **6 kết
+nối HTTP/1.1** tới một máy chủ. Vượt trần thì kết nối thứ bảy xếp hàng im lặng —
+ảnh, nút giải thích, khung hỏi đáp đều trông như treo.
+
 ### Dịch từng phần
 
 `GET /api/doc/{id}/sections` cắt bài theo tiêu đề mục (`type == "heading"`), trả

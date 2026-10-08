@@ -506,6 +506,76 @@ def test_nap_trung_bai_thi_hoi_truoc_khi_boc(app_client):
         app_client.delete(f"/api/doc/{did}")
 
 
+def test_hai_me_dich_chay_xen_nhau_khong_mat_ban_dich(app_client, monkeypatch):
+    """Frontend dịch SONG SONG nhiều mẻ, nên `stream_chunk` phải chịu được hai mẻ
+    chạy xen nhau trên cùng một bài mà không mẻ nào ghi đè mẻ kia.
+
+    Bất biến giữ nó: mỗi lần ghi là `load → sửa → save` LIỀN MẠCH, không có
+    `await` hay `yield` nào chen giữa. Một tiến trình, một event loop, nên đoạn
+    đó là nguyên tử. Ai chèn một `await` vào giữa (gọi DB qua executor, đẩy
+    tiến trình lên giữa chừng…) là mẻ xong sau ghi đè mẻ xong trước bằng bản
+    `translations` cũ nó đã nạp — mất bản dịch đã trả tiền, và **không có lỗi
+    nào**. Test này giả model, ép hai mẻ đan xen từng nhịp, rồi đếm.
+    """
+    import asyncio
+    from server import llm, pipeline, store, db
+
+    # Một bài đủ dài để chia ra ít nhất hai mẻ.
+    doan = "\n\n".join(
+        f"Paragraph {i} explains step {i} of the method in enough words to count "
+        f"as real prose, so the planner treats it as a separate block number {i}."
+        for i in range(160))
+    r = app_client.post("/api/import", data={"text": "Song song\n\n" + doan,
+                                            "model": "test/song-song"})
+    assert r.status_code == 200, r.text
+    did = r.json()["id"]
+    doc = store.load(did)
+    doc["brief"] = {"title_vi": "Song song", "glossary": []}
+    store.save(doc)
+    me = pipeline.plan_chunks(store.load(did))
+    assert len(me) >= 2, f"bài thử chỉ ra {len(me)} mẻ — cần ≥2 để thử chạy xen"
+
+    # Mọi mẻ phải tới cửa `load → save` CÙNG MỘT NHỊP. Bản đầu của test này để
+    # mỗi mẻ tự stream theo độ dài của nó, nên mẻ ngắn về đích trước và cửa sổ
+    # ghi của hai mẻ không bao giờ chồng lên nhau — test xanh kể cả khi đã cố ý
+    # chèn `await` vào giữa load và save. Một phép thử không biết đỏ thì không
+    # canh được gì.
+    con_lai = len(me)
+    cung_luc = asyncio.Event()
+
+    async def gia_model(messages, **kw):
+        nonlocal con_lai
+        import re
+        for bid in re.findall(r"<<<(b\d+)>>>", messages[-1]["content"]):
+            yield "text", f"<<<{bid}>>>\nBản dịch của {bid}.\n"
+        con_lai -= 1
+        if con_lai == 0:
+            cung_luc.set()
+        await cung_luc.wait()          # chờ MỌI mẻ stream xong rồi mới thả ra
+        yield "usage", '{"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.0001}'
+
+    monkeypatch.setattr(llm, "stream_text", gia_model)
+
+    async def chay(i):
+        async for _ in pipeline.stream_chunk(did, i, mode="vi"):
+            pass
+
+    async def ca_hai():
+        # `Event` phải sinh ra BÊN TRONG vòng lặp sẽ dùng nó.
+        nonlocal cung_luc
+        cung_luc = asyncio.Event()
+        await asyncio.gather(*(chay(i) for i in range(len(me))))
+
+    asyncio.run(ca_hai())
+
+    tr = store.load(did)["translations"]
+    can = [it["id"] for chunk in me for it in chunk]
+    thieu = [b for b in can if b not in tr]
+    assert not thieu, (f"chạy {len(me)} mẻ xen nhau mất {len(thieu)}/{len(can)} "
+                       f"bản dịch — có `await` chen giữa load và save: {thieu[:5]}")
+    app_client.delete(f"/api/doc/{did}")
+
+
 def test_khong_con_hop_thoai_native(app_client):
     """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
     cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi
