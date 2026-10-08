@@ -576,6 +576,31 @@ def test_hai_me_dich_chay_xen_nhau_khong_mat_ban_dich(app_client, monkeypatch):
     app_client.delete(f"/api/doc/{did}")
 
 
+def test_moi_cho_doc_hash_deu_qua_mot_luat():
+    """`location.hash` có ba dạng sống chung: `#survey`, `#doc=<mã>`, `#<mã>`.
+
+    Bộ nghe `hashchange` viết cho nút Back/Forward từng coi MỌI hash khác rỗng
+    là mã bài: bấm "Tìm hiểu" thì `svOpen` ghi `#survey`, bộ nghe gọi
+    `openDoc("survey")`, nhận 404, rồi đá về màn nhập — công cụ thứ hai của app
+    mất hẳn lối vào, không lỗi nào. Lúc khởi động cũng vậy với `#doc=<mã>`.
+
+    Nên mọi chỗ ĐỌC hash phải đi qua `docHash()`; đọc thẳng `location.hash
+    .slice(1)` ở đâu là chỗ đó lặp lại đúng lỗi cũ.
+    """
+    import re
+    from pathlib import Path
+    app = (Path(__file__).resolve().parents[1] / "web/app.js").read_text()
+    than = re.sub(r"/\*.*?\*/", "", app, flags=re.S)
+    than = re.sub(r"(?m)//.*$", "", than)
+    assert "function docHash()" in than
+    ham = re.search(r"function docHash\(\) \{(.*?)\n\}", than, re.S).group(1)
+    for dang in ('"survey"', '"doc="'):
+        assert dang in ham, f"docHash không xử lý dạng {dang}"
+    # Ngoài chính docHash, không ai được đọc thẳng hash rồi coi là mã bài.
+    ngoai = than.replace(ham, "")
+    assert "location.hash.slice(1)" not in ngoai, "còn chỗ đọc thẳng location.hash"
+
+
 def test_khong_con_hop_thoai_native(app_client):
     """`confirm()` / `prompt()` / `alert()` của hệ KHOÁ cả tab, và Chromium còn
     cho người dùng tick "chặn trang này hiện thêm hộp thoại" — tick vào là mọi
@@ -1154,28 +1179,35 @@ def test_moi_khoi_theme_khai_du_nam_mau_boi():
         assert not thieu2, f"{ten} thiếu màu đậm: {thieu2}"
 
 
-def test_skin_bao_khong_pha_luat_chu_tieng_viet():
-    """Skin "Báo" không được viết hoa toàn bộ, siết chữ, hay hạ `line-height`.
+def test_giao_dien_khong_pha_luat_chu_tieng_viet():
+    """Không luật nào của giao diện app được viết hoa toàn bộ, siết chữ âm, hay
+    đặt font mono cho văn xuôi tiếng Việt.
 
     Dấu tiếng Việt chồng tầng (ế, ộ, ữ) bị cắt ngọn — đúng cái bẫy đã ghi cho
-    slide và cho `.sv-note`. Chất "tít báo" phải lấy từ độ đậm và nét kẻ, không
-    lấy từ chữ hoa.
+    slide và cho `.sv-note`. Bản đầu của test này chỉ soát skin "Báo"; từ khi
+    chất liệu của skin ấy thành giao diện mặc định, nó soát CẢ HAI file. Lúc
+    chuyển sang, còn 13 nhãn viết hoa trong phần app ("THƯ VIỆN", "BÀI TOÁN",
+    "TÀI LIỆU"…) — nhãn mục giờ lấy chất từ font, không từ chữ hoa.
+
+    Bỏ qua luật của SLIDE (`.sl-`, `.ol-`): slide có luật riêng và phải khớp
+    từng chữ với bản xuất ra ở `_SLIDES_CSS`.
     """
     import re
     from pathlib import Path
-    css = (Path(__file__).resolve().parents[1] / "web/style.css").read_text()
-    # chỉ xét những luật thuộc skin này
-    luat = re.findall(r':root\[data-theme="bao"\][^{]*\{([^}]*)\}', css)
-    assert luat, "không thấy luật nào của skin Báo"
-    than = " ".join(luat).replace(" ", "")
-
-    assert "text-transform:uppercase" not in than, "viết hoa toàn bộ cắt ngọn dấu"
-    assert not re.search(r"letter-spacing:-", than), "siết chữ âm cắt ngọn dấu"
-    for lh in re.findall(r"line-height:([\d.]+)", than):
-        assert float(lh) >= 1.28, f"line-height {lh} dưới 1.28"
-    # và không dùng font mono cho văn xuôi
-    assert "font-family:var(--mono)" not in than, "mono không dựng nổi dấu chồng tầng"
-
+    web = Path(__file__).resolve().parents[1] / "web"
+    for ten in ("style.css", "survey.css"):
+        css = re.sub(r"/\*.*?\*/", "", (web / ten).read_text(), flags=re.S)
+        for sel, than in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+            sel = " ".join(sel.split())
+            if ".sl-" in sel or ".ol-" in sel or sel.startswith("@"):
+                continue
+            t = than.replace(" ", "")
+            assert "text-transform:uppercase" not in t, f"{ten} · {sel}: viết hoa cắt ngọn dấu"
+            assert not re.search(r"letter-spacing:-", t), f"{ten} · {sel}: siết chữ âm"
+            # Ký hiệu lẻ trong `<code>` thì mono là đúng — chỉ văn xuôi mới cấm.
+            if ((".sv-note" in sel or "modelnote" in sel)
+                    and not sel.rstrip().endswith("code")):
+                assert "var(--mono)" not in t, f"{ten} · {sel}: mono cho văn xuôi"
 
 def test_do_chu_bi_bo_roi_khong_bao_dong_sai(app_client, doc_pdf):
     """Phép đo "chữ chưa vào khối nào" phải im trên bài bóc tốt.

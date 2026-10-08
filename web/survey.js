@@ -191,12 +191,15 @@ async function svNeedId() {
    Ô chọn để trống nghĩa là "theo .env", mà .env thì người dùng không đọc được từ
    trình duyệt — nên nếu chỉ hiện ô trống, họ không có cách nào biết mình đang
    chạy bằng model nào. Đó là thứ quyết định cả chất lượng lẫn hoá đơn. */
-const svShort = (id) => (id || "").split("/").pop().replace(/^~/, "");
+// Tên đọc được (`DeepSeek V4 Flash`), không phải slug định tuyến
+// (`deepseek-v4-flash-latest`) — dùng nhờ `tenModel` bên app.js, cùng lối với
+// `esc`. Slug thô vẫn nằm trong `title` để soát khi cần.
+const svShort = (id) => tenModel(id || "");
 
 function svShowModels() {
   const m = SV.models || {};
   if (!m.strong) return;
-  const txt = `tổng hợp: ${svShort(m.strong)} · các bước khác: ${svShort(m.fast)}`;
+  const txt = `Tổng hợp bằng ${svShort(m.strong)} · các bước khác bằng ${svShort(m.fast)}`;
   const tip = `Model tổng hợp câu trả lời và bản tổng hợp: ${m.strong} (${m.strong_src})\n`
     + `Model cho lập kế hoạch, chấm lại, đọc đoạn, nạp bài: ${m.fast} (${m.fast_src})\n`
     + "Đổi ở Hỏi đáp → Tuỳ chọn & model.";

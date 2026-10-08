@@ -1,119 +1,197 @@
+/* =====================================================================
+   Giao diện "Sổ tay khoa học" — giấy kẻ ô, nét mực, chất truyện tranh
+   =====================================================================
+
+   Bản trước ấm và dễ đọc nhưng MỌI THỨ CÙNG MỘT TÔNG nâu-kem: ba cột đọc na
+   ná nhau, icon là emoji mỗi cái một kiểu vẽ, màn đầu là một form trơn. Bản
+   này đổi VẬT LIỆU, gần như không đổi bố cục:
+
+     giấy kẻ ô ly · nét mực đen 2px · bóng cứng không mờ · bút dạ quang vàng
+     · mực bút bi xanh · tờ giấy nhớ dán băng keo
+
+   Mỗi font một vai, và chính sự khác nhau giữa chúng chữa luôn cái tật "ba cột
+   cùng một tông":
+     --display  Baloo 2       tít, logo, nút — chất hoạt hình
+     --hand     Patrick Hand  nhãn, chú thích — chữ viết tay trong sổ
+     --read     Literata      cột gốc và cột dịch — serif đọc dài, chất tạp chí
+     --sans     Be Vietnam Pro  giao diện và cột giải thích
+
+   Hai tầng nét, cố ý tách: `--muc` là MỰC — khung của thứ nổi lên khỏi giấy
+   (nút, thẻ, hình, hộp thoại). `--line` là BÚT CHÌ — vạch ngăn mảnh giữa các
+   dòng. Skin "Báo" cũ gộp hai thứ vào một nên mọi vạch ngăn cũng thành mực
+   đen, cả trang nặng trịch.
+
+   Ràng buộc chữ tiếng Việt, đã vấp thật ở slide và ở `.sv-note`: không viết
+   hoa toàn bộ, không siết `letter-spacing` âm, `line-height` không dưới 1.28,
+   không font mono cho văn xuôi. Dấu chồng tầng (ế, ộ, ữ) bị cắt ngọn.
+   `test_giao_dien_khong_pha_luat_chu_tieng_viet` canh cả file.
+
+   Năm màu bôi `--c-*` phải khai ở CẢ BỐN khối theme dưới đây — sửa mỗi
+   `:root` thì bật theme tường minh là màu cũ quay lại (đã vấp). */
+
 :root {
-  --bg: #fbfaf7;
-  --surface: #ffffff;
-  --surface-2: #f4f2ed;
-  --line: #e2ded4;
-  --ink: #23211d;
-  --ink-2: #5d5850;
-  --muted: #6f6a61;
-  --accent: #b0521f;
-  --accent-soft: #fdf0e7;
-  --ok: #2f6b46;
-  --warn: #8a6100;
-  --warn-bg: #fdf6e3;        /* nền cảnh báo — dùng ở bộ soát slide */
-  /* năm màu bôi vàng — xem mark.hl[data-c] ở cuối file */
-  /* Đậm hơn hẳn bộ cũ. Đo tương phản với nền trắng: bộ cũ chỉ 1,13–1,38 nên
-     vệt bôi gần như chìm vào nền — đúng lời phàn nàn "màu bị nhạt so với nền".
-     Bộ này 1,37–1,73, mà chữ trên vệt vẫn ≥8,9 (ngưỡng cần là 4,5). */
-  --c-y:#ffd94d; --c-yl:#c98f1c; --c-g:#8fdda1; --c-gl:#2f7d4a;
-  --c-b:#a8d5f7; --c-bl:#1f6fb0; --c-p:#f9b8d4; --c-pl:#b03a72;
-  --c-v:#cdbcf7; --c-vl:#6746b8;
+  /* Sổ tay — giấy ngà, mực đen, bút bi xanh, dạ quang vàng */
+  --bg: #f4efe1;
+  --surface: #fffcf3;
+  --surface-2: #ece5d1;
+  --line: #cdc2a6;           /* bút chì: vạch ngăn mảnh */
+  --muc: #1d1b18;            /* mực: khung của thứ nổi lên khỏi giấy */
+  --bong: #1d1b18;           /* bóng cứng — tách khỏi `--muc` để nền tối đổi riêng */
+  --ink: #1d1b18;
+  --ink-2: #463f35;
+  --muted: #675e4f;          /* 5,1:1 trên giấy — trên ngưỡng AA */
+  --accent: #2753c0;         /* mực bút bi xanh: liên kết, mục đang chọn */
+  --accent-soft: #e2e9fb;
+  --on-accent: #ffffff;
+  --hl: #ffd43b;             /* dạ quang vàng: nút chính, vòng tiêu điểm */
+  --hl-2: #f5b800;
+  --red: #c8322c;            /* bút đỏ: xoá, cảnh báo */
+  --ok: #2a7a46;
+  --warn: #8a5a00;
+  --warn-bg: #fdf0c8;
+  --c-y:#ffd94d; --c-yl:#8a6100; --c-g:#8fdda1; --c-gl:#1f6b3f;
+  --c-b:#a8d5f7; --c-bl:#15537f; --c-p:#f9b8d4; --c-pl:#8e2e5b;
+  --c-v:#cdbcf7; --c-vl:#4f3590;
+  --grid: rgba(39, 83, 192, .075);      /* ô ly xanh nhạt của giấy kỹ thuật */
+  --le-do: rgba(200, 50, 44, .32);      /* lề đỏ của trang vở */
+  --note-bg: #fff4c2;                   /* giấy nhớ */
+  --tape: rgba(214, 196, 150, .62);     /* băng keo dán hình, dán giấy nhớ */
+  --eq-bg: #fffcf3; --eq-line: #d6cbb0;
+  --gl-bg: var(--note-bg); --gl-line: var(--muc); --gl-ink: #3a3326;
+  --head: #1d1b18;
   --radius: 10px;
+  --sans: "Be Vietnam Pro", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --display: "Baloo 2", "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+  --hand: "Patrick Hand", "Be Vietnam Pro", ui-sans-serif, sans-serif;
+  --read: "Literata", "Iowan Old Style", Georgia, serif;
+  --serif: var(--read);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  /* Màu riêng cho từng vai trò trong bài đọc. Trước đây mọi thứ đều một tông
-     nâu-kem nên mắt không phân biệt được cột nào là cột nào. */
-  --eq-bg: #fffdf9;          /* nền công thức */
-  --eq-line: #e8d9c4;
-  --gl-bg: #f6f8f5;          /* nền cột giải thích — ngả xanh để khác hẳn cột dịch */
-  --gl-line: #cfe0d2;
-  --gl-ink: #46564a;
-  --head: #8d4418;           /* tên mục */
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16151a; --surface: #1d1c22; --surface-2: #26252c; --line: #35333c;
-    /* `--muted` cũ (#857f76) chỉ đạt 3,9:1 trên nền nâu `--accent-soft` —
-       dưới ngưỡng AA 4,5 — nên dòng tác giả gần như chìm hẳn. Bộ này 6,2:1
-       trên nền nâu và 7,2:1 trên nền chính. Nhớ đổi ở CẢ HAI khối dark. */
-    --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #a8a29e;
-    --accent: #e08a52; --accent-soft: #2c211a;
-    --ok: #6cc08a; --warn: #d9a441; --warn-bg: #2b2416;
-  --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
-  --c-b:#173c58; --c-bl:#5aa9e6; --c-p:#4d1f36; --c-pl:#e08ab5;
-  --c-v:#33265c; --c-vl:#a98ff0;
-  --eq-bg: #21202a; --eq-line: #3b3846; --gl-bg: #1c2420; --gl-line: #33463a; --gl-ink: #a9c0af; --head: #e8996a;
+    /* Bản vẽ kỹ thuật — giấy blueprint, nét phấn. Cùng mọi luật thành phần với
+       Sổ tay, chỉ đổi token: khung là phấn trắng, bóng là xanh thẫm. */
+    --bg: #0f2649; --surface: #13305c; --surface-2: #1a3b6e; --line: #34598f;
+    --muc: #d9e6ff; --bong: #061630;
+    --ink: #eef4ff; --ink-2: #c6d6f1; --muted: #9db4d8;
+    --accent: #8cc8ff; --accent-soft: #1d4378; --on-accent: #0b1d36;
+    --hl: #ffd43b; --hl-2: #f5b800; --red: #ff7a70;
+    --ok: #6cc08a; --warn: #f0b85a; --warn-bg: #2b2a1c;
+    --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
+    --c-b:#173c58; --c-bl:#5aa9e6; --c-p:#4d1f36; --c-pl:#e08ab5;
+    --c-v:#33265c; --c-vl:#a98ff0;
+    --grid: rgba(217, 230, 255, .075); --le-do: rgba(255, 122, 112, .3);
+    --note-bg: #22477d; --tape: rgba(217, 230, 255, .22);
+    --eq-bg: #13305c; --eq-line: #34598f;
+    --gl-bg: var(--note-bg); --gl-line: var(--muc); --gl-ink: #e3ecfb; --head: #ffffff;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #16151a; --surface: #1d1c22; --surface-2: #26252c; --line: #35333c;
-  --ink: #ece9e3; --ink-2: #b6b1a8; --muted: #a8a29e;   /* xem ghi chú ở khối @media dark */
-  --accent: #e08a52; --accent-soft: #2c211a; --ok: #6cc08a; --warn: #d9a441;
-  --warn-bg: #2b2416;
+  --bg: #0f2649; --surface: #13305c; --surface-2: #1a3b6e; --line: #34598f;
+  --muc: #d9e6ff; --bong: #061630;
+  --ink: #eef4ff; --ink-2: #c6d6f1; --muted: #9db4d8;
+  --accent: #8cc8ff; --accent-soft: #1d4378; --on-accent: #0b1d36;
+  --hl: #ffd43b; --hl-2: #f5b800; --red: #ff7a70;
+  --ok: #6cc08a; --warn: #f0b85a; --warn-bg: #2b2a1c;
   --c-y:#7a651a; --c-yl:#e0b455; --c-g:#2c6640; --c-gl:#7fd39c;
   --c-b:#173c58; --c-bl:#5aa9e6; --c-p:#4d1f36; --c-pl:#e08ab5;
   --c-v:#33265c; --c-vl:#a98ff0;
-  --eq-bg: #21202a; --eq-line: #3b3846; --gl-bg: #1c2420; --gl-line: #33463a; --gl-ink: #a9c0af; --head: #e8996a;
+  --grid: rgba(217, 230, 255, .075); --le-do: rgba(255, 122, 112, .3);
+  --note-bg: #22477d; --tape: rgba(217, 230, 255, .22);
+  --eq-bg: #13305c; --eq-line: #34598f;
+  --gl-bg: var(--note-bg); --gl-line: var(--muc); --gl-ink: #e3ecfb; --head: #ffffff;
 }
 :root[data-theme="light"] {
-  --bg: #fbfaf7; --surface: #ffffff; --surface-2: #f4f2ed; --line: #e2ded4;
-  --ink: #23211d; --ink-2: #5d5850; --muted: #6f6a61;
-  --accent: #b0521f; --accent-soft: #fdf0e7; --ok: #2f6b46; --warn: #8a6100;
-  --warn-bg: #fdf6e3;
-  --c-y:#ffd94d; --c-yl:#c98f1c; --c-g:#8fdda1; --c-gl:#2f7d4a;
-  --c-b:#a8d5f7; --c-bl:#1f6fb0; --c-p:#f9b8d4; --c-pl:#b03a72;
-  --c-v:#cdbcf7; --c-vl:#6746b8;
-  --eq-bg: #fffdf9; --eq-line: #e8d9c4; --gl-bg: #f6f8f5;
-  --gl-line: #cfe0d2; --gl-ink: #46564a; --head: #8d4418;
+  --bg: #f4efe1; --surface: #fffcf3; --surface-2: #ece5d1; --line: #cdc2a6;
+  --muc: #1d1b18; --bong: #1d1b18;
+  --ink: #1d1b18; --ink-2: #463f35; --muted: #675e4f;
+  --accent: #2753c0; --accent-soft: #e2e9fb; --on-accent: #ffffff;
+  --hl: #ffd43b; --hl-2: #f5b800; --red: #c8322c;
+  --ok: #2a7a46; --warn: #8a5a00; --warn-bg: #fdf0c8;
+  --c-y:#ffd94d; --c-yl:#8a6100; --c-g:#8fdda1; --c-gl:#1f6b3f;
+  --c-b:#a8d5f7; --c-bl:#15537f; --c-p:#f9b8d4; --c-pl:#8e2e5b;
+  --c-v:#cdbcf7; --c-vl:#4f3590;
+  --grid: rgba(39, 83, 192, .075); --le-do: rgba(200, 50, 44, .32);
+  --note-bg: #fff4c2; --tape: rgba(214, 196, 150, .62);
+  --eq-bg: #fffcf3; --eq-line: #d6cbb0;
+  --gl-bg: var(--note-bg); --gl-line: var(--muc); --gl-ink: #3a3326; --head: #1d1b18;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Giấy kẻ ô ly xanh nhạt — giấy kỹ thuật của sổ thí nghiệm. Hai gradient,
+   không tải ảnh nào. Vùng ĐỌC thì không có ô (xem `.doc`): ô ly sau chữ đọc
+   dài là đánh đổi thẳng với việc đọc. */
 body {
-  margin: 0; background: var(--bg); color: var(--ink);
+  margin: 0; color: var(--ink);
   font-family: var(--sans); font-size: 15px; line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
 .small { font-size: .85em; }
 a { color: var(--accent); }
 
-/* ------------------------------------------------------------- nút, input */
+/* ------------------------------------------------------------- nút, input
+
+   Nút là một miếng bìa dán lên giấy: khung mực 2px, bóng cứng 3px. Rê chuột thì
+   nhấc lên, bấm thì ấn xuống sát giấy — cảm giác bấm có trọng lượng, và không
+   cần màu nào để báo trạng thái. */
 .btn {
-  font: inherit; padding: .5rem .95rem; border-radius: var(--radius);
-  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
-  cursor: pointer; transition: background .12s, border-color .12s;
+  font: inherit; font-weight: 600; padding: .5rem .95rem; border-radius: var(--radius);
+  border: 2px solid var(--muc); background: var(--surface); color: var(--ink);
+  cursor: pointer; box-shadow: 3px 3px 0 var(--bong);
+  transition: transform .08s, box-shadow .08s, background .12s;
 }
-.btn:hover { border-color: var(--accent); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-.btn-primary:hover { filter: brightness(1.07); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--bong); }
+.btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--bong); }
+/* Nút chính là vệt DẠ QUANG, không phải mảng màu nhấn: chữ mực trên nền vàng,
+   đọc rõ ở cả hai theme mà không phải đổi màu chữ theo nền. */
+.btn-primary {
+  background: var(--hl); color: #1d1b18; font-family: var(--display);
+  font-weight: 700; letter-spacing: .005em;
+}
+.btn-primary:hover:not(:disabled) { background: var(--hl-2); }
+.btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: 1px 1px 0 var(--bong); }
 .btn-sm { padding: .35rem .6rem; font-size: .82em; width: 100%; margin-top: .8rem; }
+/* Viền 2px TRONG SUỐT có sẵn từ đầu: hiện viền lúc rê chuột mà không đổi bề
+   rộng thì nút không nhảy, và các nút bên cạnh cũng không xô theo. */
 .icon-btn {
-  font: inherit; font-size: 1.05rem; line-height: 1; width: 2.1rem; height: 2.1rem;
-  display: grid; place-items: center; border-radius: var(--radius);
-  border: 1px solid transparent; background: transparent; color: var(--ink-2); cursor: pointer;
+  font: inherit; font-size: 1.05rem; line-height: 1; width: 2.2rem; height: 2.2rem;
+  display: grid; place-items: center; border-radius: 9px;
+  border: 2px solid transparent; background: transparent; color: var(--ink-2); cursor: pointer;
+  transition: transform .08s, box-shadow .08s, background .12s;
 }
-.icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+.icon-btn:hover {
+  background: var(--surface); color: var(--ink); border-color: var(--muc);
+  box-shadow: 2px 2px 0 var(--bong); transform: translate(-1px, -1px);
+}
+.icon-btn .ico { width: 1.25rem; height: 1.25rem; }
 .input {
   font: inherit; width: 100%; padding: .55rem .7rem; border-radius: var(--radius);
-  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border: 2px solid var(--muc); background: var(--surface); color: var(--ink);
 }
-.input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* Vòng tiêu điểm là vệt dạ quang quanh khung — thấy được trên cả giấy ngà lẫn
+   blueprint, khác `outline` xanh mảnh vốn chìm vào nét mực. */
+.input:focus { outline: none; box-shadow: 0 0 0 3px var(--hl); }
+.input::placeholder { color: var(--muted); opacity: .85; }
 .input-sm { padding: .35rem .55rem; font-size: .9em; margin-bottom: .6rem; }
 /* Font UI chứ KHÔNG mono. Font mono của hệ không dựng nổi dấu tiếng Việt chồng
    tầng, nên placeholder ô dán văn bản hiện ra "để`tách" — dấu huyền rời hẳn khỏi
    chữ. Cùng cái bẫy đã ghi cho `.sv-note` bên kho survey và cho `line-height`
    của slide. */
 .textarea { font-family: var(--sans); font-size: .92em; resize: vertical; line-height: 1.5; }
-.err { color: #c0392b; }
+.err { color: var(--red); font-weight: 600; }
 .warn {
   background: var(--accent-soft); border: 1px solid var(--accent);
   padding: .7rem .9rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: .92em;
 }
-code { font-family: var(--mono); font-size: .88em; background: var(--surface-2); padding: .1em .35em; border-radius: 4px; }
+code { font-family: var(--mono); font-size: .88em; background: var(--surface-2); padding: .1em .35em; border-radius: 4px; border: 1px solid var(--line); }
 
 /* -------------------------------------------------------- màn hình nhập */
 /* ---------------------------------------- thanh công cụ bên trái (app shell)
@@ -123,29 +201,35 @@ code { font-family: var(--mono); font-size: .88em; background: var(--surface-2);
    Rộng 62px — đủ cho icon và một nhãn ngắn, đủ hẹp để không lấn phần đọc. */
 :root { --rail-w: 62px; }
 
+/* Dải MỰC chạy dọc mép trái — gáy của cuốn sổ. Đậm hơn mọi thứ khác trên màn
+   nên nó đóng khung cả app, và mục đang chọn là một vệt dạ quang trên nền mực. */
 #rail {
   position: fixed; left: 0; top: 0; bottom: 0; width: var(--rail-w);
-  background: var(--surface-2); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: #1d1b18; border-right: 2px solid var(--muc);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding-top: 12px; z-index: 40;
 }
 .rail-mark {
-  width: 22px; height: 22px; color: var(--accent);
-  margin-bottom: 16px; opacity: .9;
+  width: 30px; height: 30px; color: var(--hl);
+  margin-bottom: 14px;
 }
 .rail-mark svg { width: 100%; height: 100%; display: block; }
 
 .rail-item {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
-  width: 50px; padding: 8px 2px 7px; border: 0; border-radius: 9px;
-  background: none; color: var(--muted); font: inherit; cursor: pointer;
-  transition: background .12s, color .12s;
+  width: 50px; padding: 8px 2px 7px; border: 2px solid transparent; border-radius: 10px;
+  background: none; color: #cfc6b3; font: inherit; cursor: pointer;
+  transition: background .12s, color .12s, transform .08s;
 }
-.rail-item svg { width: 21px; height: 21px; display: block; }
-.rail-item:hover { background: var(--surface); color: var(--ink-2); }
-.rail-item.is-on { background: var(--accent-soft); color: var(--accent); }
-.rail-lb { font-size: 10px; line-height: 1; letter-spacing: .005em; }
-.rail-item.is-on .rail-lb { font-weight: 600; }
+.rail-item svg { width: 22px; height: 22px; display: block; stroke-width: 2; }
+.rail-item:hover { color: #fffcf3; border-color: #4a453d; }
+.rail-item.is-on {
+  background: var(--hl); color: #1d1b18; border-color: #1d1b18;
+  box-shadow: 2px 2px 0 #000;
+}
+/* Nhãn dưới icon ở cỡ 10px: `line-height` 1.3 chứ không 1, vì "Tìm hiểu" có
+   dấu chồng tầng — sát quá thì dấu chạm vào icon phía trên. */
+.rail-lb { font-size: 10.5px; line-height: 1.3; font-weight: 600; }
 
 /* Mọi màn hình lùi sang phải nhường chỗ cho thanh. Dùng padding trên body chứ
    không margin trên từng màn: màn đọc và màn slide có phần con `position:fixed`
@@ -157,7 +241,7 @@ body { padding-left: var(--rail-w); }
   #rail {
     right: 0; bottom: 0; top: auto; width: auto; height: 52px;
     flex-direction: row; justify-content: center; gap: 18px;
-    border-right: 0; border-top: 1px solid var(--line); padding-top: 0;
+    border-right: 0; border-top: 2px solid var(--muc); padding-top: 0;
   }
   .rail-mark { display: none; }
   body { padding-left: 0; padding-bottom: 52px; }
@@ -165,36 +249,70 @@ body { padding-left: var(--rail-w); }
 
 .screen { min-height: 100vh; }
 .start-wrap { max-width: 720px; margin: 0 auto; padding: 4rem 1.25rem 5rem; }
-.start-head h1 { font-family: var(--serif); font-size: 2.1rem; margin: 0 0 .4rem; letter-spacing: -.01em; }
+/* Tên app là một dòng chữ đề TAY bằng bút dạ: font hoạt hình đậm, vệt dạ quang
+   kéo ngang nửa dưới. KHÔNG siết `letter-spacing` âm như bản cũ — dấu tiếng Việt
+   chồng tầng bị cắt ngọn khi chữ khít nhau. */
+.brand { display: flex; align-items: center; gap: .8rem; margin-bottom: .6rem; flex-wrap: wrap; }
+/* Dòng chú thích viết tay cạnh tên app, nghiêng nhẹ như ghi vội bên lề. */
+.brand-note {
+  font-family: var(--hand); font-size: 1.3rem; line-height: 1.3; color: var(--accent);
+  transform: rotate(-3deg) translateY(.5rem); white-space: nowrap;
+}
+.start-head h1 {
+  font-family: var(--display); font-weight: 800; font-size: 3rem; line-height: 1.15;
+  margin: 0; color: var(--ink);
+  text-decoration: underline; text-decoration-color: var(--hl);
+  text-decoration-thickness: .32em; text-underline-offset: -.18em;
+  text-decoration-skip-ink: none;
+}
+/* `.ico.` ở đầu: `.ico` khai ở cuối file với cỡ 1.15em, cùng độ ưu tiên thì
+   luật sau thắng — logo co lại còn 12px. Hai lớp thì chắc chắn thắng. */
+.ico.start-logo { width: 68px; height: 68px; flex: none; color: var(--ink); stroke-width: 2.4; vertical-align: 0; }
 .lede { color: var(--ink-2); margin: 0 0 2rem; }
-.tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); margin-bottom: 1.1rem; }
+/* Tab là TAI PHÂN TRANG của sổ: khung mực ba phía, tai đang mở tô dạ quang và
+   ăn xuống nét đáy (`margin-bottom: -2px`) để trông như liền với trang dưới. */
+.tabs { display: flex; gap: .35rem; border-bottom: 2px solid var(--muc); margin-bottom: 1.1rem; padding-left: .4rem; }
 .tab {
-  font: inherit; padding: .5rem .9rem; background: none; border: 0; cursor: pointer;
-  color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+  font-family: var(--display); font-weight: 600; font-size: 1rem; line-height: 1.4;
+  padding: .4rem .95rem .3rem; cursor: pointer;
+  background: var(--surface-2); color: var(--ink-2);
+  border: 2px solid var(--muc); border-bottom: 0; border-radius: 10px 10px 0 0;
+  margin-bottom: -2px;
 }
-.tab.is-on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.tab:hover { color: var(--ink); background: var(--surface); }
+.tab.is-on { color: #1d1b18; background: var(--hl); padding-bottom: .42rem; }
 .drop {
-  display: grid; place-items: center; gap: .3rem; padding: 2.6rem 1rem; cursor: pointer;
-  border: 2px dashed var(--line); border-radius: var(--radius); background: var(--surface);
-  text-align: center; transition: border-color .12s, background .12s;
+  display: grid; place-items: center; gap: .3rem; padding: 2.2rem 1rem; cursor: pointer;
+  border: 2.5px dashed var(--muc); border-radius: 16px; background: var(--surface);
+  text-align: center; transition: background .12s, transform .1s;
 }
-.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-.drop-icon { font-size: 1.9rem; }
-.drop-main { font-weight: 600; }
+.drop:hover, .drop.over { background: var(--accent-soft); }
+.drop.over { transform: rotate(-.4deg) scale(1.01); }
+.ico.drop-icon { width: 84px; height: 84px; color: var(--ink); stroke-width: 2.2; vertical-align: 0; }
+.drop-main { font-family: var(--display); font-weight: 700; font-size: 1.12rem; }
 .drop-sub, .hint { color: var(--muted); font-size: .87em; }
 .hint { margin: .5rem 0 0; }
 .row { display: flex; gap: .8rem; align-items: flex-end; margin-top: 1.2rem; }
 .field { flex: 1; display: grid; gap: .3rem; font-size: .87em; color: var(--muted); }
-.recent { margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 1.2rem; }
-.recent h2 { font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 .6rem; }
-.recent ul { list-style: none; margin: 0; padding: 0; }
+.recent { margin-top: 3rem; border-top: 2px dashed var(--line); padding-top: 1.4rem; }
+/* Không viết hoa: bản cũ `uppercase` + giãn chữ — dấu chồng tầng của "THƯ VIỆN"
+   sát dòng trên. Chất "tiêu đề mục" lấy từ font và độ đậm. */
+.recent h2 { font-family: var(--display); font-weight: 800; font-size: 1.45rem; line-height: 1.3; color: var(--ink); margin: 0; }
+/* `minmax(0, 1fr)`, không để rãnh ngầm `auto`: rãnh `auto` co giãn theo nội
+   dung, mà tiêu đề bài `nowrap` dài hơn cột nên kéo cả thẻ tràn ra ngoài. */
+.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; grid-template-columns: minmax(0, 1fr); }
+/* Mỗi bài là một TẤM THẺ thư viện: khung mực, bóng cứng, nhấc lên khi rê chuột. */
 .recent li {
-  display: flex; align-items: center; gap: .7rem; padding: .55rem .1rem;
-  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: .7rem; padding: .65rem .8rem;
+  background: var(--surface); border: 2px solid var(--muc); border-radius: 12px;
+  box-shadow: 3px 3px 0 var(--bong); transition: transform .08s, box-shadow .08s;
 }
-.recent li:last-child { border-bottom: 0; }
+.recent li:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--bong); }
 .recent .rt { flex: 1; cursor: pointer; min-width: 0; }
-.recent .rt b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent .rt b {
+  display: block; font-family: var(--read); font-weight: 600; font-size: 1.02rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .recent .rt span { color: var(--muted); font-size: .82em; }
 
 /* Thanh công cụ thư viện. `flex-wrap` vì ở màn hẹp ô tìm và ô sắp không đủ chỗ
@@ -224,20 +342,21 @@ body { padding-left: var(--rail-w); }
 #review { display: flex; flex-direction: column; height: 100vh; }
 .review-wrap { flex: 1; overflow-y: auto; padding: 1.4rem 1.6rem 4rem; max-width: 1000px; margin: 0 auto; width: 100%; }
 .review-wrap .lede { margin: 0 0 1.2rem; }
-.rev-h { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 1.8rem 0 .3rem; }
+.rev-h { font-family: var(--display); font-weight: 700; font-size: 1.12rem; line-height: 1.35; color: var(--ink); margin: 1.8rem 0 .35rem; }
 .stats { display: flex; flex-wrap: wrap; gap: .6rem; }
 .stat {
-  flex: 1 1 130px; background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: .6rem .8rem;
+  flex: 1 1 130px; background: var(--surface); border: 2px solid var(--muc);
+  border-radius: 12px; padding: .6rem .8rem; box-shadow: 3px 3px 0 var(--bong);
 }
-.stat b { display: block; font-size: 1.35rem; font-weight: 600; line-height: 1.2; }
+.stat b { display: block; font-family: var(--display); font-size: 1.55rem; font-weight: 800; line-height: 1.3; }
 .stat span { font-size: .78em; color: var(--muted); }
-.stat.warn-stat { border-color: var(--accent); background: var(--accent-soft); }
+.stat.warn-stat { background: var(--hl); color: #1d1b18; }
+.stat.warn-stat span { color: #463f35; }
 
 /* thẻ mời căn chỉnh bằng model */
 .tidy-card {
   display: flex; align-items: center; gap: 1rem; margin-top: .9rem;
-  padding: .8rem 1rem; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .8rem 1rem; border: 2px dashed var(--muc); border-radius: 12px;
   background: var(--surface);
 }
 .tidy-txt { flex: 1; min-width: 0; }
@@ -249,19 +368,19 @@ body { padding-left: var(--rail-w); }
 .kinds { display: flex; flex-wrap: wrap; gap: .4rem; }
 .kind {
   display: inline-flex; align-items: baseline; gap: .35rem; padding: .3rem .6rem;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: .82em;
+  border: 1.5px solid var(--muc); border-radius: 999px; background: var(--surface); font-size: .82em;
 }
 .kind b { font-size: 1em; font-weight: 600; }
 .kind span { color: var(--muted); }
 .kind.zero { opacity: .45; }
 
 .figgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
-.figcard { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.figcard { border: 2px solid var(--muc); border-radius: 10px; overflow: hidden; background: var(--surface); box-shadow: 3px 3px 0 var(--bong); }
 .figcard img { width: 100%; display: block; background: #fff; }
 .figcard .cap { padding: .45rem .6rem; font-size: .8em; color: var(--ink-2); }
 .figcard .act { display: flex; gap: .4rem; padding: 0 .6rem .5rem; }
-.figcard button { font: inherit; font-size: .78em; padding: .2rem .5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; color: var(--ink-2); }
-.figcard button:hover { border-color: var(--accent); color: var(--accent); }
+.figcard button { font: inherit; font-size: .78em; font-weight: 600; padding: .2rem .5rem; border-radius: 7px; border: 1.5px solid var(--muc); background: var(--surface); cursor: pointer; color: var(--ink); }
+.figcard button:hover { background: var(--hl); color: #1d1b18; }
 .figcard.dropped { opacity: .35; }
 .figcard.dropped img { filter: grayscale(1); }
 
@@ -272,7 +391,7 @@ body { padding-left: var(--rail-w); }
 .blk:last-child { border-bottom: 0; }
 .blk input { margin-top: .3rem; flex: none; }
 .blk .tag {
-  flex: none; font-size: .7em; text-transform: uppercase; letter-spacing: .04em;
+  flex: none; font-size: .74em; font-weight: 600;
   background: var(--surface-2); color: var(--muted); padding: .1rem .35rem; border-radius: 4px; margin-top: .15rem;
 }
 .blk .txt { flex: 1; min-width: 0; }
@@ -335,26 +454,43 @@ body { padding-left: var(--rail-w); }
 
 /* ------------------------------------------------------------- màn hình đọc */
 #reader { display: flex; flex-direction: column; height: 100vh; }
+/* Thanh trên là NẸP ĐẦU TRANG của sổ: giấy sạch, nét mực dày ở chân. Tên bài
+   bằng font hoạt hình — dòng đề của trang — còn tên gốc tiếng Anh là dòng chú
+   thích viết tay ngay dưới. `line-height` 1.3 trở lên: dấu chồng tầng. */
 .topbar {
-  display: flex; align-items: center; gap: .8rem; padding: .55rem .9rem;
-  border-bottom: 1px solid var(--line); background: var(--surface); flex: none;
+  display: flex; align-items: center; gap: .8rem; padding: .5rem .9rem;
+  border-bottom: 2.5px solid var(--muc); background: var(--surface); flex: none;
 }
-.topbar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
-.topbar-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .98rem; }
-.topbar-title span { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.topbar-title strong {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--display); font-weight: 700; font-size: 1.08rem; line-height: 1.35;
+}
+.topbar-title span {
+  color: var(--muted); font-family: var(--hand); font-size: .98rem; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .topbar-actions { display: flex; align-items: center; gap: .6rem; flex: none; }
-.seg { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.seg-btn { font: inherit; font-size: .85em; padding: .35rem .7rem; background: var(--surface); border: 0; cursor: pointer; color: var(--ink-2); }
-.seg-btn.is-on { background: var(--accent); color: #fff; }
+.seg { display: flex; border: 2px solid var(--muc); border-radius: var(--radius); overflow: hidden; }
+.seg-btn {
+  font: inherit; font-size: .85em; font-weight: 600; padding: .35rem .7rem;
+  background: var(--surface); border: 0; cursor: pointer; color: var(--ink-2);
+}
+.seg-btn + .seg-btn { border-left: 2px solid var(--muc); }
+.seg-btn.is-on { background: var(--hl); color: #1d1b18; }
 .check { display: flex; align-items: center; gap: .35rem; font-size: .85em; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 /* Ô chọn model, giờ nằm TRONG panel tuỳ chọn dịch chứ không trên thanh — nên
    nó được rộng cả panel thay vì bị bóp còn 12rem. Nhãn đầy đủ đọc được giá và
    độ dài ngữ cảnh, vốn mới là thứ để chọn giữa hai model. */
 .model-pick {
-  font: inherit; font-size: .85em; width: 100%; padding: .35rem .45rem;
-  border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--surface); color: var(--ink-2); cursor: pointer;
+  font: inherit; font-size: .85em; max-width: 22rem; padding: .35rem .45rem;
+  border: 2px solid var(--muc); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); cursor: pointer;
 }
+/* Rộng hết CHỈ trong panel tuỳ chọn dịch. Màn soát cũng dùng class này trên
+   thanh trên cùng — để `width: 100%` chung thì ô chọn ăn hết thanh và đẩy nút
+   "Bước 2: Dịch" xuống hai dòng (đã vấp ngay khi đổi giao diện). */
+.menu-pop .model-pick { width: 100%; max-width: none; }
 
 /* Nút Dịch và nút ▾ dính liền thành một khối: chúng là một điều khiển — làm
    việc đó, và chỉnh cách làm việc đó. Rời nhau thì mắt đọc thành hai nút. */
@@ -367,13 +503,16 @@ body { padding-left: var(--rail-w); }
   border-top-right-radius: 0; border-bottom-right-radius: 0;
   margin: 0; width: auto; min-width: 8.3rem; white-space: nowrap;
 }
+/* Nút ▾ dính liền nút Dịch: cùng nền dạ quang, ngăn bằng một nét mực, và bóng
+   cứng chạy liền một dải dưới cả khối — rời ra là mắt đọc thành hai nút. */
 .trans-group .caret {
-  width: 1.5rem; min-width: 1.5rem; border: 1px solid var(--accent);
-  border-left-color: rgba(255, 255, 255, .35);
-  border-top-left-radius: 0; border-bottom-left-radius: 0;
-  background: var(--accent); color: #fff; font-size: .8em;
+  width: 1.7rem; min-width: 1.7rem; height: auto;
+  border: 2px solid var(--muc); border-left-width: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--hl); color: #1d1b18; font-size: .85em;
+  box-shadow: 3px 3px 0 var(--bong); transform: none;
 }
-.trans-group .caret:hover { filter: brightness(1.07); background: var(--accent); }
+.trans-group .caret:hover { background: var(--hl-2); color: #1d1b18; transform: none; box-shadow: 3px 3px 0 var(--bong); }
 /* Panel neo vào mép phải của cả khối, không của riêng nút ▾; và thả xuống
    theo CHIỀU CAO THẬT của khối (`100%`) chứ không theo mốc 2,4rem dùng cho các
    nút icon — nút Dịch cao hơn icon nên mốc cứng làm panel đè lên thanh 13px. */
@@ -384,41 +523,72 @@ body { padding-left: var(--rail-w); }
 .model-pick:disabled { opacity: .5; cursor: default; }
 .menu { position: relative; }
 .menu-pop {
-  position: absolute; right: 0; top: 2.4rem; background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--radius); padding: .3rem; z-index: 40;
-  box-shadow: 0 8px 24px rgba(0,0,0,.12); min-width: 200px;
+  position: absolute; right: 0; top: 2.6rem; background: var(--surface);
+  border: 2px solid var(--muc); border-radius: 12px; padding: .35rem; z-index: 40;
+  box-shadow: 5px 5px 0 var(--bong); min-width: 200px;
 }
-.menu-pop a { display: block; padding: .45rem .6rem; border-radius: 6px; text-decoration: none; color: var(--ink); font-size: .9em; cursor: pointer; white-space: nowrap; }
-.menu-pop a:hover { background: var(--surface-2); }
-.menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: .3rem .4rem; }
+.menu-pop a { display: block; padding: .45rem .6rem; border-radius: 7px; text-decoration: none; color: var(--ink); font-size: .9em; cursor: pointer; white-space: nowrap; }
+.menu-pop a:hover { background: var(--hl); color: #1d1b18; }
+.menu-pop hr { border: 0; border-top: 1.5px dashed var(--line); margin: .35rem .4rem; }
 
-.progress { height: 3px; background: var(--surface-2); flex: none; }
-#progressBar { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
-.status { margin: 0; padding: .4rem .9rem; font-size: .85em; color: var(--muted); background: var(--surface-2); flex: none; }
+/* Thanh tiến trình kẻ sọc chéo chạy — kiểu thanh tải truyện tranh. Sọc chạy
+   cả khi phần trăm đứng yên, nên một mẻ dài không trông như treo. */
+.progress { height: 8px; background: var(--surface-2); flex: none; border-bottom: 2px solid var(--muc); }
+#progressBar {
+  height: 100%; width: 0; transition: width .3s;
+  background: repeating-linear-gradient(-45deg, var(--hl) 0 8px, var(--hl-2) 8px 16px);
+  background-size: 22.6px 22.6px; animation: soc-chay .9s linear infinite;
+  border-right: 2px solid var(--muc);
+}
+@keyframes soc-chay { to { background-position: 22.6px 0; } }
+@media (prefers-reduced-motion: reduce) { #progressBar { animation: none; } }
+.status {
+  margin: 0; padding: .4rem .9rem; font-size: .87em; color: var(--ink-2);
+  background: var(--surface-2); flex: none; border-bottom: 1.5px dashed var(--line);
+}
 
 .body { display: flex; flex: 1; min-height: 0; }
 
 /* --------------------------------------------------------------- sidebar */
 .side {
-  width: 320px; flex: none; border-right: 1px solid var(--line); background: var(--surface);
+  width: 320px; flex: none; border-right: 2.5px solid var(--muc); background: var(--surface);
   display: flex; flex-direction: column; min-height: 0;
 }
-.side-tabs { display: flex; border-bottom: 1px solid var(--line); flex: none; }
+.side-tabs { display: flex; border-bottom: 2px solid var(--muc); flex: none; padding: 0 .2rem; }
 .side-tab {
   /* min-width:0 để tab chịu co — nếu không, chúng chiếm hết chỗ và bóp nút ✕
      (món duy nhất co được) xuống 0 chiều rộng, thành ra nút biến mất */
-  flex: 1; min-width: 0; font: inherit; font-size: .78em; padding: .55rem .2rem;
+  flex: 1; min-width: 0; font-family: var(--hand); font-size: 1.02rem; line-height: 1.35;
+  padding: .45rem .2rem .35rem;
   background: none; border: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer; color: var(--muted); border-bottom: 4px solid transparent; margin-bottom: -2px;
 }
 #sideClose { flex: none; width: 1.9rem; height: 1.9rem; align-self: center; font-size: .9rem; }
-.side-tab.is-on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.side-tab.is-on { color: var(--ink); border-bottom-color: var(--hl); }
 .side-pane { flex: 1; overflow-y: auto; padding: .9rem; font-size: .9em; min-height: 0; }
-.side-foot { flex: none; border-top: 1px solid var(--line); padding: .45rem .9rem; font-size: .75em; }
+.side-foot { flex: none; border-top: 2px solid var(--muc); padding: .45rem .9rem; font-size: .8em; background: var(--surface-2); }
 
 .brief-line { margin: 0 0 .8rem; }
-.brief-line b { display: block; font-size: .76em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .12rem; }
-.pull { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: .6rem .75rem; border-radius: 0 6px 6px 0; margin: 0 0 1rem; }
+/* Nhãn mục là chữ VIẾT TAY bằng mực bút bi xanh — "Bài toán", "Ý tưởng" như
+   người đọc tự ghi bên lề. Bản cũ viết hoa + giãn chữ, mà dấu chồng tầng của
+   "KHOẢNG TRỐNG" chạm sát dòng trên. */
+.brief-line b {
+  display: block; font-family: var(--hand); font-weight: 400; font-size: 1.12rem;
+  line-height: 1.3; color: var(--accent); margin-bottom: .1rem;
+}
+/* Câu tóm lược là tờ GIẤY NHỚ dán băng keo, hơi nghiêng — chỗ duy nhất trên
+   cột trái được nghiêng, vì nó là thứ mắt cần tìm ra đầu tiên. */
+.pull {
+  position: relative; background: var(--note-bg); color: var(--gl-ink);
+  border: 2px solid var(--muc); border-radius: 3px 3px 12px 3px;
+  box-shadow: 3px 3px 0 var(--bong);
+  padding: .9rem .85rem .7rem; margin: .7rem .2rem 1.2rem; transform: rotate(-.7deg);
+}
+.pull::before {
+  content: ""; position: absolute; top: -9px; left: 50%; width: 64px; height: 16px;
+  margin-left: -32px; background: var(--tape); transform: rotate(-3deg);
+  border-left: 1px dashed rgba(0, 0, 0, .12); border-right: 1px dashed rgba(0, 0, 0, .12);
+}
 .warns { list-style: none; margin: .3rem 0 0; padding: 0; }
 .warns li { position: relative; padding-left: 1.2rem; margin-bottom: .4rem; color: var(--warn); }
 .warns li::before { content: "⚠"; position: absolute; left: 0; }
@@ -433,7 +603,7 @@ body { padding-left: var(--rail-w); }
   background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2);
 }
 .chain .role {
-  display: inline-block; font-size: .68em; text-transform: uppercase; letter-spacing: .05em;
+  display: inline-block; font-family: var(--hand); font-size: .95em; line-height: 1.3;
   padding: .05rem .4rem; border-radius: 4px; background: var(--surface-2); color: var(--muted); margin-bottom: .2rem;
 }
 .chain .role[data-r="claim"], .chain .role[data-r="conclusion"] { background: var(--accent-soft); color: var(--accent); }
@@ -454,18 +624,26 @@ body { padding-left: var(--rail-w); }
 .outline a[data-lvl="3"] { padding-left: 2rem; font-size: .85em; }
 
 /* ------------------------------------------------------------- nội dung */
-.doc { flex: 1; overflow-y: auto; padding: 1.6rem 1.6rem 60vh; scroll-behavior: smooth;
-       font-size: var(--reader-font, 1rem); }
+/* Vùng đọc là một TRANG GIẤY SẠCH, không ô ly — ô ly sau chữ đọc dài là đánh
+   đổi thẳng với việc đọc. Chỉ giữ một nét lề đỏ ở mép trái, như trang vở. */
+.doc {
+  flex: 1; overflow-y: auto; padding: 1.6rem 1.6rem 60vh; scroll-behavior: smooth;
+  font-size: var(--reader-font, 1rem);
+  background-color: var(--surface);
+  background-image: linear-gradient(90deg, transparent .75rem, var(--le-do) .75rem,
+                                    var(--le-do) calc(.75rem + 1.5px), transparent calc(.75rem + 1.5px));
+  background-attachment: local;
+}
 
 /* thanh tìm kiếm trong bài */
 .findbar {
   display: flex; align-items: center; gap: .5rem; flex: none;
-  padding: .4rem .9rem; border-bottom: 1px solid var(--line); background: var(--surface-2);
+  padding: .4rem .9rem; border-bottom: 2px solid var(--muc); background: var(--surface-2);
 }
 .findbar .input { flex: 1; margin-bottom: 0; }
 .findbar .hint { flex: none; min-width: 5.5rem; text-align: right; }
 mark.hit { background: #ffe08a; color: #000; border-radius: 2px; padding: 0 1px; }
-mark.hit.cur { background: var(--accent); color: #fff; }
+mark.hit.cur { background: var(--accent); color: var(--on-accent); }
 
 /* hộp chỉnh hiển thị */
 .vset { display: grid; gap: .25rem; padding: .35rem .5rem; font-size: .82em; color: var(--ink-2); }
@@ -499,41 +677,66 @@ mark.hit.cur { background: var(--accent); color: #fff; }
 /* Bề rộng do JS đặt thẳng vào style của .doc-inner (xem applyReaderPrefs) —
    để đây một luật CSS nữa thì hai bên tranh nhau theo độ ưu tiên. */
 .doc-inner { margin: 0 auto; }
-.cols { display: flex; gap: .7rem; padding: .1rem .5rem; border: 1px solid var(--line); border-radius: var(--radius); }
+.cols { display: flex; gap: .7rem; padding: .2rem .6rem; border: 2px solid var(--muc); border-radius: var(--radius); background: var(--surface); }
 
 /* Cột diễn giải: nền ngả xanh, khác hẳn tông nâu-kem của cột gốc và cột dịch.
    Trước đây chỉ khác nhau bằng một vạch mảnh nên ba cột trông như một khối. */
+/* Cột giải thích là TỜ GIẤY NHỚ dán cạnh đoạn văn: nền vàng nhạt, khung mực,
+   góc dưới bo lệch như giấy cong, một mẩu băng keo ở mép trên. Khác hẳn hai
+   cột serif bên cạnh ở cả nền, khung lẫn font — đúng chỗ bản cũ hỏng: ba cột
+   cùng một tông nên mắt không biết bám vào đâu.
+
+   Bỏ hẳn vạch màu kẻ dọc bên trái của bản cũ: đó là một trong ba thứ bị chỉ
+   đích danh là "dấu hiệu đồ do AI làm" (xem mục slide trong CLAUDE.md). */
 .gl {
-  font-size: .87em; color: var(--gl-ink); line-height: 1.6;
-  background: var(--gl-bg); border: 1px solid var(--gl-line);
-  border-left: 3px solid var(--ok);
-  padding: .5rem .75rem; border-radius: 0 8px 8px 0;
+  position: relative;
+  font-size: .9em; color: var(--gl-ink); line-height: 1.6;
+  background: var(--gl-bg); border: 1.5px solid var(--gl-line);
+  border-radius: 3px 3px 12px 3px; box-shadow: 2px 2px 0 var(--bong);
+  padding: .75rem .8rem .6rem; margin-top: .35rem;
+}
+.gl::before {
+  content: ""; position: absolute; top: -8px; left: 1.1rem; width: 46px; height: 14px;
+  background: var(--tape); transform: rotate(-4deg);
 }
 /* Ô rỗng thì bỏ trang trí chứ KHÔNG display:none — giữ ô lại cho lưới ba cột
    không bị xô khi một đoạn chưa có phần giải thích. */
-.gl:empty { background: none; border-color: transparent; padding: 0; }
+.gl:empty { background: none; border-color: transparent; padding: 0; box-shadow: none; margin-top: 0; }
+.gl:empty::before { display: none; }
 .pair.h1 .gl, .pair.h2 .gl, .pair.h3 .gl, .pair.equation .gl, .pair.meta .gl { display: none; }
 
-.pair:hover { background: var(--surface-2); }
-.pair.is-on { background: var(--accent-soft); }
-.en { color: var(--ink-2); font-size: .93em; }
-.vi { color: var(--ink); }
+.pair:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+/* Đoạn đang chọn: một vệt dạ quang nhạt phủ cả hàng, không phải nền xanh. */
+.pair.is-on { background: color-mix(in srgb, var(--hl) 20%, transparent); }
+/* Hai cột đọc cùng một serif, khác nhau ở MỰC: gốc là bút chì, dịch là mực đen.
+   Cột giải thích đổi hẳn sang sans trên giấy nhớ, nên ba cột phân biệt được
+   ngay khi liếc — bằng font, bằng nền, bằng khung. */
+.en { color: var(--ink-2); font-size: .93em; font-family: var(--read); line-height: 1.62; }
+.vi { color: var(--ink); font-family: var(--read); line-height: 1.66; }
 .en p, .vi p { margin: 0 0 .9rem; }
 
 /* Tên mục: có màu riêng và một vạch nhấn, để lướt mắt là thấy ngay ranh giới
    giữa các phần — trước đây chỉ khác thân bài ở cỡ chữ. */
 .pair.h1, .pair.h2, .pair.h3 { margin-top: 2rem; }
-.pair.h1 .en, .pair.h1 .vi {
-  font-family: var(--serif); font-size: 1.5em; font-weight: 600; line-height: 1.3;
-  color: var(--head); padding-bottom: .3rem; border-bottom: 2px solid var(--eq-line);
+/* Tên mục là dòng ĐỀ TAY bằng bút dạ: font hoạt hình đậm, một vệt dạ quang kéo
+   qua nửa dưới chữ. Vệt làm bằng `text-decoration` chứ không bằng nền: nó chạy
+   theo đúng bề ngang chữ trên từng dòng, kể cả khi tên mục xuống dòng — nền
+   của một ô lưới thì phủ cả bề rộng cột. */
+.pair.h1 .en, .pair.h1 .vi, .pair.h2 .en, .pair.h2 .vi {
+  font-family: var(--display); font-weight: 800; color: var(--head); line-height: 1.32;
+  text-decoration: underline; text-decoration-skip-ink: none;
+  text-decoration-color: color-mix(in srgb, var(--hl) 85%, transparent);
+  text-decoration-thickness: .34em; text-underline-offset: -.2em;
 }
-.pair.h2 .en, .pair.h2 .vi {
-  font-family: var(--serif); font-size: 1.2em; font-weight: 600; color: var(--head);
+.pair.h1 .en, .pair.h1 .vi { font-size: 1.62em; }
+.pair.h2 .en, .pair.h2 .vi { font-size: 1.28em; text-decoration-thickness: .28em; }
+.pair.h1 .en, .pair.h2 .en { color: var(--ink-2); }
+.pair.h3 .en, .pair.h3 .vi {
+  font-family: var(--display); font-weight: 700; font-size: 1.08em; line-height: 1.35; color: var(--ink);
 }
-.pair.h3 .en, .pair.h3 .vi { font-weight: 700; font-size: 1em; color: var(--ink); }
+/* Chú thích hình viết tay ngay dưới khung — đúng lối ghi "Hình 1." trong sổ. */
 .pair.caption .en, .pair.caption .vi {
-  font-size: .85em; color: var(--ink-2); font-style: italic;
-  border-left: 2px solid var(--eq-line); padding-left: .6rem;
+  font-family: var(--hand); font-size: 1.04em; line-height: 1.4; color: var(--ink-2);
 }
 .pair.meta { grid-template-columns: minmax(0, 1fr); opacity: .6; }
 .pair.meta .en { font-size: .8em; color: var(--muted); }
@@ -545,9 +748,9 @@ mark.hit.cur { background: var(--accent); color: #fff; }
 .pair.equation .vi, .pair.equation .tools { display: none; }
 .pair.equation .en {
   font-family: var(--mono); font-size: 1.02em; line-height: 1.7; color: var(--ink);
-  background: var(--eq-bg); border: 1px solid var(--eq-line);
-  border-left: 3px solid var(--accent);
-  padding: .85rem 1.1rem; border-radius: 8px; white-space: pre-wrap;
+  background: var(--eq-bg); border: 2px solid var(--muc);
+  box-shadow: 3px 3px 0 var(--bong);
+  padding: .85rem 1.1rem; border-radius: 10px; white-space: pre-wrap;
   text-align: center; overflow-x: auto;
 }
 .pair.equation .en sub, .pair.equation .en sup { color: var(--accent); font-weight: 600; }
@@ -601,23 +804,34 @@ sub { bottom: -.22em; }
   position: absolute; right: .25rem; top: .2rem;
   display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .1rem;
   width: 2.6rem; z-index: 5;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 6px; padding: .15rem;
+  background: var(--surface); border: 2px solid var(--muc);
+  border-radius: 8px; padding: .12rem; box-shadow: 2px 2px 0 var(--bong);
   opacity: 0; transition: opacity .12s;
 }
 .pair:hover > .tools, .pair.is-on > .tools, .tools:focus-within { opacity: 1; }
 .tools button {
-  font: inherit; font-size: .8rem; line-height: 1; width: 1.25rem; height: 1.25rem;
+  font: inherit; font-size: .8rem; line-height: 1; width: 1.3rem; height: 1.3rem;
   display: grid; place-items: center; background: none; border: 0;
-  border-radius: 4px; cursor: pointer; color: var(--ink-2);
+  border-radius: 5px; cursor: pointer; color: var(--ink-2);
 }
-.tools button:hover { background: var(--surface-2); color: var(--accent); }
+.tools button .ico { width: .95rem; height: .95rem; }
+.tools button:hover { background: var(--hl); color: #1d1b18; }
 
 /* --------------------------------------------- hình cắt từ PDF & sơ đồ */
+/* Hình là một TẤM ẢNH DÁN vào sổ: nền trắng thật (tranh in không bị nhuộm màu
+   giấy), khung mực dày, bóng cứng, hai mẩu băng keo ở hai góc trên. */
 .figure {
-  grid-column: 1 / -1; margin: .3rem 0 .9rem; padding: .6rem;
-  background: #fff; border: 1px solid var(--line); border-radius: 8px; text-align: center;
+  position: relative;
+  grid-column: 1 / -1; margin: .9rem 0 1rem; padding: .7rem;
+  background: #fff; border: 2.5px solid var(--muc); border-radius: 6px; text-align: center;
+  box-shadow: 4px 4px 0 var(--bong);
 }
+.figure::before, .figure::after {
+  content: ""; position: absolute; top: -9px; width: 58px; height: 18px;
+  background: var(--tape); z-index: 1;
+}
+.figure::before { left: -14px; transform: rotate(-24deg); }
+.figure::after { right: -14px; transform: rotate(22deg); }
 .figure img { max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 4px; }
 /* đòi lại dải đã chừa cho nút, để hình không bị lệch sang trái so với chữ */
 .pair.caption > .figure { margin-right: -2.3rem; }
@@ -625,8 +839,9 @@ sub { bottom: -.22em; }
 :root[data-theme="dark"] .figure { background: #f7f6f3; }
 
 .diagram {
-  margin: 0 0 .8rem; padding: .7rem; background: var(--surface-2);
-  border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; text-align: center;
+  margin: 0 0 .8rem; padding: .7rem; background: var(--surface);
+  border: 2px solid var(--muc); border-radius: 10px; overflow-x: auto; text-align: center;
+  box-shadow: 3px 3px 0 var(--bong);
 }
 .diagram svg { max-width: 100%; height: auto; }
 .diagram figcaption {
@@ -639,22 +854,31 @@ sub { bottom: -.22em; }
 #diagramBox:not(:empty) { margin-bottom: 1rem; }
 
 /* ------------------------------------------------------ hộp giải thích */
+/* Lời giải thích của 💡 là một BONG BÓNG THOẠI: khung mực bo tròn, bóng cứng,
+   và cái đuôi chĩa lên đoạn văn nó đang nói tới. */
 .note {
-  grid-column: 1 / -1; margin: .5rem 0 1.1rem; padding: .85rem 1rem;
-  background: var(--surface); border: 1px solid var(--line);
-  border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; font-size: .92em;
+  position: relative;
+  grid-column: 1 / -1; margin: 1rem 0 1.2rem; padding: .9rem 1.05rem;
+  background: var(--surface); border: 2px solid var(--muc);
+  border-radius: 16px; box-shadow: 4px 4px 0 var(--bong); font-size: .93em;
 }
+.note::before, .note::after {
+  content: ""; position: absolute; left: 2rem; width: 0; height: 0;
+  border: 11px solid transparent; border-top: 0;
+}
+.note::before { top: -13px; border-bottom: 13px solid var(--muc); }
+.note::after { top: -9.5px; left: calc(2rem + 2px); border-width: 0 9px 10.5px; border-bottom-color: var(--surface); }
 .note h4 {
-  margin: 0 0 .6rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+  margin: 0 0 .55rem; font-family: var(--hand); font-weight: 400; font-size: 1.25rem; line-height: 1.3;
   color: var(--accent); display: flex; align-items: center; gap: .4rem;
 }
 .note h4 button { margin-left: auto; }
 .note.collapsed { display: none; }
 .note dl { margin: 0; display: grid; gap: .55rem; }
-.note dt { font-size: .74em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.note dt { font-family: var(--hand); font-size: 1.08em; line-height: 1.3; color: var(--accent); }
 .note dd { margin: .1rem 0 0; }
 .note .gist { font-weight: 600; }
-.note .check-q { background: var(--surface-2); padding: .5rem .65rem; border-radius: 6px; font-style: italic; }
+.note .check-q { background: var(--note-bg); border: 1.5px dashed var(--muc); padding: .5rem .65rem; border-radius: 8px; font-style: italic; }
 .note .caution { color: var(--warn); }
 .spin { display: inline-block; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -662,17 +886,17 @@ sub { bottom: -.22em; }
 /* ------------------------------------------------------------- hỏi đáp */
 .chat {
   position: fixed; right: 0; top: 0; bottom: 0; width: min(440px, 100%);
-  background: var(--surface); border-left: 1px solid var(--line);
-  display: flex; flex-direction: column; z-index: 50; box-shadow: -10px 0 30px rgba(0,0,0,.1);
+  background: var(--surface); border-left: 2.5px solid var(--muc);
+  display: flex; flex-direction: column; z-index: 50; box-shadow: -5px 0 0 var(--bong);
 }
-.chat-head { display: flex; align-items: center; padding: .6rem .9rem; border-bottom: 1px solid var(--line); }
-.chat-head strong { flex: 1; }
+.chat-head { display: flex; align-items: center; padding: .6rem .9rem; border-bottom: 2px solid var(--muc); }
+.chat-head strong { flex: 1; font-family: var(--display); font-weight: 800; font-size: 1.12rem; line-height: 1.35; }
 .chat-log { flex: 1; overflow-y: auto; padding: .9rem; display: flex; flex-direction: column; gap: .8rem; }
-.msg { padding: .6rem .8rem; border-radius: 10px; font-size: .92em; white-space: pre-wrap; }
-.msg.user { background: var(--accent-soft); align-self: flex-end; max-width: 88%; }
+.msg { padding: .6rem .8rem; border-radius: 14px; font-size: .92em; white-space: pre-wrap; border: 2px solid var(--muc); }
+.msg.user { background: var(--hl); color: #1d1b18; align-self: flex-end; max-width: 88%; box-shadow: 2px 2px 0 var(--bong); border-bottom-right-radius: 4px; }
 /* câu trả lời được dựng thành HTML nên khoảng trắng do thẻ lo, không giữ nguyên
    như câu hỏi của người dùng */
-.msg.bot { background: var(--surface-2); white-space: normal; }
+.msg.bot { background: var(--surface); white-space: normal; box-shadow: 3px 3px 0 var(--bong); border-bottom-left-radius: 4px; }
 .msg.bot > :first-child { margin-top: 0; }
 .msg.bot > :last-child { margin-bottom: 0; }
 .msg.bot p { margin: 0 0 .6rem; }
@@ -730,7 +954,7 @@ sub { bottom: -.22em; }
      Đặt inline thì nó không thắng nổi và khung PDF tràn màn hình. */
   width: var(--pdf-w, 40%); min-width: 300px; flex: none;
   display: flex; flex-direction: column; position: relative;
-  border-left: 1px solid var(--line); background: var(--surface-2); min-height: 0;
+  border-left: 2.5px solid var(--muc); background: var(--surface-2); min-height: 0;
 }
 /* Vách kéo. Rộng 5px nhưng vùng bắt chuột nới ra hai bên bằng `::before` —
    vách đủ hẹp để không chiếm chỗ thì lại quá hẹp để nhắm chuột vào. */
@@ -932,8 +1156,11 @@ body.is-resizing { user-select: none; cursor: col-resize; }
   flex: 1; min-height: 0; min-width: 0; display: flex;
   align-items: center; justify-content: center; overflow: hidden;
 }
+/* `box-shadow: none` phải có: `.diagram` của app mang bóng cứng kiểu sổ tay,
+   còn slide cố ý là nền trắng sạch — và bản xuất `_SLIDES_CSS` không có bóng,
+   để lọt vào đây thì xem trước khác file tải về. */
 .sl-slide .mmd-slot .diagram {
-  margin: 0; padding: 0; border: 0; background: none;
+  margin: 0; padding: 0; border: 0; background: none; box-shadow: none;
   flex: 1; min-width: 0; min-height: 0;
   max-width: 100%; max-height: 100%; display: flex;
   align-items: center; justify-content: center;
@@ -1442,7 +1669,13 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
    Màn Tìm hiểu cùng bài toán mà không vỡ, vì nó cho phép xuống dòng. */
 @media (max-width: 1040px) {
   .topbar { flex-wrap: wrap; row-gap: .35rem; }
-  .topbar-actions { flex-wrap: wrap; }
+  /* `flex: 1 1 0` chứ không để `flex: none` của khối gốc: khối `flex: none`
+     rộng bằng nội dung của chính nó, nên `flex-wrap` không bao giờ có cớ xuống
+     dòng — đo ở khung 640px: khối nút rộng 672px, nút Tải về lọt ra ngoài.
+     Cũng KHÔNG `100%`: thế thì khối nút không ngồi chung dòng với ←/☰ được,
+     thanh thành ba dòng, 111 → 152px ở khung 1000px. Gốc 0 nghĩa là chiếm
+     phần còn lại của dòng, thiếu chỗ thì xuống dòng BÊN TRONG khối. */
+  .topbar-actions { flex-wrap: wrap; flex: 1 1 0; min-width: 0; row-gap: .35rem; }
   .topbar-title { flex-basis: 100%; order: -1; }
 }
 
@@ -1480,226 +1713,41 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   font-family: var(--mono); font-size: .86em; line-height: 1.45; white-space: pre;
 }
 
-/* ===================================================================
-   Skin "Báo" — trang báo in cộng nét truyện tranh
-   ===================================================================
-
-   Vì sao có skin này: bản gốc ấm và dễ đọc nhưng **mọi thứ cùng một tông
-   nâu-kem**, nên mắt không có mốc nào để bám và đọc lâu thì chán. Skin này
-   không đổi bố cục một chút nào — nó chỉ đổi **vật liệu**:
-
-     giấy báo (hơi ngà, có hạt) · mực đen thật · viền dày · bóng cứng không mờ
-
-   Ba thứ tạo ra cảm giác, và không thứ nào là hình ảnh tải về:
-     1. `--line` thành MỰC ĐEN chứ không phải xám mảnh. Mọi viền sẵn có trong
-        app lập tức thành nét vẽ.
-     2. Bóng cứng `3px 3px 0` — không blur. Đây là nét truyện tranh, khác hẳn
-        bóng mờ của giao diện phẳng thông thường.
-     3. Hạt giấy + lưới bán sắc (halftone) bằng `radial-gradient`, nên không
-        thêm một request nào.
-
-   Ràng buộc đã giữ, vì chúng đã vấp thật ở chỗ khác trong dự án:
-     - **Không viết hoa toàn bộ, không siết `letter-spacing`, `line-height`
-       không dưới 1.28.** Dấu tiếng Việt chồng tầng (ế, ộ, ữ) bị cắt ngọn —
-       đúng cái bẫy đã ghi cho slide. Cảm giác "tít báo" lấy từ **độ đậm và
-       nét kẻ**, không lấy từ chữ hoa.
-     - **Không dùng font mono cho văn xuôi**: mono của hệ không dựng nổi dấu
-       chồng tầng (đã thấy "sô´", "chuôĩ").
-     - Năm màu bôi vàng phải khai Ở ĐÂY nữa — chúng khai ở bốn khối theme, bỏ
-       sót một khối là bôi ra màu của theme khác.                             */
-
-:root[data-theme="bao"] {
-  --bg: #e9e3d4;             /* giấy báo: ngà, hơi xám, không phải trắng */
-  --surface: #f6f2e7;
-  --surface-2: #ded7c4;
-  --line: #1d1b16;           /* MỰC — chỗ đổi quan trọng nhất của cả skin */
-  --ink: #141210;
-  --ink-2: #3c3730;
-  --muted: #645d50;          /* 5,4:1 trên giấy — trên ngưỡng AA */
-  --accent: #c0102a;         /* đỏ spot của báo in */
-  --accent-soft: #f6dfe2;
-  --ok: #1f6b3f;
-  --warn: #8a5a00;
-  --warn-bg: #f6e8c8;
-  --c-y:#ffd94d; --c-yl:#8a6100; --c-g:#8fdda1; --c-gl:#1f6b3f;
-  --c-b:#a8d5f7; --c-bl:#15537f; --c-p:#f9b8d4; --c-pl:#8e2e5b;
-  --c-v:#cdbcf7; --c-vl:#4f3590;
-  --eq-bg: #f6f2e7; --eq-line: #1d1b16;
-  --gl-bg: #eef1e6; --gl-line: #1d1b16; --gl-ink: #2f3a30;
-  --head: #141210;           /* tít đen, không phải nâu */
-  --radius: 3px;             /* góc gần vuông — giấy in không bo tròn */
-  --muc: #1d1b16;            /* dùng cho bóng cứng */
-}
-
-/* Giấy: hai lớp gradient xếp lên nhau — lưới bán sắc mảnh và một vệt vân dọc.
-   Cố ý rất nhạt: đủ để không phẳng lì, không đủ để cạnh tranh với chữ. */
-:root[data-theme="bao"] body {
-  background-color: var(--bg);
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(29, 27, 22, .10) 1px, transparent 1.5px),
-    repeating-linear-gradient(90deg, rgba(29, 27, 22, .035) 0 1px, transparent 1px 3px);
-  background-size: 5px 5px, 3px 100%;
-}
-
-/* Viền dày + bóng cứng cho mọi thứ "nổi lên khỏi giấy" */
-:root[data-theme="bao"] .btn,
-:root[data-theme="bao"] .seg,
-:root[data-theme="bao"] .drop,
-:root[data-theme="bao"] .input,
-:root[data-theme="bao"] .card,
-:root[data-theme="bao"] .menu,
-:root[data-theme="bao"] .figure,
-:root[data-theme="bao"] .eqfig,
-:root[data-theme="bao"] .diagram,
-:root[data-theme="bao"] .codeblk,
-:root[data-theme="bao"] .mdtable table {
-  border-width: 2px;
-  box-shadow: 3px 3px 0 var(--muc);
-}
-:root[data-theme="bao"] .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--muc); }
-:root[data-theme="bao"] .btn-primary { color: #fff8ee; }
-
-/* Hình là một KHUNG TRUYỆN: nét dày, bóng cứng, nền trắng thật để tranh in
-   không bị nhuộm vàng theo giấy. */
-:root[data-theme="bao"] .figure { background: #fffdf7; padding: .5rem; }
-
-/* Tít mục: đen, đậm, dưới chân một nét kẻ dày — đúng lối đầu mục của báo.
-   Không chữ hoa, không siết chữ: dấu tiếng Việt sẽ bị cắt ngọn. */
-:root[data-theme="bao"] .pair.h1 .en, :root[data-theme="bao"] .pair.h1 .vi {
-  font-weight: 800; border-bottom-width: 3px; border-bottom-color: var(--muc);
-  letter-spacing: 0; line-height: 1.3;
-}
-:root[data-theme="bao"] .pair.h2 .en, :root[data-theme="bao"] .pair.h2 .vi { font-weight: 800; }
-
-/* Nẹp đầu trang: hai nét, mảnh trên dày dưới — nameplate của một tờ báo */
-:root[data-theme="bao"] .topbar {
-  border-bottom: 3px solid var(--muc);
-  box-shadow: 0 5px 0 -3px var(--muc);
-}
-
-/* Cột giải thích: giữ nẹp trái nhưng bằng mực, không bằng màu nhạt */
-:root[data-theme="bao"] .gl { border-left-width: 3px; border-left-color: var(--muc); }
-
-/* Công thức: khung mực, nền giấy sáng hơn — ra dáng một ô đóng khung trong bài */
-:root[data-theme="bao"] .pair.equation .en { border-width: 2px; border-left-width: 4px; }
-
-/* Vệt bôi vàng ra dáng flat màu truyện tranh: thêm nét viền mực mảnh */
-:root[data-theme="bao"] mark.hl { box-shadow: inset 0 0 0 1px rgba(29, 27, 22, .35); }
-
-/* Chip trạng thái và nhãn nhỏ: viền mực thay vì nền xám */
-:root[data-theme="bao"] .chip, :root[data-theme="bao"] .tag {
-  border: 1.5px solid var(--muc); background: var(--surface);
-}
-
-/* ---- Nét kẻ giữa các cột: thứ đặc trưng nhất của một trang báo ----
-
-   App này vốn đã là lưới hai–ba cột, nên chỉ cần kẻ vào giữa khe là ra ngay
-   dáng báo. Mẹo `margin âm + padding bằng nhau`: chữ KHÔNG dịch chỗ, còn nét
-   kẻ rơi đúng giữa khe. Đặt một `border-left` trần thì cả cột bị đẩy sang phải
-   và lưới lệch — đã là cái bẫy từng gặp ở `.pair.is-cont`.
-
-   Chỉ kẻ cho cột dịch: cột giải thích đã có nẹp mực riêng của nó, kẻ thêm là
-   hai vạch sát nhau. */
-:root[data-theme="bao"] .doc.cols-2 .pair > .vi {
-  border-left: 1px solid var(--line); margin-left: -1.1rem; padding-left: 1.1rem;
-}
-:root[data-theme="bao"] .doc.cols-3 .pair > .vi {
-  border-left: 1px solid var(--line); margin-left: -.75rem; padding-left: .75rem;
-}
-/* Tiêu đề mục trải hết bề ngang nên không cần kẻ — kẻ vào là vạch cụt giữa tít */
-:root[data-theme="bao"] .pair.h1 > .vi, :root[data-theme="bao"] .pair.h2 > .vi,
-:root[data-theme="bao"] .pair.h3 > .vi, :root[data-theme="bao"] .pair.equation > .vi,
-:root[data-theme="bao"] .pair.meta > .vi { border-left: 0; margin-left: 0; padding-left: 0; }
-
-/* Tít mục có nét kẻ CẢ TRÊN lẫn dưới — lối phân mục của báo in */
-:root[data-theme="bao"] .pair.h1 { border-top: 3px solid var(--muc); padding-top: .6rem; }
-:root[data-theme="bao"] .pair.h2 { border-top: 1px solid var(--line); padding-top: .45rem; }
-
-/* Khối đang chọn: mảng màu phẳng kiểu bôi bút, không phải nền mờ */
-:root[data-theme="bao"] .pair.is-on { background: #ffeeb0; box-shadow: inset 0 0 0 1.5px var(--muc); }
-:root[data-theme="bao"] .pair:hover { background: rgba(255, 255, 255, .45); }
-
-/* Cột gốc: mực nhạt hơn để tách khỏi cột dịch, như phần dẫn in nhỏ của báo */
-:root[data-theme="bao"] .en { color: #4a443a; }
-
-/* Ghi chú và chú thích hình: chữ nghiêng trên nền giấy sáng, viền mực mảnh */
-:root[data-theme="bao"] .note { border: 1.5px solid var(--muc); box-shadow: 2px 2px 0 var(--muc); }
-
-/* ---- Ba chỗ chất truyện tranh thật sự thuộc về ----
-
-   Vùng đọc phần lớn là chữ, nên đẩy nét vẽ vào đó là đánh đổi với việc đọc.
-   Chất "báo hoạt hình" dồn vào đúng ba chỗ mắt nghỉ: nẹp đầu trang, khung
-   hình, và thẻ tóm lược. */
-
-/* Nẹp đầu trang thành NAMEPLATE: giấy, hai nét kẻ, tên bài đậm hơn */
-:root[data-theme="bao"] .topbar {
-  background: var(--surface);
-  border-bottom: 3px double var(--muc);
-  box-shadow: 0 4px 0 -2px var(--muc);
-}
-:root[data-theme="bao"] .topbar-title strong {
-  font-family: var(--serif); font-weight: 800; font-size: 1.06rem;
-  line-height: 1.3;                      /* không dưới 1.28: dấu chồng tầng bị cắt ngọn */
-}
-
-/* Hình là một KHUNG TRUYỆN: nét dày, bóng cứng, và chú thích nằm trên một
-   dải mực ngay dưới khung — đúng lối chú thích ảnh báo in. */
-:root[data-theme="bao"] .figure, :root[data-theme="bao"] .eqfig {
-  border-width: 2.5px; box-shadow: 4px 4px 0 var(--muc); border-radius: 2px;
-}
-:root[data-theme="bao"] .pair.caption .en, :root[data-theme="bao"] .pair.caption .vi {
-  border-left: 0; padding: .3rem .5rem;
-  background: var(--surface-2); border-top: 1.5px solid var(--muc);
-  font-style: normal; font-size: .82em;
-}
-
-/* Thẻ tóm lược: ô trích dẫn đóng khung, bóng cứng — chỗ nhấn của cả sidebar */
-:root[data-theme="bao"] .pull {
-  border: 2px solid var(--muc); border-left-width: 5px;
-  box-shadow: 3px 3px 0 var(--muc); border-radius: 2px;
-}
-/* Nhãn nhỏ của sidebar vốn đã viết hoa — ở skin này nó là chữ Anh/nhãn ngắn
-   ("BÀI TOÁN", "KHOẢNG TRỐNG") nên giữ được; nhưng nới `line-height` để dấu
-   tiếng Việt không bị cắt ngọn. */
-:root[data-theme="bao"] .brief-line b { color: var(--ink); line-height: 1.5; }
-
-/* Vạch ngăn mục trong sidebar: nét mực thay vì xám mảnh */
-:root[data-theme="bao"] .side-tabs { border-bottom: 2px solid var(--muc); }
-:root[data-theme="bao"] .side { border-right: 2px solid var(--muc); }
-
 /* Hộp thoại của app (xem `#dlgVeil`). Thay cho confirm/prompt/alert của hệ: hộp
    thoại native khoá cả tab, không cùng ngôn ngữ thiết kế, và không hiện nổi một
    đoạn giải thích dài — mà mọi chỗ hỏi tốn tiền trong app đều cần đúng thứ đó. */
 .dlg-veil {
   position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
-  background: rgba(20, 18, 16, .45); padding: 1rem;
+  background: rgba(20, 18, 16, .5); padding: 1rem;
 }
 .dlg {
   width: min(30rem, 100%); max-height: 85vh; overflow-y: auto;
   background: var(--surface); color: var(--ink);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .28); padding: 1rem 1.1rem;
+  border: 2.5px solid var(--muc); border-radius: 16px;
+  box-shadow: 6px 6px 0 var(--bong); padding: 1.1rem 1.2rem;
+  animation: dlg-vao .14s ease-out;
 }
-.dlg h3 { margin: 0 0 .5rem; font-family: var(--serif); font-size: 1.1rem; line-height: 1.35; }
+@keyframes dlg-vao { from { transform: translateY(6px) scale(.98); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dlg { animation: none; } }
+.dlg h3 { margin: 0 0 .5rem; font-family: var(--display); font-weight: 800; font-size: 1.3rem; line-height: 1.32; }
 /* `pre-wrap`: mấy câu hỏi trong app xuống dòng thật để tách lý do khỏi hệ quả */
 .dlg-body { white-space: pre-wrap; color: var(--ink-2); font-size: .92em; line-height: 1.55; }
 .dlg-act { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
 .dlg-act .btn { width: auto; margin: 0; }
-:root[data-theme="bao"] .dlg { border-width: 2px; box-shadow: 5px 5px 0 var(--muc); }
 
 /* Nút cho việc xoá. Đỏ chứ không phải màu nhấn: nút mặc định của hộp thoại là
    "Đồng ý", mà đồng ý ở đây là mất dữ liệu. */
-.btn-danger { background: #b4342a; border-color: #b4342a; color: #fff; font-weight: 600; }
-.btn-danger:hover { filter: brightness(1.08); }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
 
 /* Thông báo thoáng qua (xem `baoNhanh`). Neo dưới-giữa, không chặn gì. */
 .toast {
   position: fixed; left: 50%; bottom: 1.4rem; transform: translate(-50%, 1rem);
   z-index: 95; display: flex; align-items: center; gap: .75rem;
   max-width: min(32rem, calc(100vw - 2rem));
-  padding: .6rem .9rem; border-radius: var(--radius);
-  background: var(--ink); color: var(--surface);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+  padding: .6rem .9rem; border-radius: 12px;
+  background: #1d1b18; color: #fffcf3; border: 2px solid #1d1b18;
+  box-shadow: 4px 4px 0 var(--hl);
   font-size: .9em; opacity: 0; pointer-events: none;
   transition: opacity .18s ease, transform .18s ease;
 }
@@ -1709,7 +1757,6 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   border-radius: 6px; padding: .2rem .55rem; font: inherit; cursor: pointer;
 }
 .toast-undo:hover { background: rgba(255, 255, 255, .14); }
-:root[data-theme="bao"] .toast { border: 2px solid var(--muc); box-shadow: 4px 4px 0 rgba(0, 0, 0, .35); }
 
 /* Ô nhập đổi tên ngay trên dòng (xem danh sách bài). Giữ đúng cỡ chữ của tên
    bài để hàng không nhảy lúc bật ô nhập — hàng nhảy thì mắt mất chỗ bám và
@@ -1718,3 +1765,32 @@ mark.hl.is-on { background: var(--hl-bg); box-shadow: 0 0 0 2px var(--hl-line); 
   width: 100%; padding: .1rem .3rem; margin: -.1rem 0;
   font: inherit; font-weight: inherit; line-height: inherit;
 }
+
+/* ======================================================= icon nét vẽ tay
+
+   Thay cho emoji. Emoji mỗi cái một kiểu vẽ, một cỡ, một bảng màu, và mỗi hệ
+   điều hành vẽ một khác — đó là thứ "nghiệp dư" nhất trên màn hình cũ. Bộ này
+   là symbol SVG trong `index.html`, cùng nét 2px đầu tròn, lấy màu theo chữ
+   (`currentColor`) nên tự đổi theo theme và theo trạng thái rê chuột.
+
+   Thuộc tính nét đặt Ở ĐÂY chứ không trên từng `<symbol>`: nội dung của `<use>`
+   kế thừa thuộc tính CSS từ thẻ `<svg>` bọc ngoài, nên đổi một chỗ là đổi cả
+   bộ. */
+.ico {
+  width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -.2em; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  /* Cú bấm phải rơi vào NÚT, không vào `<svg>`/`<use>` bên trong. Thiếu dòng
+     này thì `e.target` là cái icon, và mọi handler đọc `e.target.dataset` hay
+     ghi `e.target.textContent` hỏng câm — nút "chép" từng ghi dấu ✓ thẳng vào
+     trong thẻ svg. */
+  pointer-events: none;
+}
+.btn .ico { margin-right: .35rem; }
+
+/* Chip và nhãn nhỏ: khung mực mảnh thay cho nền xám nhạt */
+.chip, .tag { border: 1.5px solid var(--muc); background: var(--surface); }
+
+/* Vệt bôi ra dáng màu bút dạ: thêm một nét viền mực mảnh để nó không lẫn vào
+   giấy nhớ vàng của cột giải thích. */
+mark.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muc) 30%, transparent); }
+

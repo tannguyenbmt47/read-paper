@@ -154,6 +154,14 @@ Hai ràng buộc ngược lại, cùng quan trọng:
   lý do với `script_leak()`: rác trong `doc` thì người đọc sửa được, rác trong
   `tm` thì quay lại mãi mãi.
 
+**Nhãn ĐÓNG kiểu thẻ XML cũng phải gỡ** (`_close_re`). Model đôi khi "đóng"
+khối như đóng thẻ HTML; bộ dò nhãn mở không nhận dạng này nên nó lọt nguyên vào
+cuối ô — **và vào `tm`**, vì chốt chặn `dirty` cũng không biết nó. Quét `data/`:
+21 ô, 21 mục `tm`. Dạng thật là `</<b370_g>>>` — model mở lại ngoặc nhọn ngay sau
+dấu `/`; mẫu đầu tiên chỉ nhận `</b370_g>>>` và bỏ lọt cả 21. Cũng dựng từ tập mã
+của mẻ và cũng đòi đứng một mình trên dòng. Dữ liệu cũ đã được dọn (kèm bản sao
+lưu `data/papers.db.bak-*`).
+
 Mẫu dựng từ mã, nên mã dài phải xếp trước (`sorted(key=len, reverse=True)`) —
 không thì `b1` khớp trước và `b12` mất phần đuôi.
 
@@ -1146,54 +1154,85 @@ ném `Invalid \escape` và cả lượt gọi đã trả tiền mất trắng. `
 đôi những dấu chéo đó rồi thử lại. Nó **hỏng theo bài** — bài nào model tình cờ
 không trích câu có dấu chéo thì chạy trót lọt — nên rất dễ tưởng đã ổn.
 
-### Skin "Báo" — giấy báo in cộng nét truyện tranh
+### Giao diện "Sổ tay khoa học" — chất liệu, không phải bố cục
 
-Theme thứ tư (`data-theme="bao"`, cạnh `auto`/`light`/`dark`). **Thêm chứ không
-thay**: bản ấm nâu-kem vẫn là mặc định, skin này là một lựa chọn — đổi giao diện
-mặc định của cả app là quyết định của người dùng, không phải của một lần sửa.
+Giao diện mặc định là một **cuốn sổ thí nghiệm vẽ tay**: giấy ngà kẻ ô ly, nét
+mực đen 2px, bóng cứng không mờ, bút dạ quang vàng, mực bút bi xanh, giấy nhớ
+dán băng keo. Theme tối là **giấy blueprint** (nền xanh thẫm, nét phấn trắng) —
+cùng mọi luật thành phần, chỉ đổi token. Nó thay cho skin "Báo" trước đây, vốn
+chỉ là một lựa chọn trong menu Aa: người dùng chọn hướng *"hoạt hình, khoa học,
+giấy"* làm mặc định.
 
-Nó **không đổi một dòng bố cục nào**, chỉ đổi vật liệu: giấy ngà có hạt, mực đen
-thật, viền dày, bóng cứng không mờ. Ba đòn tạo ra toàn bộ cảm giác, và không đòn
-nào cần tải thêm thứ gì:
+Bản trước hỏng ở ba chỗ cụ thể, và bản này nhắm đúng ba chỗ đó:
 
-1. **`--line` thành mực đen** (`#1d1b16`) chứ không phải xám mảnh. Mọi viền sẵn
-   có trong app lập tức thành nét vẽ — đây là chỗ đổi đáng giá nhất, một token.
-2. **Bóng cứng `3px 3px 0`**, không blur. Đó là nét truyện tranh; bóng mờ là
-   ngôn ngữ của giao diện phẳng và nó triệt tiêu hẳn cảm giác này.
-3. **Vân giấy + lưới bán sắc bằng `radial-gradient`** trên `body`, nên không
-   thêm một request nào. Để ở mức 5,5% thì **không thấy gì** — đã đo và phải
-   nâng lên 10%.
+- **Icon là emoji** — mỗi cái một kiểu vẽ, một cỡ, một bảng màu, mỗi hệ điều
+  hành vẽ một khác. Giờ là bộ symbol SVG trong `index.html`, nét 2px đầu tròn,
+  lấy màu theo chữ. JS dựng bằng `ico(tên)`.
+- **Ba cột đọc cùng một tông** nên mắt không biết bám cột nào. Giờ khác nhau ở
+  cả font, nền lẫn khung: gốc là serif màu chì, dịch là serif mực đen, giải
+  thích là sans trên **giấy nhớ** có băng keo.
+- **Cột giải thích có vạch màu kẻ dọc bên trái** — một trong ba thứ bị chỉ đích
+  danh là "dấu hiệu đồ AI làm" (xem mục slide). Bỏ hẳn.
 
-**Nét kẻ giữa các cột là thứ đặc trưng nhất của trang báo**, và app này vốn đã
-là lưới hai–ba cột nên chỉ cần kẻ vào giữa khe. Mẹo `margin âm + padding bằng
-nhau` giữ chữ **không dịch chỗ** còn nét rơi đúng giữa khe; đặt `border-left`
-trần thì cả cột bị đẩy sang phải và lưới lệch — cùng cái bẫy đã gặp ở
-`.pair.is-cont`. Tiêu đề và công thức trải hết bề ngang nên phải **tắt** nét kẻ
-cho chúng, không thì có một vạch cụt giữa tít.
+**Mỗi font một vai** (`--display` Baloo 2 · `--hand` Patrick Hand · `--read`
+Literata · `--sans` Be Vietnam Pro), và cả bốn **đóng gói tại chỗ** ở
+`web/vendor/fonts/` (466 KB, chỉ giữ bộ ký tự tiếng Việt + latin + latin-ext,
+giấy phép OFL trong `NOTICE.txt`) — app chạy offline, cùng lý do với
+`vendor/mermaid.min.js`. Đã nhìn tận mắt từng font dựng dấu chồng tầng trước khi
+chọn. `vendor/fonts.css` nằm trong `_ASSETS` để được gắn vân tay chống cache.
 
-**Chất truyện tranh dồn vào ba chỗ mắt nghỉ, không rắc lên vùng đọc**: nẹp đầu
-trang (nameplate hai nét), khung hình (nét 2,5px + bóng cứng + chú thích trên
-dải mực), và thẻ tóm lược (ô trích đóng khung). Vùng đọc phần lớn là chữ nên đẩy
-nét vẽ vào đó là đánh đổi trực tiếp với việc đọc.
+**Hai tầng nét, cố ý tách**: `--muc` là MỰC — khung của thứ nổi lên khỏi giấy
+(nút, thẻ, hình, hộp thoại). `--line` là BÚT CHÌ — vạch ngăn mảnh. Skin "Báo"
+cũ gộp hai thứ vào một nên mọi vạch ngăn cũng thành mực đen, cả trang nặng
+trịch. Và `--bong` (màu bóng cứng) tách khỏi `--muc` vì trên blueprint khung là
+phấn trắng còn bóng phải là xanh thẫm.
 
-**Ba ràng buộc chữ tiếng Việt, và skin này là chỗ dễ phá chúng nhất** — vì ngôn
-ngữ truyện tranh vốn thích chữ hoa nén chặt:
+**Chất truyện tranh dồn vào chỗ mắt nghỉ, không rắc lên vùng đọc.** Vùng đọc là
+**giấy sạch không ô ly** — ô ly sau chữ đọc dài là đánh đổi thẳng với việc đọc —
+chỉ có một nét lề đỏ như trang vở. Ô ly, băng keo, bóng cứng nằm ở nền, thẻ,
+hình, hộp thoại. Thứ duy nhất được nghiêng là tờ giấy nhớ tóm lược ở cột trái.
 
-- **Không `text-transform: uppercase`, không `letter-spacing` âm,
-  `line-height` không dưới 1,28.** Dấu chồng tầng (ế, ộ, ữ) bị cắt ngọn. Cảm
-  giác "tít báo" lấy từ **độ đậm và nét kẻ**, không lấy từ chữ hoa.
-- **Không font mono cho văn xuôi** — mono của hệ không dựng nổi dấu chồng tầng.
-- `test_skin_bao_khong_pha_luat_chu_tieng_viet` canh cả ba.
+Năm chỗ đã vấp khi soát bằng trình duyệt:
 
-Và cái bẫy cũ nặng thêm: **màu bôi vàng giờ khai ở NĂM khối theme**, không còn
-bốn. `test_moi_khoi_theme_khai_du_nam_mau_boi` đếm theo thực tế chứ không chốt
-con số, nên thêm skin nữa là nó tự canh luôn.
+- **`.ico` khai ở cuối file thắng mọi luật cỡ riêng** cùng độ ưu tiên: logo và
+  hình ở ô thả file co còn 12px. Luật cỡ riêng phải viết `.ico.start-logo`.
+- **`pointer-events: none` trên `.ico` là bắt buộc.** Thiếu nó thì `e.target` là
+  `<svg>`/`<use>` chứ không phải nút, và mọi handler đọc `e.target.dataset` hay
+  ghi `e.target.textContent` hỏng câm — nút "chép" từng ghi dấu ✓ vào trong svg.
+- **Lưới `ul` với rãnh ngầm `auto` bị tiêu đề `nowrap` kéo giãn**: thẻ thư viện
+  tràn khỏi cột. Cần `grid-template-columns: minmax(0, 1fr)`.
+- **`.model-pick { width: 100% }` viết cho panel tuỳ chọn dịch lại trúng cả màn
+  soát** (cùng class), ô chọn ăn hết thanh trên và đẩy nút "Bước 2" xuống hai
+  dòng. Rộng hết chỉ được khai dưới `.menu-pop`.
+- **Khối nút thanh trên ở màn hẹp phải `flex: 1 1 0`.** `flex: none` thì nó rộng
+  bằng nội dung nên `flex-wrap` không bao giờ có cớ xuống dòng (672px trong khung
+  640px); `100%` thì nó không ngồi chung dòng với ←/☰, thanh cao 111 → 152px.
 
-Kèm theo, sửa một lỗi có sẵn mà skin này làm lộ ra: **`initMermaid` chỉ đọc
-`prefers-color-scheme`**, bỏ qua lựa chọn tường minh — chọn "Sáng" trên máy đang
-dark thì sơ đồ vẫn ra bảng màu tối, chữ đen trên nền đen. Giờ `data-theme` thắng,
-và skin Báo có bảng màu mực-trên-giấy riêng cho mermaid: để màu mặc định (tím
-lavender) thì sơ đồ trông như dán vào từ chỗ khác.
+Slide **không** mang chất sổ tay: nó cố ý là nền trắng sạch và phải khớp từng
+chữ với `_SLIDES_CSS`. `.sl-slide .mmd-slot .diagram` phải dỡ cả `box-shadow`
+của `.diagram`, không thì xem trước có bóng mà file tải về không có.
+
+**Luật chữ tiếng Việt giờ soát CẢ HAI file CSS** (trừ luật slide `.sl-`/`.ol-`):
+không viết hoa toàn bộ, không `letter-spacing` âm, không mono cho văn xuôi. Lúc
+chuyển sang còn 13 nhãn viết hoa ("THƯ VIỆN", "BÀI TOÁN", "TÀI LIỆU"…) — nhãn mục
+giờ lấy chất từ font, không từ chữ hoa. `test_giao_dien_khong_pha_luat_chu_tieng_viet`
+canh. Màu bôi khai ở **bốn** khối theme (`:root`, `@media dark`, `[data-theme=dark]`,
+`[data-theme=light]`); `test_moi_khoi_theme_khai_du_nam_mau_boi` đếm theo thực tế.
+
+Ai còn lưu `docdoc:theme = "bao"` thì `applyTheme` chuyển sang `light` — để
+nguyên giá trị lạ thì không nút nào trong menu sáng lên, trông như chưa chọn gì.
+
+### Ba dạng hash, một hàm đọc
+
+`location.hash` có ba dạng sống chung: `#survey`, `#doc=<mã>` (survey.js ghi khi
+quay về bài đang đọc) và `#<mã>` (app.js ghi khi mở bài). Bộ nghe `hashchange`
+viết cho nút Back/Forward từng coi **mọi** hash khác rỗng là mã bài: bấm "Tìm
+hiểu" thì `svOpen` ghi `#survey`, bộ nghe gọi `openDoc("survey")`, nhận 404, rồi
+đá về màn nhập — **công cụ thứ hai của app mất hẳn lối vào**, không lỗi nào. Lúc
+khởi động cũng vậy với `#doc=<mã>`. Lộ ra lúc chụp màn survey để soát giao diện.
+
+Mọi chỗ đọc hash phải đi qua `docHash()`;
+`test_moi_cho_doc_hash_deu_qua_mot_luat` cấm đọc thẳng `location.hash.slice(1)`.
 
 ### Bôi vàng và ghi chú
 

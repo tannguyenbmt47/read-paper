@@ -4,11 +4,46 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Loupe — đọc bài báo khoa học đến mức thật sự hiểu</title>
+<link rel="stylesheet" href="/vendor/fonts.css">
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/survey.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📑</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='30' height='30' rx='8' fill='%23ffd43b' stroke='%231d1b18' stroke-width='2'/><circle cx='14' cy='14' r='6.5' fill='%23fffcf3' stroke='%231d1b18' stroke-width='2.6'/><path d='M19 19l6 6' stroke='%231d1b18' stroke-width='3' stroke-linecap='round'/></svg>">
 </head>
 <body>
+<!-- Bộ icon nét vẽ tay, thay cho emoji (xem `.ico` trong style.css). Mọi
+     symbol vẽ trên lưới 24 và KHÔNG tự đặt màu hay độ dày nét — chúng kế thừa
+     từ thẻ `<svg class="ico">` bọc ngoài, nên một luật CSS đổi được cả bộ. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.3 15.3 20.5 20.5"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h11"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19.5 12H5.5M11 6 5 12l6 6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8.5l4 4v13H6z"/><path d="M14.5 3.5v4h4M9 12.5h6M9 16h4"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5.5 4.5h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5h-1a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01" stroke-width="2.6"/></symbol>
+  <symbol id="i-slides" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="11.5" rx="1.5"/><path d="M12 15.5v3.5M8.5 20.5l3.5-1.5 3.5 1.5M7.5 12l3-3 2.5 2 3.5-3.5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M15 4.5l4.5 4.5L9 19.5H4.5V15z"/><path d="M13 6.5l4.5 4.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10.5 11v5.5M13.5 11v5.5"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9.5 17.5h5M10.5 20.5h3"/><path d="M12 3.5a5.5 5.5 0 0 0-3.3 9.9c.8.6 1.3 1.5 1.3 2.4v.7h4v-.7c0-.9.5-1.8 1.3-2.4A5.5 5.5 0 0 0 12 3.5z"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4"/><path d="M19.5 4v4.5H15"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6.5" cy="7" r="2.5"/><circle cx="6.5" cy="17" r="2.5"/><path d="M8.6 8.4 19.5 18M8.6 15.6 19.5 6"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 24 24"><path d="M7 4v4a5 5 0 0 0 5 5 5 5 0 0 0 5-5V4M12 13v7M9 17l3 3 3-3"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M11 3.5l1.7 4.6 4.6 1.7-4.6 1.7L11 16.1l-1.7-4.6-4.6-1.7 4.6-1.7z"/><path d="M18 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20V9M7.5 13.5 12 9l4.5 4.5M5 4.5h14"/></symbol>
+  <symbol id="i-jump" viewBox="0 0 24 24"><path d="M12 4v12M7.5 11.5 12 16l4.5-4.5"/><circle cx="12" cy="20" r="1" stroke-width="2.4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-hide" viewBox="0 0 24 24"><path d="M3.5 12s3-6 8.5-6 8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6z"/><circle cx="12" cy="12" r="2.5"/><path d="M4.5 19.5l15-15"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12h10a5 5 0 0 1 0 10h-2"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.5 3.5h5M10.5 3.5v6L5 18.5a1.5 1.5 0 0 0 1.3 2h11.4a1.5 1.5 0 0 0 1.3-2L13.5 9.5v-6"/><path d="M7.5 14.5h9"/></symbol>
+  <!-- Logo: kính lúp soi một trang giấy — "đọc kỹ" bằng hình. -->
+  <symbol id="i-loupe" viewBox="0 0 64 64">
+    <path d="M14 8h22l10 10v32H14z" fill="var(--surface)"/>
+    <path d="M36 8v10h10M20 26h18M20 32h14M20 38h10"/>
+    <circle cx="38" cy="38" r="11" fill="var(--hl)"/>
+    <path d="M33 35.5a5.5 5.5 0 0 1 5-3.5" stroke-width="2.2"/>
+    <path d="M46 46l9 9" stroke-width="5"/>
+  </symbol>
+</svg>
 
 <!-- ===== THANH CÔNG CỤ BÊN TRÁI =====
      Hai công cụ, không phải hai tính năng của một công cụ: một cái đọc kỹ MỘT
@@ -19,9 +54,7 @@
      không canh được với chữ. `stroke: currentColor` để icon đổi màu cùng nhãn. -->
 <nav id="rail" aria-label="Công cụ">
   <div class="rail-mark" title="Loupe" aria-hidden="true">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-      <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/>
-    </svg>
+    <svg viewBox="0 0 64 64" class="ico" style="width:100%;height:100%"><use href="#i-loupe"/></svg>
   </div>
   <button class="rail-item is-on" data-tool="doc"
           title="Đọc và dịch một bài báo, giữ nguyên mạch lập luận">
@@ -48,7 +81,11 @@
 <section id="start" class="screen">
   <div class="start-wrap">
     <header class="start-head">
-      <h1>Loupe</h1>
+      <div class="brand">
+        <svg class="ico start-logo" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-loupe"/></svg>
+        <h1>Loupe</h1>
+        <span class="brand-note">sổ tay đọc bài báo</span>
+      </div>
       <p class="lede">
         Đọc bài báo khoa học đến mức <strong>thật sự hiểu</strong>, không chỉ hiểu nghĩa chữ.
         Dịch giữ nguyên mạch lập luận, chốt thuật ngữ trước khi dịch, giải thích từng đoạn
@@ -70,7 +107,7 @@
     <div class="panel" data-pane="file">
       <label id="drop" class="drop">
         <input type="file" id="fileInput" accept=".pdf,.txt,.md" hidden>
-        <span class="drop-icon">📄</span>
+        <svg class="ico drop-icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-loupe"/></svg>
         <span class="drop-main">Kéo thả PDF vào đây, hoặc bấm để chọn</span>
         <span class="drop-sub">PDF chữ (không phải bản scan ảnh), .txt, .md</span>
       </label>
@@ -143,7 +180,7 @@
         dựng cây tóm lược cho từng bài và nối các bài bằng đồ thị thực thể, nên
         nạp năm mươi bài vẫn rẻ.
       </p>
-      <button id="goSurvey" class="btn btn-primary">🔍 Mở phần Tìm hiểu →</button>
+      <button id="goSurvey" class="btn btn-primary"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>Mở phần Tìm hiểu →</button>
     </div>
   </div>
 </section>
@@ -151,7 +188,7 @@
 <!-- ====================== BƯỚC 1 · KIỂM TRA CẤU TRÚC ====================== -->
 <section id="review" class="screen hidden">
   <header class="topbar">
-    <button id="revBack" class="icon-btn" title="Về màn hình nhập">←</button>
+    <button id="revBack" class="icon-btn" title="Về màn hình nhập"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg></button>
     <div class="topbar-title">
       <strong>Bước 1 · Kiểm tra cấu trúc</strong>
       <span id="revTitle"></span>
@@ -178,7 +215,7 @@
         Một model rẻ dọn lại chỗ đó. Nó <em>chỉ</em> được sửa khoảng trắng và thứ
         tự — thêm hay bớt dù một chữ là bị chặn và giữ nguyên bản gốc.</span>
       </div>
-      <button id="tidyBtn" class="btn">✨ Căn chỉnh</button>
+      <button id="tidyBtn" class="btn"><svg class="ico" aria-hidden="true"><use href="#i-sparkle"/></svg>Căn chỉnh</button>
     </div>
     <p id="tidyMsg" class="hint hidden"></p>
 
@@ -203,8 +240,8 @@
 <!-- ============================ MÀN HÌNH ĐỌC ============================ -->
 <section id="reader" class="screen hidden">
   <header class="topbar">
-    <button id="backBtn" class="icon-btn" title="Về màn hình nhập">←</button>
-    <button id="sideToggle" class="icon-btn" title="Hiện/ẩn cột tóm lược · mạch lập luận · thuật ngữ · mục lục">☰</button>
+    <button id="backBtn" class="icon-btn" title="Về màn hình nhập"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg></button>
+    <button id="sideToggle" class="icon-btn" title="Hiện/ẩn cột tóm lược · mạch lập luận · thuật ngữ · mục lục"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="topbar-title">
       <strong id="docTitleVi">…</strong>
       <span id="docTitleEn"></span>
@@ -254,8 +291,8 @@
           </div>
         </div>
       </div>
-      <button id="findBtn" class="icon-btn" title="Tìm trong bài (Ctrl+F)">🔍</button>
-      <button id="pdfBtn" class="icon-btn hidden" title="Mở bản PDF gốc để đối chiếu">📄</button>
+      <button id="findBtn" class="icon-btn" title="Tìm trong bài (Ctrl+F)"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg></button>
+      <button id="pdfBtn" class="icon-btn hidden" title="Mở bản PDF gốc để đối chiếu"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg></button>
       <div class="menu">
         <button id="viewBtn" class="icon-btn" title="Cỡ chữ · bề rộng · sáng tối">Aa</button>
         <div class="menu-pop hidden" id="viewMenu">
@@ -268,16 +305,15 @@
           <hr>
           <div class="seg" id="themeSeg">
             <button class="seg-btn" data-theme="auto">Tự động</button>
-            <button class="seg-btn" data-theme="light">Sáng</button>
-            <button class="seg-btn" data-theme="dark">Tối</button>
-            <button class="seg-btn" data-theme="bao" title="Giấy báo in, mực đen, nét dày — xem mục skin Báo trong style.css">Báo</button>
+            <button class="seg-btn" data-theme="light" title="Giấy ngà kẻ ô, mực đen, bút dạ quang">Sổ tay</button>
+            <button class="seg-btn" data-theme="dark" title="Giấy blueprint xanh đậm, nét phấn trắng">Bản vẽ</button>
           </div>
         </div>
       </div>
-      <button id="askBtn" class="icon-btn" title="Hỏi đáp về bài">💬</button>
-      <button id="slidesBtn" class="icon-btn" title="Dựng bộ slide để trình bày lại bài này">🖥</button>
+      <button id="askBtn" class="icon-btn" title="Hỏi đáp về bài"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg></button>
+      <button id="slidesBtn" class="icon-btn" title="Dựng bộ slide để trình bày lại bài này"><svg class="ico" aria-hidden="true"><use href="#i-slides"/></svg></button>
       <div class="menu">
-        <button id="exportBtn" class="icon-btn" title="Tải về">⤓</button>
+        <button id="exportBtn" class="icon-btn" title="Tải về"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg></button>
         <div class="menu-pop hidden" id="exportMenu">
           <a href="#" data-mode="bilingual" data-fmt="pdf">PDF song ngữ</a>
           <a href="#" data-mode="vi" data-fmt="pdf">PDF chỉ tiếng Việt</a>
@@ -316,7 +352,7 @@
         <button class="side-tab" data-side="chain">Mạch lập luận</button>
         <button class="side-tab" data-side="terms">Thuật ngữ</button>
         <button class="side-tab" data-side="outline">Mục lục</button>
-        <button id="sideClose" class="icon-btn" title="Đóng cột này (mở lại bằng nút ☰ trên thanh công cụ)">✕</button>
+        <button id="sideClose" class="icon-btn" title="Đóng cột này (mở lại bằng nút ba gạch trên thanh công cụ)">✕</button>
       </nav>
 
       <div class="side-pane" data-pane="brief">
@@ -500,7 +536,7 @@
           <div class="sl-actions">
             <button type="button" id="slArtCopy" class="btn btn-sm" style="width:auto;margin:0">⧉ Chép prompt</button>
             <label class="btn btn-sm" style="width:auto;margin:0;cursor:pointer">
-              ⬆ Tải ảnh lên<input type="file" id="slArtFile" accept="image/*" hidden>
+              <svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Tải ảnh lên<input type="file" id="slArtFile" accept="image/*" hidden>
             </label>
             <span class="hint" id="slArtMsg"></span>
           </div>
@@ -556,7 +592,7 @@
   <header class="hl-pop-head">
     <strong>Ghi chú</strong>
     <span class="spacer"></span>
-    <button id="hlDel" class="icon-btn" title="Xoá vệt bôi này">🗑</button>
+    <button id="hlDel" class="icon-btn" title="Xoá vệt bôi này"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>
     <button id="hlClose" class="icon-btn" title="Đóng (Esc)">✕</button>
   </header>
   <div class="hl-pop-tools">
@@ -569,7 +605,7 @@
     </div>
     <span class="spacer"></span>
     <button id="hlAsk" class="btn btn-sm" style="width:auto;margin:0"
-            title="Nhờ model giải thích đúng đoạn này. Tốn tiền.">✨ Giải thích · tốn tiền</button>
+            title="Nhờ model giải thích đúng đoạn này. Tốn tiền."><svg class="ico" aria-hidden="true"><use href="#i-sparkle"/></svg>Giải thích · tốn tiền</button>
   </div>
   <p id="hlQuote" class="hl-quote"></p>
   <textarea id="hlNote" class="input textarea" rows="5"
@@ -586,7 +622,7 @@
     <span id="figPeekZoom" class="figpeek-z" title="Bấm để về vừa khung">100%</span>
     <button id="figPeekIn" class="icon-btn" title="Phóng to (cuộn chuột trên hình)">+</button>
     <button id="figPeekBig" class="icon-btn" title="Mở rộng khung (bảng nhiều số thì khung nhỏ không đủ)">⤢</button>
-    <button id="figPeekGo" class="icon-btn" title="Cuộn tới hình này trong bài">↧</button>
+    <button id="figPeekGo" class="icon-btn" title="Cuộn tới hình này trong bài"><svg class="ico" aria-hidden="true"><use href="#i-jump"/></svg></button>
     <button id="figPeekClose" class="icon-btn" title="Đóng (Esc)">✕</button>
   </header>
   <!-- Hình cắt từ PDF thường dày đặc chữ nhỏ (trục, chú giải, số trong bảng),

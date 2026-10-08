@@ -1,0 +1,10 @@
+Font trong thư mục này được đóng gói tại chỗ để app chạy offline.
+Cả bốn họ font đều dùng giấy phép SIL Open Font License 1.1
+(https://openfontlicense.org), cho phép dùng, sửa và phân phối lại kèm phần mềm.
+
+- Baloo 2        — Ek Type                 https://fonts.google.com/specimen/Baloo+2
+- Patrick Hand   — Patrick Wagesreiter      https://fonts.google.com/specimen/Patrick+Hand
+- Literata       — TypeTogether             https://fonts.google.com/specimen/Literata
+- Be Vietnam Pro — Lâm Bảo, Tony Le, ViệtAnh Nguyễn  https://fonts.google.com/specimen/Be+Vietnam+Pro
+
+Chỉ giữ ba bộ ký tự: vietnamese, latin, latin-ext.

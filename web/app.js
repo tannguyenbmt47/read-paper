@@ -142,6 +142,9 @@ function baoNhanh(msg, hoanLai = null) {
   box._hen = setTimeout(() => box.classList.remove("is-on"), hoanLai ? 8000 : 3500);
 }
 
+/** Một icon nét vẽ tay trong bộ symbol của `index.html` (xem `.ico`). */
+const ico = (ten) => `<svg class="ico" aria-hidden="true"><use href="#i-${ten}"/></svg>`;
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -372,31 +375,37 @@ function initMermaid() {
   if (mermaidReady || typeof mermaid === "undefined") return;
   // Theme TƯỜNG MINH phải thắng. Trước đây chỗ này chỉ đọc `prefers-color-scheme`,
   // nên chọn "Sáng" trên máy đang dark thì sơ đồ vẫn ra bảng màu tối — chữ đen
-  // trên nền đen. Và skin "Báo" cần sơ đồ mực-trên-giấy, không phải màu mặc định.
+  // trên nền đen.
   const chon = document.documentElement.dataset.theme || "";
   const dark = chon === "dark"
     || (!chon && matchMedia("(prefers-color-scheme: dark)").matches);
-  const bao = chon === "bao";
-  // Trên màn slide, sơ đồ phải theo bảng màu của deck — màu mặc định của
-  // mermaid là tím lavender, lạc hẳn khỏi navy/xanh của phần còn lại.
+  // Trên màn slide, sơ đồ phải theo bảng màu của deck — slide cố ý là nền
+  // trắng sạch, không mang chất sổ tay của app.
   const onSlides = !$("#slides")?.classList.contains("hidden");
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
-    theme: onSlides || bao ? "base" : (dark ? "dark" : "neutral"),
+    theme: "base",
     themeVariables: onSlides ? {
       primaryColor: "#e9eefc", primaryBorderColor: "#2563eb",
       primaryTextColor: "#0f172a", lineColor: "#64748b",
       secondaryColor: "#ddf3f5", tertiaryColor: "#e4f5ea",
       fontFamily: "Helvetica Neue,Arial,sans-serif", fontSize: "15px",
-    } : bao ? {
-      // Mực trên giấy: hộp nền giấy, viền và mũi tên đen, một hộp nhấn đỏ.
-      // Để màu mặc định của mermaid (tím lavender) thì sơ đồ trông như dán vào.
-      primaryColor: "#f6f2e7", primaryBorderColor: "#1d1b16",
-      primaryTextColor: "#141210", lineColor: "#1d1b16",
-      secondaryColor: "#ded7c4", tertiaryColor: "#f6dfe2",
+    } : dark ? {
+      // Bản vẽ: hộp xanh blueprint, nét phấn trắng, một hộp nhấn dạ quang.
+      primaryColor: "#1a3b6e", primaryBorderColor: "#d9e6ff",
+      primaryTextColor: "#eef4ff", lineColor: "#d9e6ff",
+      secondaryColor: "#22477d", tertiaryColor: "#13305c",
+      background: "#13305c", mainBkg: "#1a3b6e", nodeTextColor: "#eef4ff",
       fontSize: "15px",
-    } : undefined,
+    } : {
+      // Sổ tay: hộp giấy, viền và mũi tên mực, hộp phụ màu giấy nhớ. Để màu
+      // mặc định của mermaid (tím lavender) thì sơ đồ trông như dán từ chỗ khác.
+      primaryColor: "#fffcf3", primaryBorderColor: "#1d1b18",
+      primaryTextColor: "#1d1b18", lineColor: "#1d1b18",
+      secondaryColor: "#fff4c2", tertiaryColor: "#e2e9fb",
+      fontSize: "15px",
+    },
     flowchart: { curve: "basis", htmlLabels: false },
     fontFamily: getComputedStyle(document.body).fontFamily,
   });
@@ -448,8 +457,9 @@ async function init() {
   wireHashNav();
   wireSlides();
   wirePresent();
-  const id = location.hash.slice(1);
-  if (id) openDoc(id).catch(() => (location.hash = ""));
+  // `#survey` do survey.js tự mở lúc nạp; ở đây chỉ lo hash trỏ tới một bài.
+  const h = docHash();
+  if (h.kind === "doc") openDoc(h.id).catch(() => (location.hash = ""));
 }
 
 /* ------------------------------------------------------ chọn model */
@@ -629,8 +639,8 @@ function veRecent() {
         <span class="rwhen" title="${esc("Nạp " + khiNao(d.created_at)
           + (nguon ? " từ " + nguon : ""))}">${esc(khiNao(d.updated_at))}${
           nguon ? `<em>${esc(nguon)}</em>` : ""}</span>
-        <button class="icon-btn" data-ren="${esc(d.id)}" title="Đổi tên bài">✎</button>
-        <button class="icon-btn" data-del="${esc(d.id)}" title="Xoá">🗑</button>
+        <button class="icon-btn" data-ren="${esc(d.id)}" title="Đổi tên bài">${ico("pencil")}</button>
+        <button class="icon-btn" data-del="${esc(d.id)}" title="Xoá">${ico("trash")}</button>
       </li>`;
     })
     .join("");
@@ -947,10 +957,31 @@ function showScreen(id) {
    Chỉ phản ứng khi hash THẬT SỰ khác bài đang mở: mọi chỗ trong app đều ghi
    `location.hash` khi mở bài, và nếu không so thì chính cú ghi đó lại kích hoạt
    một lượt mở bài nữa. */
+/** Đọc `location.hash` theo MỘT luật cho cả app.
+
+    Ba dạng đang sống chung: `#survey` (kho survey), `#doc=<mã>` (survey.js ghi
+    khi quay về bài đang đọc) và `#<mã>` (app.js ghi khi mở bài). Bản đầu của
+    bộ nghe `hashchange` coi MỌI hash khác rỗng là mã bài, nên bấm "Tìm hiểu"
+    thì `svOpen` ghi `#survey`, bộ nghe gọi `openDoc("survey")`, nhận 404, rồi
+    đá về màn nhập — công cụ thứ hai của app mất hẳn lối vào mà không lỗi nào. */
+function docHash() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (!h) return { kind: "start" };
+  if (h === "survey" || h.startsWith("survey=")) return { kind: "survey" };
+  return { kind: "doc", id: h.startsWith("doc=") ? h.slice(4) : h };
+}
+
 function wireHashNav() {
   addEventListener("hashchange", () => {
-    const id = location.hash.slice(1);
-    if (!id) {
+    const h = docHash();
+    // Kho survey tự lo màn của nó (`svOpen`); ở đây chỉ mở lại khi nó đang ẩn
+    // — tức lúc người dùng bấm Back/Forward về đúng hash ấy.
+    if (h.kind === "survey") {
+      if ($("#survey")?.classList.contains("hidden") && typeof svOpen === "function") svOpen();
+      return;
+    }
+    const id = h.id;
+    if (h.kind === "start") {
       // Về màn nhập, và đóng mọi popup đang mở — trước đây hộp ghi chú tự bật
       // lên che nội dung sau khi điều hướng.
       closeHlPop?.();
@@ -1088,7 +1119,7 @@ function renderReview() {
         : `<div class="cap" style="padding:1.4rem;text-align:center">Chưa cắt được hình cho chú thích này</div>`}
       <div class="cap">${esc(b.text.slice(0, 130))}</div>
       <div class="act">
-        ${b.figure_page >= 0 ? `<button data-crop="${esc(b.id)}">✂ Chỉnh khung</button>` : ""}
+        ${b.figure_page >= 0 ? `<button data-crop="${esc(b.id)}">${ico("scissors")} Chỉnh khung</button>` : ""}
         ${b.figure ? `<button data-dropfig="${esc(b.id)}">Bỏ hình</button>` : ""}
       </div>
     </div>`).join("");
@@ -1137,9 +1168,9 @@ function blkRow(b) {
     <span class="tag">${esc(b.type)}</span>
     <span class="txt">${esc(b.text.slice(0, 220))}</span>
     <span class="blk-act">
-      <button data-merge="${esc(b.id)}" title="Gộp với khối ngay sau — dùng khi một đoạn bị cắt làm đôi">⇓</button>
-      <button data-split="${esc(b.id)}" title="Tách khối này làm hai — dùng khi hai đoạn bị dính">✂</button>
-      <button data-dropblk="${esc(b.id)}" title="Bỏ hẳn khối khỏi bài">🗑</button>
+      <button data-merge="${esc(b.id)}" title="Gộp với khối ngay sau — dùng khi một đoạn bị cắt làm đôi">${ico("merge")}</button>
+      <button data-split="${esc(b.id)}" title="Tách khối này làm hai — dùng khi hai đoạn bị dính">${ico("scissors")}</button>
+      <button data-dropblk="${esc(b.id)}" title="Bỏ hẳn khối khỏi bài">${ico("trash")}</button>
     </span>
   </div>`;
 }
@@ -3372,6 +3403,10 @@ function applyReaderPrefs() {
 }
 
 function applyTheme(t) {
+  // Skin "Báo" cũ đã thành giao diện mặc định (Sổ tay), nên ai còn lưu lựa
+  // chọn đó thì nhận Sổ tay — để nguyên giá trị lạ thì không nút nào trong
+  // menu sáng lên, trông như chưa chọn gì.
+  if (t === "bao") { t = "light"; setPref("theme", t); }
   if (t === "auto") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
   $$("#themeSeg .seg-btn").forEach((b) => b.classList.toggle("is-on", b.dataset.theme === t));
@@ -3806,13 +3841,13 @@ function pairHTML(b, vi, note, inFlow = false) {
   // dòng chân trang — chúng không phải `para` nên trước đây không có nút nào.
   const tools = `<div class="tools">
        ${b.type === "para" || b.type === "caption" ? `
-         <button data-act="explain" title="Giải thích — đoạn này đang làm gì trong lập luận của bài?">💡</button>
-         <button data-act="copy" title="Chép bản dịch">⧉</button>
-         <button data-act="edit" title="Sửa tay bản dịch. Miễn phí, và bản sửa được ghi vào bộ nhớ dịch nên đoạn y hệt ở bài khác cũng dùng bản của bạn.">✎</button>
-         <button data-act="redo" title="Dịch lại đoạn này. Tốn một lượt gọi model: rẻ nếu bài vừa dịch xong (toàn văn còn trong cache), tới khoảng $0,03 nếu đã lâu vì phải đọc lại cả bài. Bản cũ bị bỏ khỏi bộ nhớ dịch nên không quay lại, và lượt mới chạy ở nhiệt độ cao hơn để không ra đúng kết quả cũ.">↻</button>` : ""}
+         <button data-act="explain" title="Giải thích — đoạn này đang làm gì trong lập luận của bài?">${ico("bulb")}</button>
+         <button data-act="copy" title="Chép bản dịch">${ico("copy")}</button>
+         <button data-act="edit" title="Sửa tay bản dịch. Miễn phí, và bản sửa được ghi vào bộ nhớ dịch nên đoạn y hệt ở bài khác cũng dùng bản của bạn.">${ico("pencil")}</button>
+         <button data-act="redo" title="Dịch lại đoạn này. Tốn một lượt gọi model: rẻ nếu bài vừa dịch xong (toàn văn còn trong cache), tới khoảng $0,03 nếu đã lâu vì phải đọc lại cả bài. Bản cũ bị bỏ khỏi bộ nhớ dịch nên không quay lại, và lượt mới chạy ở nhiệt độ cao hơn để không ra đúng kết quả cũ.">${ico("redo")}</button>` : ""}
        ${b.hidden
-         ? `<button data-act="unhide" title="Đưa khối này trở lại mạch đọc">↩</button>`
-         : `<button data-act="hide" title="Ẩn khối này khỏi mạch đọc (giữ nguyên bản dịch, hiện lại được)">⊘</button>`}
+         ? `<button data-act="unhide" title="Đưa khối này trở lại mạch đọc">${ico("undo")}</button>`
+         : `<button data-act="hide" title="Ẩn khối này khỏi mạch đọc (giữ nguyên bản dịch, hiện lại được)">${ico("hide")}</button>`}
      </div>`;
   // Hình/bảng cắt từ PDF hiện trên caption. Công thức cũng là ảnh cắt từ PDF —
   // toán hai chiều dựng lại bằng chữ thì mất hình dạng, ảnh thì đúng bản in.
@@ -3826,7 +3861,7 @@ function pairHTML(b, vi, note, inFlow = false) {
               alt="${esc(b.text.slice(0, 90))}" loading="lazy">
          ${b.figure_page >= 0
            ? `<button class="fig-crop" data-crop="${esc(b.id)}"
-                title="Khung cắt sai? Kéo lại khung trên trang PDF gốc.">✂</button>` : ""}
+                title="Khung cắt sai? Kéo lại khung trên trang PDF gốc.">${ico("scissors")}</button>` : ""}
        </figure>`
     : "";
   const gl = state.doc.plain?.[b.id] || "";
@@ -3954,8 +3989,10 @@ function wirePairs() {
       if (act === "redo") return redoBlock(el.dataset.id);
       if (act === "copy") {
         navigator.clipboard.writeText($("[data-vi]", el).textContent.trim());
-        e.target.textContent = "✓";
-        setTimeout(() => (e.target.textContent = "⧉"), 900);
+        // Ghi lên NÚT, không lên `e.target`: target có thể là icon bên trong.
+        const nut = e.target.closest("[data-act]");
+        nut.innerHTML = ico("check");
+        setTimeout(() => (nut.innerHTML = ico("copy")), 900);
         return;
       }
       // Thu gọn chứ không xoá: ghi chú đã nằm trong DB rồi, xoá đi chỉ khiến

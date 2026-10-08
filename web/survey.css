@@ -68,9 +68,11 @@
 .sv-lhead {
   display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
 }
+/* Nhãn mục KHÔNG viết hoa toàn bộ — dấu chồng tầng của "TÀI LIỆU", "BÀI TOÁN"
+   bị cắt ngọn ở cỡ chữ nhỏ (xem luật chữ tiếng Việt đầu style.css). */
 .sv-lhead h2 {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--muted); margin: 0; flex: 1; font-weight: 600;
+  font-family: var(--display); font-size: 15px; line-height: 1.35;
+  color: var(--ink); margin: 0; flex: 1; font-weight: 700;
 }
 
 .sv-addbox {
@@ -162,8 +164,8 @@
 /* Bề ngang đọc được. Câu trả lời trải hết chiều ngang màn hình thì mắt phải
    nhảy quá xa mỗi lần xuống dòng. */
 .sv-col { max-width: 78ch; margin: 0 auto; }
-.sv-h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--muted); margin: 26px 0 4px; }
+.sv-h3 { font-family: var(--display); font-size: 16px; font-weight: 700; line-height: 1.35;
+  color: var(--ink); margin: 26px 0 4px; }
 
 /* ---- ô hỏi ---- */
 
@@ -283,9 +285,9 @@
 .sv-syn { font-family: var(--serif); font-size: 16.5px; line-height: 1.68; }
 .sv-syn-h1 { font-family: var(--sans); font-size: 21px; margin: 0 0 4px; }
 .sv-syn-h2 {
-  font-family: var(--sans); font-size: 12px; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--muted); margin: 30px 0 8px;
-  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+  font-family: var(--display); font-size: 18px; font-weight: 800; line-height: 1.35;
+  color: var(--ink); margin: 30px 0 8px;
+  padding-bottom: 4px; border-bottom: 2px solid var(--muc);
 }
 .sv-syn h4 { font-family: var(--sans); font-size: 15px; color: var(--head); margin: 0 0 6px; }
 .sv-syn p { margin: 8px 0; }
@@ -387,8 +389,8 @@
 .sv-graph { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 8px; }
 .sv-gcol { min-width: 165px; }
 .sv-gcol h4, .sv-edges h4 {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--muted); margin: 0 0 5px;
+  font-family: var(--hand); font-size: 16px; font-weight: 400; line-height: 1.3;
+  color: var(--accent); margin: 0 0 5px;
 }
 .sv-ent {
   display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
@@ -439,8 +441,10 @@
 /* Model đang chạy — hiện ở thanh trên và ở tab Tổng hợp. Nhỏ và nhạt, nhưng
    luôn có mặt: nó quyết định cả chất lượng lẫn hoá đơn, mà ô chọn để trống
    ("theo .env") thì người dùng không có cách nào biết là model nào. */
+/* Chữ viết tay, KHÔNG mono: dòng này giờ là câu tiếng Việt ("Tổng hợp bằng…"),
+   mà font mono của hệ không dựng nổi dấu chồng tầng. */
 .sv-modelnote {
-  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  font-family: var(--hand); font-size: 14px; line-height: 1.3; color: var(--muted);
   white-space: nowrap; cursor: help;
 }
 p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
@@ -493,9 +497,9 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
 
 .sv-lecsec { margin: 0 0 34px; }
 .sv-lecsec > h3 {
-  font-family: var(--sans); font-size: 12px; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--muted); margin: 0 0 10px;
-  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+  font-family: var(--display); font-size: 18px; font-weight: 800; line-height: 1.35;
+  color: var(--ink); margin: 0 0 10px;
+  padding-bottom: 4px; border-bottom: 2px solid var(--muc);
 }
 
 /* Cần biết trước — thuật ngữ nổi lên, lời giải thích thụt vào. Đây là mục người
@@ -545,8 +549,7 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
    "sửa" thành inline. */
 .sv-tag {
   display: block; margin-bottom: 2px;
-  font-family: var(--sans); font-size: 10px; text-transform: uppercase;
-  letter-spacing: .05em; color: var(--muted);
+  font-family: var(--hand); font-size: 15px; line-height: 1.3; color: var(--muted);
 }
 .sv-cmp .sv-tag + p, .sv-cmp p > p { margin-top: 0; }
 .sv-tag.alt { color: var(--accent); }

@@ -82,7 +82,7 @@ def _with_chunks(doc: dict) -> dict:
 # ----------------------------------------------------------------- trang web
 
 
-_ASSETS = ("style.css", "survey.css", "app.js", "survey.js")
+_ASSETS = ("vendor/fonts.css", "style.css", "survey.css", "app.js", "survey.js")
 
 
 def _asset_tag() -> str:
