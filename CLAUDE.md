@@ -215,6 +215,76 @@ ghép chúng lại và **phải chạy trước NFKC**: NFKC biến phần lớn
 Sửa hai chỗ này không tự động áp cho bài đã nạp — `parse_cache` khoá theo SHA của
 file PDF (xem phần bẫy cache ở trên), phải xoá cache rồi nạp lại bài.
 
+### Thứ tự đọc: khối trải hết bề ngang là VÁCH NGĂN, không thuộc cột nào
+
+Ba lỗi chồng lên nhau ở đúng trang đầu bài CIRAG, và cả ba đều **hỏng câm** —
+không chỗ nào báo lỗi, chỉ có người đọc thấy bài lộn xộn.
+
+**1. `_page_columns` đếm theo SỐ KHỐI nên măng-sét trang đầu lật ngược kết quả.**
+Trang đầu bài hai cột luôn có tên bài + mấy dòng tác giả + dòng cơ quan trải hết
+bề ngang, mà trang đầu lại là trang **ít vùng nhất**. Đo trên CIRAG: 4 khối cắt
+ngang trên 13 vùng = **31%**, vượt ngưỡng 25% → chấm **một cột** → sắp thuần
+theo `y` → hai cột cài răng lược: `1 Introduction` và đoạn mở bài hiện ra **sau**
+chú thích Hình 1 và sau chính đoạn nối tiếp của nó.
+
+Cân theo **chiều cao** thì măng-sét đúng cỡ thật: 4 dòng ~90pt so với hai cột
+chữ ~600pt = 13%, dưới ngưỡng. Trang một cột thật thì mọi khối đều cắt ngang nên
+~100%, cách xa ngưỡng về phía kia. Đo trên 191 trang của `data/`: **11 trang đổi
+kết quả**, soát tay cả 11 — 6 ca `2→1` đều là trang có đoạn văn hoặc bảng trải
+hết bề ngang (một cột mới đúng), 5 ca `1→2` đều là măng-sét. Một ca trông mập mờ
+hoá ra vô hại: cả 14 khối của trang đó có tâm bên trái nên "2 cột" cho ra
+`_col = 0` hết, tức sắp y-thuần y như cũ.
+
+**2. Gán cột bằng TÂM khung là sai cho khối trải ngang.** Dòng tác giả của CIRAG
+có tâm `x = 298,5` trong khi nửa trang là `297,5` — **lệch đúng 1 point** — nên
+nó rơi vào "cột phải" và bị đẩy xuống sau toàn bộ cột trái. Tên tác giả và dòng
+cơ quan nằm lọt giữa phần Mở đầu.
+
+`_bang_va_cot()` coi khối trải ngang là **vách ngăn**: nội dung phía trên thuộc
+băng trước, phía dưới thuộc băng sau, và chia cột **trong từng băng**. Vách mang
+`cot = -1` nên nó đứng đầu băng của chính nó. Khoá sắp thành
+`(trang, băng, cột, y, x)`. Mẫu này đúng cho cả măng-sét lẫn đoạn văn / bảng
+trải ngang chen giữa một trang hai cột — cả hai đều cắt mạch đọc đúng chỗ ấy.
+
+Kèm theo: `_stitch` so `prev["sort"][:3]`, không còn `[:2]` — `[:2]` giờ là
+"cùng trang, cùng BĂNG" và chỉ số ở đầu cột phải bị nối vào cuối cột trái.
+
+**3. `_CONT` nuốt chú thích chân trang vào đoạn văn.** Luật cũ nói *"chỉ số
+không bao giờ mở đầu một đoạn văn"* — đúng với toán, **sai với chú thích chân
+trang**, vốn mở đầu đúng bằng một chỉ số trên. Hậu quả: `^{*} Corresponding
+author..` và `^{1}Our code can be found via github.com/…` bị dán vào cuối đoạn
+mở bài. Vào rồi thì `mark_noise` **không bắt được nữa** (không còn là khối
+riêng), nên người dùng trả tiền dịch chúng, và đoạn mở bài kết thúc bằng một địa
+chỉ GitHub.
+
+`_la_chu_thich_chan()` phân biệt bằng thứ đứng **sau** ngoặc: chú thích đi tiếp
+bằng chữ hoa (`^{*} Corresponding`), chỉ số toán đi tiếp bằng dấu câu hoặc ký
+hiệu (`_{i=1}, the objective…`, `_{k=1}.`). Ca thứ hai là dấu chỉ số trên nuốt
+luôn cả dòng — `^{1School of Computer Science and Engineering, …}` — nhận ra
+bằng chính nội dung trong ngoặc: có khoảng trắng và có từ thật thì đó là văn
+xuôi, không phải ký hiệu.
+
+**Và `_stitch_runon` phải biết hai chuyện nữa.** Trích dẫn bị cắt ở ranh giới
+cột thì khối sau mở đầu bằng **năm**, không phải chữ thường, nên `_CONT_LOWER`
+không bắt được: `…Iterative RAG (iRAG) (Trivedi et al.,` (6 ngoặc mở, 5 đóng) →
+`2023; Asai et al., 2024) is introduced by…`. `_CONT_CITE` nhận đuôi ấy, nhưng
+**chỉ khi khối trước còn ngoặc hở** (`_ngoac_ho`) — không có điều kiện đó thì mọi
+đoạn mở đầu bằng một con số đều bị nối vào đoạn trước.
+
+Trần nhảy là **4, không phải 3**, và cho nhảy qua cả `meta`: chú thích chân trang
+nằm ở ĐÁY cột nên chúng chen vào đúng chỗ đoạn văn vắt sang cột sau. Trên CIRAG
+giữa hai nửa có đúng ba khối — hai chú thích và một caption — nên trần 3 loại
+trượt.
+
+Kết quả đo lại trên CIRAG: đoạn mở bài từ **hai mảnh cụt** thành **một khối** kết
+thúc đúng câu, chú thích thành khối riêng `translate=False`, và thứ tự là
+tác giả → cơ quan → Abstract → Mở đầu → đoạn mở bài → chú thích → Hình 1.
+
+**Sửa ba chỗ này KHÔNG tự áp cho bài đã nạp** — `parse_cache` khoá theo SHA của
+file PDF. Phải `POST …/reparse`, và `reparse_merge` ghép theo nội dung nên bản
+dịch giữ nguyên; chỉ những đoạn vừa được NỐI LẠI là văn bản mới nên phải dịch
+lại. Đo trên CIRAG: `kept 194 · new 1 · dropped 1`, còn 18 khối chờ dịch.
+
 ### Phễu lọc sau khi bóc — chỗ tiền rò ra mà không ai thấy
 
 Hai hàm chạy trên danh sách `Block` đã dựng xong nên dùng chung cho cả đường

@@ -1232,3 +1232,98 @@ def test_gop_tieu_de_nhieu_dong_nhung_khong_nuot_ten_tac_gia():
     nhieu = [dong(i, f"dòng {i}", 17.0, 100 + i * 18) for i in range(8)]
     t3, d3 = gop_tieu_de(nhieu, 0)
     assert len(d3) == TIEU_DE_DONG_TOI_DA
+
+
+def test_chu_thich_chan_khong_bi_dan_vao_doan_van():
+    """`_CONT` nói "chỉ số không bao giờ mở đầu một đoạn văn" — đúng với toán,
+    SAI với chú thích chân trang, vốn mở đầu đúng bằng một chỉ số trên.
+
+    Đo trên bài CIRAG: `^{*} Corresponding author..` và `^{1}Our code can be
+    found via github.com/…` bị dán vào cuối đoạn mở bài. Vào rồi thì
+    `mark_noise` không bắt được nữa (không còn là khối riêng), nên người dùng
+    trả tiền dịch chúng và đoạn mở bài kết thúc bằng một địa chỉ GitHub.
+    """
+    from server.parser import _la_chu_thich_chan
+
+    # chú thích chân trang — KHÔNG được nối vào khối trước
+    for t in ("^{*} Corresponding author..",
+              "^{1}Our code can be found via https://github.com/ 52566rz/CIRAG.",
+              "^{2} Equal contribution.",
+              "^{1School of Computer Science and Engineering, Northeastern University}a@b.cn"):
+        assert _la_chu_thich_chan(t), f"bỏ sót chú thích: {t[:40]}"
+
+    # chỉ số toán thật — PHẢI nối, nếu không câu bị chẻ đôi giữa mệnh đề
+    for t in ("_{i=1}, the objective function is",
+              "_{k=1}.",
+              "^{N} denotes the set",
+              "^{2} + b^{2}",
+              "_{t} is the hidden state"):
+        assert not _la_chu_thich_chan(t), f"bắt oan chỉ số toán: {t[:40]}"
+
+
+def test_noi_lai_trich_dan_bi_cat_qua_ranh_gioi_cot():
+    """Trích dẫn bị cắt đôi ở ranh giới cột thì khối sau mở đầu bằng NĂM, không
+    phải chữ thường — nên `_CONT_LOWER` không bắt được.
+
+    Đo trên CIRAG: đoạn mở bài kết thúc ở `…Iterative RAG (iRAG) (Trivedi et
+    al.,` (6 ngoặc mở, 5 đóng), nhảy qua chú thích Hình 1, rồi sang `2023; Asai
+    et al., 2024) is introduced by…`. Người đọc nhận hai mẩu: một mẩu cụt giữa
+    trích dẫn, một mẩu mở đầu bằng con số không rõ của ai.
+    """
+    from server.parser import Block, _stitch_runon, _ngoac_ho
+
+    assert _ngoac_ho("Iterative RAG (iRAG) (Trivedi et al.,")
+    assert not _ngoac_ho("as single-step retrieval often fails (Shao et al., 2023).")
+
+    bs = [
+        Block(id="b1", type="para",
+              text="Iterative RAG (iRAG) (Trivedi et al.,"),
+        Block(id="b2", type="caption", text="Figure 1: Challenges."),
+        Block(id="b3", type="para",
+              text="2023; Asai et al., 2024) is introduced by retrieving in steps."),
+    ]
+    assert _stitch_runon(bs) == 1
+    assert "(Trivedi et al., 2023; Asai et al., 2024) is introduced" in bs[0].text
+
+    # Nhưng một đoạn mới thật sự mở đầu bằng số thì KHÔNG được nối — khối trước
+    # phải còn ngoặc hở mới tính.
+    bs2 = [
+        Block(id="b1", type="para", text="Chúng tôi đo trên ba bộ dữ liệu"),
+        Block(id="b2", type="para", text="2024, nhóm khác công bố kết quả tương tự."),
+    ]
+    assert _stitch_runon(bs2) == 0
+
+
+def test_mang_set_trang_dau_khong_lam_trang_hai_cot_thanh_mot_cot():
+    """`_page_columns` phải cân theo CHIỀU CAO, không theo số khối.
+
+    Trang đầu một bài hai cột luôn có măng-sét trải hết bề ngang — tên bài, mấy
+    dòng tác giả, dòng cơ quan — mà trang đầu lại là trang có ít vùng nhất. Đo
+    trên bài CIRAG: 4 khối cắt ngang trên 13 vùng = 31%, vượt ngưỡng 25%, nên
+    trang bị chấm MỘT cột.
+
+    Chấm một cột thì sắp thuần theo `y`, mà sắp thuần theo `y` trên trang hai
+    cột là cài răng lược hai cột vào nhau: `1 Introduction` và đoạn mở bài hiện
+    ra SAU chú thích Hình 1 và sau chính đoạn nối tiếp của nó. Không chỗ nào
+    báo lỗi.
+    """
+    from server.parser import _page_columns
+
+    PW = 595.0
+    # Măng-sét: 4 dòng trải hết bề ngang, mỗi dòng cao ~15–25pt.
+    mang_set = [(71, 75, 524, 100), (175, 128, 422, 143),
+                (157, 143, 439, 158), (81, 157, 514, 172)]
+    # Thân bài: hai cột chữ cao, không cắt qua trục giữa.
+    trai = [(71, 200 + i * 60, 288, 255 + i * 60) for i in range(5)]
+    phai = [(307, 200 + i * 60, 524, 255 + i * 60) for i in range(5)]
+    assert _page_columns(mang_set + trai + phai, PW) == 2, \
+        "măng-sét ngắn ở đầu trang không được làm trang hai cột thành một cột"
+
+    # Trang MỘT cột thật: mọi khối đều trải hết bề ngang.
+    mot_cot = [(71, 100 + i * 50, 524, 145 + i * 50) for i in range(10)]
+    assert _page_columns(mot_cot, PW) == 1
+
+    # Trang hai cột bị một ĐOẠN VĂN trải hết bề ngang chiếm phần lớn chiều cao
+    # vẫn phải là một cột — đoạn đó mới là thứ quyết định mạch đọc.
+    doan_rong = [(71, 100, 524, 400)]
+    assert _page_columns(doan_rong + trai + phai[:2], PW) == 1

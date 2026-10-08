@@ -238,6 +238,30 @@ def _looks_like_heading(text: str, rel_size: float, bold: bool) -> tuple[bool, i
 # block trước bị cắt ngang chứ không phải đoạn mới.
 _CONT = re.compile(r"^\s*[_^]\{")
 
+# …trừ CHÚ THÍCH CHÂN TRANG, vốn cũng mở đầu bằng một chỉ số trên.
+_CT_MOC = re.compile(r"^\s*\^\{([*†‡§¶]|\d{1,2})\}\s*[A-ZÀ-Ỹ]")
+# Ca thứ hai: dấu chỉ số trên nuốt luôn cả dòng — `^{1School of Computer Science
+# and Engineering, …}`. Nhận ra bằng chính nội dung trong ngoặc: có khoảng trắng
+# và có từ tiếng Anh thật thì đó là văn xuôi, không phải ký hiệu toán.
+_CT_VANXUOI = re.compile(r"^\s*\^\{[^}]*\s[A-Za-zÀ-ỹ]{3,}\s")
+
+
+def _la_chu_thich_chan(t: str) -> bool:
+    """Khối này mở đầu bằng dấu chú thích chân trang, không phải chỉ số toán?
+
+    `_CONT` nói "chỉ số không bao giờ mở đầu một đoạn văn" — đúng với toán, sai
+    với chú thích chân trang, vốn mở đầu đúng bằng một chỉ số trên. Hậu quả đo
+    trên bài CIRAG: `^{*} Corresponding author..` và `^{1}Our code can be found
+    via github.com/…` bị DÁN VÀO CUỐI đoạn mở bài. Vào rồi thì `mark_noise`
+    không còn bắt được (nó không còn là khối riêng), nên người dùng trả tiền
+    dịch chúng, và đoạn mở bài kết thúc bằng một địa chỉ GitHub.
+
+    Phân biệt bằng thứ đứng SAU ngoặc: chú thích đi tiếp bằng chữ hoa
+    (`^{*} Corresponding`), còn chỉ số toán đi tiếp bằng dấu câu hoặc ký hiệu
+    (`_{i=1}, the objective…`, `_{k=1}.`).
+    """
+    return bool(_CT_MOC.match(t) or _CT_VANXUOI.match(t))
+
 # Dấu đầu mục. Cố ý KHÔNG nhận gạch ngang: `−E` trong công thức và từ bị ngắt
 # gạch nối cuối dòng đều mở đầu bằng gạch, nhận vào là hỏng nhiều hơn được.
 _BULLET_CH = "•‣▪◦∙"
@@ -305,7 +329,11 @@ def _stitch(items: list[dict], covered: set[int]) -> list[dict]:
         prev = out[-1] if out else None
         if (prev is not None
                 and _CONT.match(it["text"])
-                and prev["sort"][:2] == it["sort"][:2]          # cùng trang, cùng cột
+                and not _la_chu_thich_chan(it["text"])
+                # `sort` giờ là (trang, băng, cột, y) — phải so ba thành phần
+                # đầu. So hai thành phần thì thành "cùng trang, cùng BĂNG" và
+                # chỉ số ở đầu cột phải bị nối vào cuối cột trái.
+                and prev["sort"][:3] == it["sort"][:3]
                 and prev.get("idx") not in covered
                 and it.get("idx") not in covered):
             prev["text"] = prev["text"].rstrip() + it["text"].lstrip()
@@ -522,12 +550,68 @@ def _line_text(line: dict) -> str:
 
 
 def _page_columns(rects, page_width: float) -> int:
-    """Đoán số cột: nếu rất ít block cắt qua trục giữa thì coi là 2 cột."""
+    """Đoán số cột: block cắt qua trục giữa chiếm bao nhiêu CHIỀU CAO của trang.
+
+    Cân theo chiều cao chứ **không theo số block**, và đó là cả vấn đề. Trang
+    đầu một bài hai cột luôn có một măng-sét trải hết bề ngang — tên bài, mấy
+    dòng tác giả, dòng cơ quan — mà trang đầu lại là trang có ít vùng nhất. Đo
+    trên bài CIRAG: 4 khối cắt ngang trên tổng 13 vùng = **31%**, vượt ngưỡng
+    25%, nên trang được chấm là MỘT cột.
+
+    Hậu quả thì không nhìn thấy ở chỗ nào báo lỗi cả: một cột nghĩa là sắp thuần
+    theo `y`, mà sắp thuần theo `y` trên trang hai cột là cài răng lược hai cột
+    vào nhau. Người đọc nhận `1 Introduction` và đoạn mở bài nằm **sau** chú
+    thích Hình 1 và sau chính đoạn nối tiếp của nó.
+
+    Cân theo chiều cao thì măng-sét đúng với kích thước thật của nó: bốn dòng
+    cao chừng 90pt so với hai cột chữ cao ~600pt, tức 13% — dưới ngưỡng, và
+    trang được chấm hai cột. Trang một cột thật thì mọi khối đều cắt ngang nên
+    tỉ lệ ~100%, cách xa ngưỡng về phía kia.
+    """
     if len(rects) < 8:
         return 1
     mid = page_width / 2
-    crossing = sum(1 for r in rects if r[0] < mid - 12 and r[2] > mid + 12)
-    return 1 if crossing > len(rects) * 0.25 else 2
+    cao = lambda r: max(r[3] - r[1], 1.0)
+    tong = sum(cao(r) for r in rects)
+    cat = sum(cao(r) for r in rects if r[0] < mid - 12 and r[2] > mid + 12)
+    return 1 if cat > tong * 0.25 else 2
+
+
+def _bang_va_cot(rects, page_width: float, ncol: int) -> list[tuple[int, int]]:
+    """Gán (băng, cột) cho từng khung — xương sống của thứ tự đọc.
+
+    Gán cột bằng tâm khung là không đủ, vì **khối trải hết bề ngang không thuộc
+    cột nào**. Đo trên bài CIRAG: dòng tác giả có tâm `x = 298,5` trong khi nửa
+    trang là `297,5` — lệch đúng **1 point** — nên nó rơi vào "cột phải" và bị
+    đẩy xuống sau toàn bộ cột trái. Người đọc nhận tên tác giả và dòng cơ quan
+    nằm lọt giữa phần Mở đầu.
+
+    Cách đúng là coi khối trải ngang như **vách ngăn**: nội dung phía trên nó
+    thuộc băng trước, phía dưới thuộc băng sau, và trong mỗi băng mới chia cột.
+    Mẫu này đúng cho cả măng-sét trang đầu lẫn đoạn văn / bảng trải hết bề ngang
+    chen giữa một trang hai cột — cả hai đều cắt mạch đọc đúng chỗ ấy.
+
+    Trả về danh sách `(bang, cot)` cùng thứ tự với `rects`; khối trải ngang mang
+    `cot = -1` nên nó đứng đầu băng của chính nó.
+    """
+    mid = page_width / 2
+    ngang = [i for i, r in enumerate(rects)
+             if r[0] < mid - 12 and r[2] > mid + 12]
+    moc = sorted((rects[i][3], i) for i in ngang)        # (mép dưới, chỉ số)
+    ra = []
+    for i, r in enumerate(rects):
+        giua = (r[1] + r[3]) / 2
+        # Băng = số vách ngăn nằm TRỌN phía trên khối này. Vách tự nó không đếm
+        # chính nó, nên vách và phần dưới nó cùng một băng — đúng ý "vách mở đầu
+        # một băng mới".
+        bang = sum(1 for y1, j in moc if j != i and y1 <= giua)
+        if i in ngang:
+            ra.append((bang, -1))
+        elif ncol == 1:
+            ra.append((bang, 0))
+        else:
+            ra.append((bang, 0 if (r[0] + r[2]) / 2 < mid else 1))
+    return ra
 
 
 def _word_gaps(page, items: list[dict]) -> None:
@@ -1229,10 +1313,11 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
                 })
         _word_gaps(page, items)
         ncol = _page_columns([i["bbox"] for i in items], pw)
-        for it in items:
+        bc = _bang_va_cot([i["bbox"] for i in items], pw, ncol)
+        for it, (bang, col) in zip(items, bc):
             wide = it["bbox"][2] - it["bbox"][0] > pw * 0.62  # hình tràn 2 cột
-            col = 0 if ncol == 1 else (0 if it["bbox"][0] < pw / 2 else 1)
-            it["sort"] = (pno, col, round(it["bbox"][1], 1))
+            it["sort"] = (pno, bang, col, round(it["bbox"][1], 1))
+            col = max(col, 0)      # `col_bounds` ở dưới chỉ biết 0/1
             if ncol == 1 or wide:
                 it["col_bounds"] = (page.rect.x0 + 6, page.rect.x1 - 6)
             elif col == 0:
@@ -1669,6 +1754,21 @@ def recover_uncovered(doc, items: list[dict], regions: list[dict] | None) -> lis
 _HYPHEN_END = re.compile(r"[A-Za-zÀ-ỹ]{2,}-$")
 # Đoạn nối tiếp bắt đầu bằng chữ thường: chữ hoa là câu mới, không phải phần đuôi.
 _CONT_LOWER = re.compile(r"^[a-zà-ỹ]")
+# Đuôi của một DANH SÁCH TRÍCH DẪN bị cắt đôi: `(Trivedi et al.,` ở cuối khối
+# trước, `2023; Asai et al., 2024) is introduced by…` ở đầu khối sau. Năm bốn
+# chữ số dính ngay dấu `;` `,` `)` chỉ xuất hiện trong đúng hoàn cảnh ấy — một
+# đoạn văn thật không bao giờ mở đầu như vậy.
+_CONT_CITE = re.compile(r"^\d{4}[;,)]")
+
+
+def _ngoac_ho(t: str) -> bool:
+    """Khối kết thúc khi còn một ngoặc tròn chưa đóng.
+
+    Đây là mốc chắc chắn nhất của "câu bị cắt giữa chừng": `(Trivedi et al.,`
+    không thể là chỗ kết thúc hợp lệ của một đoạn. Đếm thô là đủ — ngoặc trong
+    bài báo luôn cân, và chỉ cần biết CÓ dư hay không, không cần biết ở đâu.
+    """
+    return t.count("(") > t.count(")")
 
 # Khối chen giữa mà một đoạn bị cắt có thể nhảy qua. Hình, bảng, công thức
 # thường được xếp lên đầu cột nên nằm CHÈN vào giữa câu.
@@ -1767,15 +1867,27 @@ def _stitch_runon(blocks: list[Block]) -> int:
         # qua `equation`: công thức nằm trong mạch lập luận (`…sorted as` → công
         # thức → `where T_V is…`) và được cắt thành ảnh phải đứng giữa hai nửa.
         j = i + 1
-        while j < len(blocks) and blocks[j].type in ("caption", "figure", "table"):
+        while j < len(blocks) and blocks[j].type in ("caption", "figure", "table", "meta"):
             j += 1
-        if j >= len(blocks) or j - i > 3:
+        # Trần 4, không phải 3: chú thích chân trang nằm ở ĐÁY cột nên chúng
+        # chen vào đúng chỗ đoạn văn vắt sang cột sau. Đo trên CIRAG: giữa hai
+        # nửa của đoạn mở bài có `^{*} Corresponding author..`,
+        # `^{1}Our code…` và chú thích Hình 1 — đúng ba khối, trần 3 loại trượt.
+        if j >= len(blocks) or j - i > 4:
             i += 1
             continue
 
         b = blocks[j]
-        if (b.type == "para" and not b.hidden and b.text.strip()
-                and _CONT_LOWER.match(b.text.lstrip())):
+        # Khối sau mở đầu bằng chữ thường, HOẶC bằng đuôi một danh sách trích
+        # dẫn mà khối trước còn để hở ngoặc. Ca thứ hai là kiểu cắt ở ranh giới
+        # cột/trang của bài hai cột: đo trên CIRAG, đoạn mở bài kết thúc ở
+        # `…Iterative RAG (iRAG) (Trivedi et al.,` (6 ngoặc mở, 5 đóng) rồi
+        # nhảy qua chú thích Hình 1 sang `2023; Asai et al., 2024) is
+        # introduced by…`. Không có luật này thì người đọc nhận hai mẩu: một
+        # mẩu cụt giữa trích dẫn, một mẩu mở đầu bằng con số không rõ của ai.
+        noi_tiep = (_CONT_LOWER.match(b.text.lstrip())
+                    or (_CONT_CITE.match(b.text.lstrip()) and _ngoac_ho(a.text)))
+        if (b.type == "para" and not b.hidden and b.text.strip() and noi_tiep):
             a.text = a.text.rstrip() + " " + b.text.lstrip()
             b.text = ""
             del blocks[j]
@@ -1962,12 +2074,13 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
             if not 0 <= pno < len(doc):
                 continue
             pw = doc[pno].rect.width
-            ncol = _page_columns([it["bbox"] for it in items if it["page"] == pno], pw)
-            for it in items:
-                if it["page"] == pno:
-                    cx = (it["bbox"][0] + it["bbox"][2]) / 2
-                    it["_col"] = 0 if ncol == 1 else (0 if cx < pw / 2 else 1)
-        items = sorted(items, key=lambda it: (it["page"], it.get("_col", 0),
+            cua_trang = [it for it in items if it["page"] == pno]
+            ncol = _page_columns([it["bbox"] for it in cua_trang], pw)
+            for it, (bang, col) in zip(cua_trang,
+                                       _bang_va_cot([x["bbox"] for x in cua_trang], pw, ncol)):
+                it["_band"], it["_col"] = bang, col
+        items = sorted(items, key=lambda it: (it["page"], it.get("_band", 0),
+                                              it.get("_col", 0),
                                               round(it["bbox"][1], 1), it["bbox"][0]))
 
         # chia span của từng trang về đúng khối, một lần cho cả trang
