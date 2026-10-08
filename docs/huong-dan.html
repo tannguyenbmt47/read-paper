@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hướng dẫn sử dụng Loupe</title>
+<meta name="description" content="Hướng dẫn từng bước dùng Loupe: cài đặt, nạp bài, soát, dịch, đọc, làm slide, quản lý thư viện và hỏi cả kho tài liệu.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='30' height='30' rx='8' fill='%23ffd43b' stroke='%231d1b18' stroke-width='2'/><circle cx='14' cy='14' r='6.5' fill='%23fffcf3' stroke='%231d1b18' stroke-width='2.6'/><path d='M19 19l6 6' stroke='%231d1b18' stroke-width='3' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="/vendor/fonts.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&family=Patrick+Hand&display=swap&subset=vietnamese">
+<link rel="stylesheet" href="trang.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="logo" href="index.html">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 8h22l10 10v32H14z" fill="var(--surface)"/>
+        <path d="M36 8v10h10M20 26h18M20 32h14M20 38h10"/>
+        <circle cx="38" cy="38" r="11" fill="var(--hl)"/>
+        <path d="M33 35.5a5.5 5.5 0 0 1 5-3.5" stroke-width="2.2"/>
+        <path d="M46 46l9 9" stroke-width="5"/>
+      </svg>
+      <b>Loupe</b><i>hướng dẫn sử dụng</i>
+    </a>
+    <ul>
+      <li><a href="index.html">Giới thiệu</a></li>
+      <li><a href="#cai-dat">Cài đặt</a></li>
+      <li><a href="#dich">Dịch</a></li>
+      <li><a href="#kho">Kho tài liệu</a></li>
+      <li><a href="#su-co">Xử lý sự cố</a></li>
+      <li><a href="/" id="moApp">Mở Loupe ↗</a></li>
+    </ul>
+    <button class="theme-btn" type="button" id="themeBtn" title="Đổi giấy sáng / tối" aria-label="Đổi giấy sáng hoặc tối"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+  </div>
+</nav>
+
+<div class="wrap hd">
+  <aside class="muc-luc" aria-label="Mục lục">
+    <b>Trong trang này</b>
+    <ol>
+      <li><a href="#cai-dat">Cài đặt</a></li>
+      <li><a href="#nap-bai">Nạp bài báo</a></li>
+      <li><a href="#soat">Soát bước 1</a></li>
+      <li><a href="#dich">Dịch</a></li>
+      <li><a href="#doc">Đọc và hiểu</a></li>
+      <li><a href="#boi">Bôi vàng, ghi chú, hỏi</a></li>
+      <li><a href="#slide">Làm slide</a></li>
+      <li><a href="#xuat">Xuất file</a></li>
+      <li><a href="#thu-vien">Thư viện</a></li>
+      <li><a href="#kho">Kho tài liệu</a></li>
+      <li><a href="#tiet-kiem">Tiết kiệm tiền</a></li>
+      <li><a href="#phim-tat">Phím tắt</a></li>
+      <li><a href="#su-co">Xử lý sự cố</a></li>
+    </ol>
+  </aside>
+
+  <article class="bai">
+    <header>
+      <h1>Hướng dẫn sử dụng</h1>
+      <p>Từ lúc cài đặt tới lúc đọc xong một bài, làm slide trình bày, và hỏi cả một kho tài liệu.
+        Đọc lần lượt nếu bạn mới dùng; nhảy theo mục lục nếu bạn cần tra một việc.</p>
+    </header>
+
+    <!-- ===================================================== 1 -->
+    <section id="cai-dat">
+      <h2><span class="so-buoc">1</span>Cài đặt</h2>
+      <p>Bạn cần <strong>Python 3.10 trở lên</strong> và một key của
+        <a href="https://openrouter.ai/keys">OpenRouter</a> — dịch vụ cho phép gọi nhiều model
+        (DeepSeek, GPT, Claude…) bằng một key, trả tiền theo lượt dùng.</p>
+<pre class="lenh"><span class="cm"># lần đầu: tạo môi trường, cài thư viện, sinh tệp .env</span>
+./run.sh
+<span class="cm"># mở tệp .env, điền OPENROUTER_API_KEY=sk-or-v1-…, rồi chạy lại</span>
+./run.sh
+<span class="cm"># mở trình duyệt tại http://localhost:8010   (đổi cổng: PORT=9000 ./run.sh)</span></pre>
+
+      <h3>Tuỳ chọn: mô hình bố cục</h3>
+      <p>Không cài gì thêm, Loupe vẫn bóc được bài bằng luật suy đoán. Cài thêm một mô hình bố cục
+        thì hình, bảng và <strong>công thức hiển thị</strong> được nhận ra chính xác hơn hẳn và cắt
+        thành ảnh. Khuyên dùng MinerU — nhanh, chỉ vài giây một bài:</p>
+<pre class="lenh">.venv/bin/pip install "mineru[pipeline]"</pre>
+      <div class="chu-y meo"><b class="tieu">Có GPU thì tốt, không có cũng chạy</b>
+        <p>Lần chạy đầu MinerU tải trọng số về (một lần). Muốn tắt hẳn: đặt
+          <code>LAYOUT_BACKEND=off</code> trong <code>.env</code>.</p></div>
+      <p>Thích Docker hơn? Làm theo
+        <a href="https://github.com/tannguyenbmt47/read-paper/blob/main/DOCKER.md">DOCKER.md</a> —
+        nhớ đặt <code>DOCKER_UID</code>/<code>DOCKER_GID</code> trong <code>.env</code>.</p>
+    </section>
+
+    <!-- ===================================================== 2 -->
+    <section id="nap-bai">
+      <h2><span class="so-buoc">2</span>Nạp bài báo</h2>
+      <p>Màn đầu có khung <strong>Thêm bài mới</strong> với ba cách nạp:</p>
+      <ul>
+        <li><strong>Tải PDF lên</strong> — kéo thả file vào khung, hoặc bấm để chọn. Nhận cả
+          <code>.txt</code> và <code>.md</code>.</li>
+        <li><strong>arXiv / link PDF</strong> — dán mã như <code>1706.03762</code>, link
+          <code>arxiv.org/abs/…</code>, hoặc link tới một file PDF bất kỳ.</li>
+        <li><strong>Dán văn bản</strong> — dán thẳng nội dung bài. Hợp với bài đã có sẵn chữ.</li>
+      </ul>
+      <p>Mở <strong>Tuỳ chọn</strong> nếu muốn đổi <strong>Model dịch</strong> trước, rồi bấm
+        <strong>Nạp bài báo</strong>. Bước này miễn phí.</p>
+      <figure class="anh"><img src="anh/thu-vien.webp" loading="lazy" width="1600" height="1000" alt="Màn đầu: thẻ Đọc tiếp, khung Thêm bài mới bên trái, Thư viện bên phải"><figcaption>Màn đầu: thẻ "Đọc tiếp", khung nạp bài, và thư viện</figcaption></figure>
+
+      <h3>Nạp trùng một bài đã có</h3>
+      <p>Loupe nhận ra cả hai trường hợp: <strong>cùng một file</strong>, và <strong>cùng một bài
+        nhưng file khác</strong> (ví dụ bản arXiv v2). Nó hỏi trước khi làm gì, kèm số phần trăm đã
+        dịch và số tiền đã tốn cho bản cũ:</p>
+      <ul>
+        <li><strong>Mở bản đang có</strong> — không tạo thêm gì.</li>
+        <li><strong>Lưu thành phiên bản mới</strong> — bài mới mang nhãn v2, v3… cùng họ với bài cũ.</li>
+        <li><strong>Ghi đè bản cũ</strong> — bóc file mới vào bài cũ; đoạn nào không đổi thì giữ
+          nguyên bản dịch, ghi chú và vệt bôi.</li>
+      </ul>
+    </section>
+
+    <!-- ===================================================== 3 -->
+    <section id="soat">
+      <h2><span class="so-buoc">3</span>Soát bước 1 — trước khi tiêu tiền</h2>
+      <p>Đây là bước quan trọng nhất, và nó miễn phí. Bóc sai thì dịch hay đến đâu cũng hỏng, nên hãy
+        nhìn qua trước khi bấm dịch.</p>
+      <figure class="anh"><img src="anh/soat-buoc-1.webp" loading="lazy" width="1600" height="1000" alt="Màn soát bước 1 với số khối, số hình, giá ước tính và lưới hình đã cắt"><figcaption>Bốn con số trên cùng: khối sẽ dịch · hình và bảng · độ dài · giá ước tính</figcaption></figure>
+      <ul>
+        <li><strong>Cấu trúc bóc ra được</strong> — bao nhiêu đoạn, mục, chú thích, công thức. Mục
+          tham khảo tự gác sang một bên, không dịch.</li>
+        <li><strong>Hình và bảng bóc ra được</strong> — hình cắt lệch thì bấm <strong>Chỉnh
+          khung</strong>, kéo tám tay nắm rồi lưu; hình thừa thì <strong>Bỏ hình</strong> (giữ chú thích).</li>
+        <li><strong>Khối đáng ngờ</strong> — những khối trông như rác. Với mỗi khối: bỏ hẳn, bỏ tick
+          để giữ mà không dịch, gộp với khối ngay sau (đoạn bị cắt đôi), hoặc tách làm hai (hai đoạn
+          bị dính). <strong>Xem toàn bộ</strong> để làm vậy với mọi khối.</li>
+        <li><strong>Căn chỉnh lại bằng model</strong> — chỉ có với PDF. Dọn chữ dính nhau, gạch nối
+          đứt, công thức đảo mảnh. Tốn rất ít, và model <em>chỉ được</em> sửa khoảng trắng và thứ tự:
+          thêm hay bớt một chữ là bị chặn.</li>
+      </ul>
+      <p>Đổi model ở góc trên thì giá ước tính tính lại ngay. Xong thì bấm <strong>Bước 2: Dịch →</strong>.</p>
+      <div class="chu-y canh"><b class="tieu">"Không bóc được hình nào"?</b>
+        <p>Nếu là PDF scan (ảnh chụp trang), Loupe không đọc được chữ — chạy OCR trước, ví dụ
+          <code>ocrmypdf</code>. Xem thêm ở <a href="#su-co">Xử lý sự cố</a>.</p></div>
+    </section>
+
+    <!-- ===================================================== 4 -->
+    <section id="dich">
+      <h2><span class="so-buoc">4</span>Dịch</h2>
+      <p>Trên thanh công cụ có ba ô tick <strong>Gốc · Việt · Giải thích</strong>. Chúng quyết định
+        luôn <strong>bạn trả tiền cho cái gì</strong>: cột nào tắt thì không được sinh ra.</p>
+      <ul>
+        <li>Chỉ cần đọc nhanh: bật <strong>Việt</strong>, tắt <strong>Giải thích</strong>.</li>
+        <li>Đọc kỹ, chưa vững nền: bật cả hai. Cột giải thích nói lại bằng lời thường và cho biết
+          đoạn đó đóng vai trò gì trong lập luận.</li>
+        <li>Bài vốn đã là tiếng Việt: Loupe tự tắt cột Việt, chỉ sinh cột giải thích.</li>
+      </ul>
+      <p>Bấm <strong>Dịch</strong>. Lượt đầu tiên đọc toàn bài để dựng <strong>tóm lược, chuỗi lập
+        luận và bảng thuật ngữ</strong> — mọi đoạn sau đó dịch theo đúng bảng thuật ngữ này. Rồi các
+        mẻ chạy, ba mẻ một lúc; đồng hồ trên thanh trạng thái cho biết nó vẫn đang chạy.</p>
+      <h3>Nút ▾ cạnh nút Dịch</h3>
+      <ul>
+        <li><strong>Model</strong> — đổi giữa chừng không dịch lại phần đã xong.</li>
+        <li><strong>Dịch kỹ</strong> — thêm một lượt soát lại bản dịch với bản gốc. Tốn thêm.</li>
+        <li><strong>Chọn mục</strong> — tick chỉ Phương pháp và Kết quả, bỏ qua phụ lục. Mỗi mục ghi
+          sẵn số khối và số tiền đã tốn.</li>
+      </ul>
+      <div class="chu-y tien"><b class="tieu">Dừng lúc nào cũng được</b>
+        <p>Bấm <strong>⏸ Dừng</strong>: phần đã dịch được giữ nguyên. Lần sau bấm <strong>Dịch
+          tiếp</strong> chỉ chạy phần còn thiếu — không bao giờ dịch lại thứ đã xong. Khi đã hết việc,
+          nút ghi <strong>✓ Đã dịch xong</strong>.</p></div>
+      <p>Dịch xong cả bài, Loupe tự <strong>đánh dấu câu đáng nhớ</strong> (tắt được trong cột trái).
+        Mỗi vệt kèm một dòng nói vì sao câu đó đáng nhớ; màu cho biết loại: tím = luận điểm, xanh dương
+        = cơ chế, xanh lá = số liệu, hồng = giới hạn, vàng = khái niệm. Chỉnh mật độ ở mục
+        <strong>Mật độ đánh dấu</strong>: thưa, vừa, dày.</p>
+    </section>
+
+    <!-- ===================================================== 5 -->
+    <section id="doc">
+      <h2><span class="so-buoc">5</span>Đọc và hiểu</h2>
+      <figure class="anh"><img src="anh/doc-ba-cot.webp" loading="lazy" width="1600" height="1000" alt="Màn đọc ba cột"><figcaption>Gốc (chữ chì) · Dịch (chữ mực) · Giải thích (giấy nhớ)</figcaption></figure>
+      <h3>Công cụ trên từng đoạn</h3>
+      <p>Rê chuột vào một đoạn, cột công cụ nhỏ hiện bên phải:</p>
+      <table class="bang">
+        <thead><tr><th>Nút</th><th>Làm gì</th><th>Giá</th></tr></thead>
+        <tbody>
+          <tr><td>💡 Giải thích</td><td>Đoạn này đang làm gì trong lập luận: ý chính, liên hệ với đoạn trước, ví dụ cụ thể, điều tác giả <em>không</em> khẳng định, một câu tự kiểm</td><td>~$0,003</td></tr>
+          <tr><td>✎ Sửa tay</td><td>Sửa bản dịch. Bản sửa được nhớ, đoạn y hệt ở bài khác cũng dùng bản của bạn</td><td>miễn phí</td></tr>
+          <tr><td>↻ Dịch lại</td><td>Dịch lại riêng đoạn này, khi bản dịch lỗi</td><td>tới ~$0,03</td></tr>
+          <tr><td>⊘ Ẩn</td><td>Đưa khối ra khỏi mạch đọc; hiện lại được từ thanh "đang ẩn"</td><td>miễn phí</td></tr>
+        </tbody>
+      </table>
+      <h3>Cột trái</h3>
+      <p>Nút ☰ mở cột trái với bốn thẻ: <strong>Tóm lược</strong>, <strong>Lập luận</strong> (sơ đồ
+        chuỗi lập luận), <strong>Thuật ngữ</strong> (tìm được), <strong>Mục lục</strong> (bấm để
+        nhảy). Chân cột ghi bài này đã tốn bao nhiêu.</p>
+      <figure class="anh"><img src="anh/lap-luan.webp" loading="lazy" width="1600" height="1000" alt="Cột trái hiện sơ đồ lập luận"></figure>
+      <p>Cột trái mở trên màn hẹp thì ba cột đọc sẽ chật; Loupe tạm ẩn cột gốc và nói rõ trên thanh
+        tên cột. Đóng cột trái là cột gốc hiện lại.</p>
+      <h3>Đối chiếu với bản gốc</h3>
+      <ul>
+        <li>Nút 📄 mở <strong>PDF gốc</strong> bên phải, tự lật theo đoạn đang đọc. Kéo vách giữa để
+          nới rộng; bấm đúp vách để về mặc định.</li>
+        <li>Bấm chữ <em>Figure 3</em> trong bài để xem hình: cuộn chuột phóng to, kéo để di, bấm đúp
+          để nhảy giữa vừa-khung và gấp ba; nút ⤢ nới khung khi xem bảng nhiều số.</li>
+        <li>Rê chuột vào <code>[12]</code> để xem tài liệu được trích; bấm để mở danh sách tham khảo.</li>
+        <li>Cột giải thích nhắc tới <em>đoạn "…"</em> thì bấm vào là nhảy tới đoạn đó.</li>
+      </ul>
+      <figure class="anh"><img src="anh/pdf-goc.webp" loading="lazy" width="1600" height="1000" alt="Khung PDF gốc bên phải màn đọc"></figure>
+      <h3>Hiển thị</h3>
+      <p>Nút <strong>Aa</strong>: cỡ chữ, bề rộng cột, và giấy <strong>Sổ tay</strong> (sáng) hay
+        <strong>Bản vẽ</strong> (tối). Loupe nhớ chỗ bạn đọc dở cho từng bài. Kéo chọn chữ chỉ dính
+        đúng một cột, nên chép ra không lẫn ba thứ tiếng.</p>
+    </section>
+
+    <!-- ===================================================== 6 -->
+    <section id="boi">
+      <h2><span class="so-buoc">6</span>Bôi vàng, ghi chú và hỏi</h2>
+      <ul>
+        <li><strong>Bôi</strong> — bôi đen một đoạn chữ, chọn một trong năm màu. Màu vừa dùng được nhớ
+          cho lần sau.</li>
+        <li><strong>Ghi chú</strong> — bấm vào vệt bôi để viết ghi chú, như comment.</li>
+        <li><strong>Nhờ giải thích</strong> — trong ghi chú, nhờ model giải thích đúng đoạn đã bôi
+          (~$0,003).</li>
+        <li><strong>Hỏi</strong> — nút <strong>Hỏi</strong> trên thanh công cụ mở khung chat với toàn
+          văn bài trong ngữ cảnh. Hợp cho câu như "phần này khác gì cách làm của bài X?".</li>
+      </ul>
+      <div class="chu-y meo"><b class="tieu">Bấm 💡 ngay sau khi dịch thì rẻ nhất</b>
+        <p>Lúc đó toàn văn bài còn nằm trong cache của nhà cung cấp. Để hôm sau mới bấm, mỗi lượt phải
+          đọc lại cả bài ở giá đầy đủ.</p></div>
+    </section>
+
+    <!-- ===================================================== 7 -->
+    <section id="slide">
+      <h2><span class="so-buoc">7</span>Làm slide thuyết trình</h2>
+      <p>Dịch xong cả bài thì nút <strong>Slide</strong> mở khoá. Có hai bước, và bạn duyệt ở giữa:</p>
+      <ol>
+        <li><strong>① Dàn ý</strong> — bấm <strong>Soạn lại nội dung</strong> (tốn ít). Bạn nhận một
+          câu thông điệp chính, các phần, và mỗi slide sẽ khẳng định gì, dựa vào bằng chứng nào. Sửa ở
+          mức ý tưởng tại đây: viết lại khẳng định, đổi hình, sắp lại thứ tự.</li>
+        <li><strong>② Slide</strong> — bấm <strong>Dựng lại từ dàn ý</strong> (tốn tiền hơn). Slide bạn
+          đã sửa tay sẽ không bị dựng đè.</li>
+      </ol>
+      <figure class="anh"><img src="anh/dan-y.webp" loading="lazy" width="1600" height="1000" alt="Tab Dàn ý: thông điệp chính và danh sách mục"><figcaption>Sửa dàn ý trước rẻ hơn nhiều so với sửa slide sau</figcaption></figure>
+      <ul>
+        <li>Sửa chữ thẳng trên slide; <strong>⤢ Bố cục tự do</strong> để kéo, đổi cỡ từng phần.</li>
+        <li><strong>Làm lại slide này</strong> — nhờ model viết lại riêng một slide.</li>
+        <li><strong>▶ Trình chiếu</strong> (<kbd>F5</kbd>): <kbd>←</kbd> <kbd>→</kbd> chuyển slide,
+          <kbd>S</kbd> xem lời người nói, <kbd>Esc</kbd> thoát.</li>
+        <li>Cờ đỏ trên slide nghĩa là chốt soát thấy vấn đề — ví dụ một con số không có trong đoạn
+          nguồn. Đọc kỹ trước khi trình bày.</li>
+      </ul>
+      <figure class="anh"><img src="anh/slide.webp" loading="lazy" width="1600" height="1000" alt="Tab Slide: danh sách slide và slide đang sửa"></figure>
+    </section>
+
+    <!-- ===================================================== 8 -->
+    <section id="xuat">
+      <h2><span class="so-buoc">8</span>Xuất file</h2>
+      <p>Nút tải về (⤓) trên thanh công cụ:</p>
+      <ul>
+        <li><strong>Markdown</strong>, <strong>HTML</strong>, <strong>PDF</strong> — song ngữ hoặc chỉ
+          tiếng Việt. Ảnh được nhúng thẳng vào file, nên mở ở đâu cũng còn hình; file HTML đọc được
+          offline, sơ đồ vẫn chạy.</li>
+        <li>PDF đi qua hộp in của trình duyệt: chọn <em>Lưu dưới dạng PDF</em>.</li>
+        <li>Bộ slide xuất được <strong>PDF, HTML, PowerPoint</strong>. Trong file PowerPoint, sơ đồ là
+          hình vẽ gốc, vẫn kéo và sửa chữ được.</li>
+      </ul>
+    </section>
+
+    <!-- ===================================================== 9 -->
+    <section id="thu-vien">
+      <h2><span class="so-buoc">9</span>Thư viện</h2>
+      <ul>
+        <li><strong>Đọc tiếp</strong> — thẻ trên cùng là bài bạn mở gần nhất.</li>
+        <li><strong>Con dấu ở lề</strong> — ✓ xanh là đã dịch xong, vòng vàng là đang dở, vòng nét
+          đứt là chưa dịch.</li>
+        <li><strong>Tìm</strong> theo tên bài, tên model hay nguồn — gõ không dấu vẫn ra. Sắp theo
+          mới đọc, mới nạp, tên, dịch nhiều nhất, chưa dịch xong, tốn tiền nhất.</li>
+        <li><strong>Thư mục</strong> — tạo thư mục, rồi kéo thẻ bài thả vào tai thư mục. Xoá thư mục
+          không xoá bài: bài về "Chưa xếp".</li>
+        <li><strong>Chọn nhiều</strong> — nút <strong>Chọn</strong>, hoặc <kbd>Ctrl</kbd>/<kbd>⌘</kbd>
+          + bấm; <kbd>Shift</kbd> + bấm chọn cả dải. Chuyển thư mục có nút <em>Hoàn lại</em>; xoá thì
+          hộp thoại kê tên bài và số tiền đã tốn cho chúng.</li>
+        <li><strong>Đổi tên</strong> — bút chì trên thẻ, sửa ngay tại dòng.</li>
+      </ul>
+    </section>
+
+    <!-- ===================================================== 10 -->
+    <section id="kho">
+      <h2><span class="so-buoc">10</span>Kho tài liệu — hỏi cả ba mươi bài</h2>
+      <p>Bấm <strong>Tìm hiểu</strong> ở thanh bên trái. Đây là công cụ thứ hai: nó <strong>không
+        dịch</strong>, mà đánh chỉ mục từng bài và tóm mỗi bài thành một "phiếu" để trả lời câu hỏi
+        xuyên kho.</p>
+      <ol>
+        <li><strong>Tạo kho</strong> — menu ⋯ → <strong>Tạo kho mới</strong>. Mỗi chủ đề một kho.</li>
+        <li><strong>Thêm tài liệu</strong> — nút <strong>+ Thêm</strong>: nạp file, tìm bài theo từ
+          khoá, hoặc <strong>lấy bài đã đọc trong phần Dịch</strong>.</li>
+        <li><strong>Bơm nội dung</strong> — mỗi bài tốn khoảng $0,034, một lần. Bóc, cắt đoạn và tìm
+          kiếm theo nghĩa đều chạy trên máy, miễn phí.</li>
+      </ol>
+      <figure class="anh"><img src="anh/kho-tong-hop.webp" loading="lazy" width="1600" height="1000" alt="Tab Tổng hợp của kho"></figure>
+      <table class="bang">
+        <thead><tr><th>Thẻ</th><th>Dùng khi</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Tổng hợp</strong></td><td>Cần bức tranh chung: các hướng tiếp cận, chỗ các bài mâu thuẫn, khoảng trống còn bỏ ngỏ, nên đọc bài nào trước (~$0,09)</td></tr>
+          <tr><td><strong>Bài giảng</strong></td><td>Mở một bài lạ và chưa biết phải hỏi gì: kiến thức nền cần có, bài toán, cơ chế chạy tay một ví dụ, so sánh với các bài được trích (~$0,08)</td></tr>
+          <tr><td><strong>Hỏi đáp</strong></td><td>Có câu hỏi cụ thể. Mỗi khẳng định trích tới đúng đoạn; bấm mã trích dẫn để mở nguyên văn</td></tr>
+          <tr><td><strong>Bảng so sánh</strong></td><td>So các bài theo cột: phương pháp, dữ liệu, kết quả… Thêm bớt cột miễn phí</td></tr>
+          <tr><td><strong>Tra đoạn &amp; bản đồ</strong></td><td>Tìm thẳng một đoạn văn, xem đồ thị thực thể nối các bài</td></tr>
+        </tbody>
+      </table>
+      <figure class="anh"><img src="anh/kho-bai-giang.webp" loading="lazy" width="1600" height="1000" alt="Tab Bài giảng giảng một bài trong kho"></figure>
+      <div class="chu-y canh"><b class="tieu">Câu trả lời nói rõ chỗ chưa tìm thấy</b>
+        <p>Vòng tìm kiếm tối đa năm lượt, kiểm ngân sách trước mỗi lượt gọi. Ý nào không tìm được bằng
+          chứng sẽ được ghi thẳng là chưa tìm thấy, và các cảnh báo (số không có trong đoạn trích,
+          trích dẫn không đỡ được câu…) hiện ngay dưới câu trả lời.</p></div>
+      <p>Đặt trần chi phí mỗi câu hỏi ở <strong>Tuỳ chọn &amp; model</strong> trong thẻ Hỏi đáp. Hỏi lại
+        đúng một câu khi kho chưa đổi thì miễn phí.</p>
+    </section>
+
+    <!-- ===================================================== 11 -->
+    <section id="tiet-kiem">
+      <h2><span class="so-buoc">11</span>Mẹo tiết kiệm tiền</h2>
+      <ol>
+        <li><strong>Soát kỹ bước 1</strong> — ẩn khối rác trước khi dịch; mỗi khối là một lượt dịch
+          và một lượt giải thích.</li>
+        <li><strong>Tắt cột không cần</strong> — cột tắt không được sinh ra.</li>
+        <li><strong>Dịch theo mục</strong> — bài 30 trang thường chỉ cần Phương pháp và Kết quả.</li>
+        <li><strong>Bấm 💡 trong lúc vừa dịch xong</strong> — cache còn ấm, rẻ hơn nhiều.</li>
+        <li><strong>Model mặc định đã đủ tốt</strong> cho đa số bài; model đắt hơn đáng tiền khi cần
+          tiếng Việt thật mượt cho bài quan trọng.</li>
+        <li><strong>Dùng lại bộ nhớ dịch</strong> — đoạn đã dịch ở bài khác được lấy lại miễn phí.</li>
+      </ol>
+    </section>
+
+    <!-- ===================================================== 12 -->
+    <section id="phim-tat">
+      <h2><span class="so-buoc">12</span>Phím tắt</h2>
+      <table class="bang">
+        <thead><tr><th>Phím</th><th>Ở đâu</th><th>Làm gì</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd> <kbd>F</kbd></td><td>màn đọc</td><td>Tìm trong bài (cả ba cột)</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>Shift</kbd> <kbd>Enter</kbd></td><td>ô tìm</td><td>Kết quả sau / trước</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>vách khung PDF</td><td>Nới hoặc thu khung (giữ <kbd>Shift</kbd> để bước lớn)</td></tr>
+          <tr><td><kbd>F5</kbd></td><td>màn slide</td><td>Trình chiếu toàn màn hình</td></tr>
+          <tr><td><kbd>S</kbd></td><td>đang trình chiếu</td><td>Xem lời người nói</td></tr>
+          <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + bấm</td><td>thư viện</td><td>Chọn nhiều bài</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>hộp nhập nhiều dòng</td><td>Đồng ý</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>mọi nơi</td><td>Đóng hộp thoại, thoát chế độ chọn</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ===================================================== 13 -->
+    <section id="su-co">
+      <h2><span class="so-buoc">13</span>Xử lý sự cố</h2>
+      <details class="hoi"><summary>"Không trích được nội dung — PDF có thể là bản scan"</summary>
+        <div><p>PDF chỉ chứa ảnh chụp trang, không có chữ. Chạy OCR trước:
+          <code>ocrmypdf vao.pdf ra.pdf</code>, rồi nạp file <code>ra.pdf</code>.</p></div></details>
+      <details class="hoi"><summary>Báo "⚠ Bóc bằng đường lùi" / công thức không thành ảnh</summary>
+        <div><p>Mô hình bố cục không chạy được, Loupe đã dùng luật suy đoán. Cài MinerU (xem
+          <a href="#cai-dat">Cài đặt</a>), rồi trong bài bấm <strong>Bóc lại từ PDF (miễn phí)</strong>
+          ở cột trái — bản dịch, ghi chú, vệt bôi đều giữ nguyên.</p></div></details>
+      <details class="hoi"><summary>Đoạn văn bị cắt đôi, hoặc thứ tự đọc lộn xộn</summary>
+        <div><p>Bài nạp từ phiên bản Loupe cũ hơn giữ nguyên cách bóc cũ. Bấm <strong>Bóc lại từ PDF</strong>
+          để dùng bộ bóc mới nhất; đoạn không đổi giữ bản dịch, chỉ đoạn vừa được nối lại cần dịch lại.
+          Còn sai thì sửa tay ở bước soát: gộp, tách, ẩn khối.</p></div></details>
+      <details class="hoi"><summary>Ảnh hình bị mờ hoặc ô ảnh trống</summary>
+        <div><p>Bấm <strong>Cắt lại ảnh cho nét (miễn phí)</strong> ở cột trái. Nó vẽ lại ảnh từ PDF gốc,
+          không chạm vào chữ hay bản dịch.</p></div></details>
+      <details class="hoi"><summary>Đứng mãi ở "Đang đọc toàn bài để dựng tóm lược…"</summary>
+        <div><p>Đồng hồ trên thanh trạng thái phải đang chạy. Nếu model không trả lời, Loupe tự thử lại một
+          lần rồi báo quá giờ và hỏi <strong>Thử lại</strong>. Thử lại vẫn hỏng thì đổi sang model khác
+          ở nút ▾. Bấm <strong>⏸ Dừng</strong> huỷ ngay, phần chưa sinh ra không bị tính tiền.</p></div></details>
+      <details class="hoi"><summary>Bản dịch có chữ lạ (Hán, Cyrillic…)</summary>
+        <div><p>Thỉnh thoảng model lẫn hệ chữ khác. Loupe đánh dấu khối đó; bấm <strong>↻</strong> để dịch
+          lại riêng đoạn ấy, hoặc <strong>✎</strong> để sửa tay. Bản lỗi không được ghi vào bộ nhớ dịch.</p></div></details>
+      <details class="hoi"><summary>Kho tài liệu chỉ tìm theo từ khoá, không theo nghĩa</summary>
+        <div><p>Máy chưa tải được model vector (khoảng 2,3 GB, tải ở lần dùng đầu). Kiểm
+          <code>EMBED_BACKEND=auto</code> trong <code>.env</code> và kết nối mạng. Không có GPU vẫn chạy
+          được trên CPU, chỉ chậm hơn.</p></div></details>
+      <details class="hoi"><summary>Docker: "unable to open database file"</summary>
+        <div><p>Container không ghi được vào <code>./data</code>. Thêm <code>DOCKER_UID=$(id -u)</code>
+          và <code>DOCKER_GID=$(id -g)</code> vào <code>.env</code>, rồi
+          <code>docker compose up -d</code>.</p></div></details>
+      <details class="hoi"><summary>Mở <code>localhost:8010</code> không được</summary>
+        <div><p>Cổng có thể đang bị chiếm. Chạy ở cổng khác: <code>PORT=9000 ./run.sh</code>, rồi mở
+          <code>localhost:9000</code>.</p></div></details>
+
+      <a class="ve-dau" href="#">↑ Về đầu trang</a>
+    </section>
+  </article>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p class="ghi-tay">Còn vướng chỗ nào? Mở một issue trên GitHub.</p>
+    <span><a href="index.html">Giới thiệu</a> ·
+      <a href="https://github.com/tannguyenbmt47/read-paper">GitHub</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("loupe-trang-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById("themeBtn").onclick = () => {
+    const toi = root.dataset.theme ? root.dataset.theme === "dark"
+      : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = toi ? "light" : "dark";
+    try { localStorage.setItem("loupe-trang-theme", root.dataset.theme); } catch (e) {}
+  };
+
+  // Mục lục tô mục đang đọc. Không có IntersectionObserver thì thôi, trang vẫn đọc được.
+  const links = [...document.querySelectorAll(".muc-luc a")];
+  if (!("IntersectionObserver" in window)) return;
+  const io = new IntersectionObserver((es) => {
+    es.forEach((e) => {
+      if (!e.isIntersecting) return;
+      links.forEach((a) => a.classList.toggle("dang-xem", a.hash === "#" + e.target.id));
+    });
+  }, { rootMargin: "-20% 0px -70% 0px" });
+  document.querySelectorAll(".bai section[id]").forEach((s) => io.observe(s));
+
+  // App phục vụ trang này ở `/gioi-thieu/`, nên "/" là chính app. Ở nơi khác
+  // (GitHub Pages, mở file trực tiếp) không có app chạy sau lưng: dẫn về phần cài đặt.
+  if (!location.pathname.startsWith("/gioi-thieu/")) {
+    const a = document.getElementById("moApp");
+    a.href = "#cai-dat"; a.textContent = "Cài Loupe";
+  }
+})();
+</script>
+</body>
+</html>

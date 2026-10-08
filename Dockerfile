@@ -73,6 +73,7 @@ RUN if [ "$WITH_LAYOUT" != "0" ]; then \
 
 COPY server/ ./server/
 COPY web/ ./web/
+COPY docs/ ./docs/
 
 # Dữ liệu (SQLite, PDF gốc, ảnh cắt ra) nằm ở volume để nâng cấp ảnh không mất bài
 ENV PAPER_DATA_DIR=/data \

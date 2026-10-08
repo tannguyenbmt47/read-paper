@@ -12,6 +12,7 @@ Loupe is a local web app with two tools that share one codebase:
 
 Version 1.18.0 · runs on your machine · models via [OpenRouter](https://openrouter.ai)
 · [Changelog](CHANGELOG.md) · [Docker](DOCKER.md)
+· [Giới thiệu (tiếng Việt)](docs/index.html) · [Hướng dẫn sử dụng](docs/huong-dan.html)
 
 ```bash
 ./run.sh                      # first run creates .env — add your key, run again
@@ -284,6 +285,7 @@ server/
     ingest.py  search.py  agent.py  verify.py  synth.py  lecture.py  …
   survey_api.py  corpus routes, mounted into the same app
 web/             front end, no framework (app.js = reader, survey.js = corpus)
+docs/            landing page + Vietnamese user guide (GitHub Pages; the app serves it at /gioi-thieu/)
 tests/           268 tests; no network, no model calls, never touch ./data
 ```
 

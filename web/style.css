@@ -2158,3 +2158,13 @@ a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: trans
   text-underline-offset: .18em;
 }
 .ref-khoi:hover { text-decoration-style: solid; }
+
+/* Lối vào trang hướng dẫn (docs/, phục vụ ở /gioi-thieu/), cạnh tên app. Nét
+   bút bi xanh như một dòng ghi chú bên lề, không tranh chỗ với nút Nạp bài. */
+.brand-help {
+  margin-left: auto; align-self: center; flex: none;
+  font-family: var(--hand); font-size: 1.05rem; color: var(--accent);
+  padding: .15rem .7rem; border: 1.5px dashed var(--accent); border-radius: 99px;
+  text-decoration: none;
+}
+.brand-help:hover { background: var(--accent-soft); }

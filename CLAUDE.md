@@ -11,7 +11,7 @@ PORT=9000 ./run.sh       # đổi cổng
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 268 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 269 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
 node --check web/app.js web/survey.js   # chưa có test cho frontend
@@ -1859,6 +1859,23 @@ phép đo nói dối. Phải `Page.reload(ignoreCache=True)`.
 "sô´", "chuỗi" ra "chuôĩ", "biểu" ra "biêủ". Nên `.sv-note` (văn xuôi giải thích
 ký hiệu) dùng font thường; chỉ ký hiệu lẻ trong `<code>` mới để mono. Cùng họ
 với cái bẫy `line-height` ở slide.
+
+### Trang giới thiệu và hướng dẫn (`docs/`)
+
+`docs/index.html` (giới thiệu) + `docs/huong-dan.html` (hướng dẫn từng bước), dùng
+chung `docs/trang.css` — cùng bộ token "Sổ tay khoa học" với app nhưng là tệp
+riêng, vì GitHub Pages chỉ phục vụ được nguyên thư mục `docs/`. App gắn thư mục
+này ở `/gioi-thieu/` (trước mount `/`), nút "Hướng dẫn" ở màn đầu trỏ vào đó;
+Docker có `COPY docs/` và volume `./docs`.
+
+Font: dòng `/vendor/fonts.css` ăn khi chạy trong app (offline), dòng Google
+Fonts ăn trên GitHub Pages — dòng nào không tới được thì trình duyệt bỏ qua.
+
+Ảnh ở `docs/anh/*.webp` là ảnh chụp app thật (1440×900 @2x → WebP rộng 1600).
+Giao diện đổi thì chụp lại, không thì hướng dẫn nói một đằng ảnh một nẻo. Tên
+nút trong hướng dẫn phải khớp `index.html` từng chữ — đã soát một lượt bằng cách
+bóc nhãn và `title` của mọi nút. `test_trang_gioi_thieu_va_huong_dan` canh ảnh
+hỏng và neo mục lục trỏ vào mục không có.
 
 ### Thanh công cụ màn đọc, và chân cột trái
 

@@ -2948,4 +2948,11 @@ class _NoCacheStatic(StaticFiles):
         return resp
 
 
+# Trang giới thiệu + hướng dẫn sử dụng. Nằm ở `docs/` (không ở `web/`) để GitHub
+# Pages phục vụ được nguyên thư mục đó; app chỉ gắn thêm để bấm "Hướng dẫn" trong
+# app là mở được ngay, kể cả lúc không có mạng. Phải gắn TRƯỚC dòng "/".
+DOCS = ROOT / "docs"
+if DOCS.is_dir():
+    app.mount("/gioi-thieu", _NoCacheStatic(directory=DOCS, html=True), name="docs")
+
 app.mount("/", _NoCacheStatic(directory=WEB), name="web")

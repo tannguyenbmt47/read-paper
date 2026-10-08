@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loupe — đọc bài báo khoa học bằng tiếng Việt</title>
+<meta name="description" content="Loupe dịch bài báo khoa học tiếng Anh sang tiếng Việt theo từng đoạn, đặt cạnh bản gốc, kèm lời giải thích từng đoạn làm gì trong lập luận. Chạy trên máy bạn, trả tiền theo từng lượt gọi model.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='30' height='30' rx='8' fill='%23ffd43b' stroke='%231d1b18' stroke-width='2'/><circle cx='14' cy='14' r='6.5' fill='%23fffcf3' stroke='%231d1b18' stroke-width='2.6'/><path d='M19 19l6 6' stroke='%231d1b18' stroke-width='3' stroke-linecap='round'/></svg>">
+<!-- Font: trong app thì lấy bản đóng gói sẵn (chạy offline); trên GitHub Pages
+     thì lấy từ Google Fonts. Dòng nào không tới được thì trình duyệt bỏ qua. -->
+<link rel="stylesheet" href="/vendor/fonts.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Be+Vietnam+Pro:wght@400;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&family=Patrick+Hand&display=swap&subset=vietnamese">
+<link rel="stylesheet" href="trang.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="logo" href="#">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 8h22l10 10v32H14z" fill="var(--surface)"/>
+        <path d="M36 8v10h10M20 26h18M20 32h14M20 38h10"/>
+        <circle cx="38" cy="38" r="11" fill="var(--hl)"/>
+        <path d="M33 35.5a5.5 5.5 0 0 1 5-3.5" stroke-width="2.2"/>
+        <path d="M46 46l9 9" stroke-width="5"/>
+      </svg>
+      <b>Loupe</b><i>sổ tay đọc bài báo</i>
+    </a>
+    <ul>
+      <li><a href="#vi-sao">Vì sao</a></li>
+      <li><a href="#cach-lam">Cách làm</a></li>
+      <li><a href="#tinh-nang">Tính năng</a></li>
+      <li><a href="#chi-phi">Chi phí</a></li>
+      <li><a href="#cai-dat">Cài đặt</a></li>
+      <li><a href="huong-dan.html">Hướng dẫn</a></li>
+    </ul>
+    <button class="theme-btn" type="button" id="themeBtn" title="Đổi giấy sáng / tối" aria-label="Đổi giấy sáng hoặc tối"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Cho người đọc bài báo khoa học tiếng Anh</p>
+      <h1>Đọc bài báo bằng tiếng Việt — <span class="dq">mà không đánh rơi lập luận.</span></h1>
+      <p class="lead">Loupe dịch từng đoạn, đặt ngay cạnh bản gốc, và giải thích bằng lời thường
+        mỗi đoạn đang làm gì trong mạch lập luận của bài. Bạn đọc nhanh như đọc tiếng mẹ đẻ,
+        nhưng câu nào cũng lần ngược được về nguyên văn.</p>
+      <div class="cta">
+        <a class="btn vang" href="#cai-dat">Cài trong một phút →</a>
+        <a class="btn" href="huong-dan.html">Đọc hướng dẫn</a>
+      </div>
+      <p class="ghi-tay">Chạy trên máy bạn · mã nguồn mở · một bài dịch trọn thường chỉ vài xu</p>
+    </div>
+    <figure class="anh nghieng">
+      <img src="anh/doc-ba-cot.webp" width="1600" height="1000" alt="Màn đọc của Loupe: cột bản gốc tiếng Anh, cột bản dịch tiếng Việt và cột giải thích trên giấy nhớ vàng, xếp ngang hàng theo từng đoạn">
+      <figcaption>Ba cột ngang hàng: gốc · dịch · giải thích</figcaption>
+    </figure>
+  </div>
+</header>
+
+<div class="so-lieu">
+  <div class="wrap">
+    <div class="so"><b>~$0,04</b><span>dịch trọn một bài với model mặc định</span></div>
+    <div class="so"><b>0đ</b><span>cho bước bóc tách và soát trước khi dịch</span></div>
+    <div class="so"><b>99%</b><span>phần đầu prompt đọc lại từ cache</span></div>
+    <div class="so"><b>3</b><span>cột song song: gốc · dịch · giải thích</span></div>
+  </div>
+</div>
+
+<section class="muc" id="vi-sao">
+  <div class="wrap">
+    <div class="muc-dau">
+      <span class="nhan">Vì sao không dùng công cụ dịch PDF sẵn có?</span>
+      <h2>Công cụ dịch giữ <em>bố cục</em>. Loupe giữ <em>lập luận</em>.</h2>
+      <p>Dịch máy làm hỏng bài báo khoa học theo bốn cách đoán trước được. Mỗi cách có một
+        biện pháp riêng trong Loupe.</p>
+    </div>
+    <div class="giay-nho-luoi">
+      <div class="giay-nho">
+        <h3>Dịch từng đoạn rời</h3>
+        <p class="hong">"while", "since" bị hiểu sai nghĩa</p>
+        <p>Mọi lượt dịch đều mang theo <strong>toàn văn bài</strong>, nên từ nối được hiểu đúng theo mạch.</p>
+      </div>
+      <div class="giay-nho">
+        <h3>Thuật ngữ trôi</h3>
+        <p class="hong">một khái niệm, ba cách dịch</p>
+        <p>Một lượt đọc toàn bài <strong>chốt bảng thuật ngữ trước</strong>, rồi mới bắt đầu dịch.</p>
+      </div>
+      <div class="giay-nho">
+        <h3>Khẳng định đổi độ mạnh</h3>
+        <p class="hong">"may" → "sẽ", "suggests" → "chứng minh"</p>
+        <p>Luật dịch cấm làm mạnh hay yếu đi một khẳng định của tác giả.</p>
+      </div>
+      <div class="giay-nho">
+        <h3>Không có gì để đối chiếu</h3>
+        <p class="hong">câu tiếng Việt không biết từ đâu ra</p>
+        <p>Các cột <strong>căn theo từng đoạn</strong>, và khung PDF gốc mở ngay bên cạnh.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="muc" id="cach-lam">
+  <div class="wrap">
+    <div class="muc-dau">
+      <span class="nhan">Cách làm</span>
+      <h2>Soát miễn phí trước, rồi mới tiêu tiền.</h2>
+      <p>Bóc sai cấu trúc thì dịch hay đến đâu cũng hỏng. Mà bóc tách thì không tốn đồng nào —
+        nên bạn xem lại nó trước khi bấm dịch.</p>
+    </div>
+    <div class="hai-buoc">
+      <div class="buoc">
+        <span class="the mien-phi">Bước 1 · miễn phí</span>
+        <h3>Bóc tách và soát</h3>
+        <ol>
+          <li>Nạp PDF, link arXiv, Markdown hoặc dán văn bản.</li>
+          <li>Bài được cắt thành đoạn, tiêu đề mục, danh sách, chú thích, công thức, bảng.</li>
+          <li>Hình, bảng, công thức hiển thị được cắt thành ảnh.</li>
+          <li>Bạn chỉnh khung hình, gộp/tách đoạn, và thấy <strong>giá ước tính</strong> trước.</li>
+        </ol>
+      </div>
+      <div class="mui-ten"><b>→</b>bạn xác nhận</div>
+      <div class="buoc">
+        <span class="the tra-tien">Bước 2 · trả theo lượt</span>
+        <h3>Dịch và hiểu</h3>
+        <ol>
+          <li>Đọc toàn bài một lần: tóm lược, chuỗi lập luận, bảng thuật ngữ.</li>
+          <li>Dịch theo mẻ, ba mẻ chạy song song.</li>
+          <li>Giải thích bất kỳ đoạn nào khi bạn bấm 💡.</li>
+          <li>Đánh dấu câu đáng nhớ, soạn slide thuyết trình.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="muc" id="tinh-nang">
+  <div class="wrap">
+    <div class="muc-dau">
+      <span class="nhan">Tính năng</span>
+      <h2>Mọi thứ để đọc kỹ một bài — và cả một kho bài.</h2>
+    </div>
+
+    <div class="tinh-nang">
+      <div class="chu">
+        <h3>Bước soát: thấy trước, sửa trước</h3>
+        <p>Trước khi trả đồng nào, bạn thấy bài đã được cắt ra thế nào và sẽ tốn bao nhiêu.</p>
+        <ul>
+          <li>Kéo lại khung cắt hình bằng tám tay nắm</li>
+          <li>Gộp đoạn bị ngắt qua cột, tách đoạn bị dính</li>
+          <li>Giá ước tính theo giá model thật của OpenRouter</li>
+        </ul>
+      </div>
+      <figure class="anh"><img src="anh/soat-buoc-1.webp" loading="lazy" width="1600" height="1000" alt="Màn soát bước 1: số khối sẽ dịch, số hình và bảng, giá ước tính, và lưới các hình đã cắt kèm nút Chỉnh khung"></figure>
+    </div>
+
+    <div class="tinh-nang">
+      <div class="chu">
+        <h3>Tóm lược, lập luận, thuật ngữ</h3>
+        <p>Cột trái giữ bản đồ của cả bài, để bạn không lạc khi đọc tới giữa phần phương pháp.</p>
+        <ul>
+          <li>Chuỗi lập luận vẽ thành sơ đồ</li>
+          <li>Bảng thuật ngữ đã chốt, tìm được, có định nghĩa</li>
+          <li>Mục lục bấm để nhảy, kèm số tiền bài này đã tốn</li>
+        </ul>
+      </div>
+      <figure class="anh"><img src="anh/lap-luan.webp" loading="lazy" width="1600" height="1000" alt="Cột trái hiện sơ đồ chuỗi lập luận của bài, bên cạnh là bản gốc và bản dịch"></figure>
+    </div>
+
+    <div class="tinh-nang">
+      <div class="chu">
+        <h3>Đối chiếu với PDF gốc</h3>
+        <p>Khung PDF mở bên phải và đi theo đoạn bạn đang đọc. Kéo vách để nới rộng.</p>
+        <ul>
+          <li>Bấm "Figure 3" trong bài để xem hình, phóng to, kéo</li>
+          <li>Rê vào [12] để xem tài liệu được trích</li>
+          <li>Tìm trong cả ba cột, gõ không dấu vẫn ra</li>
+        </ul>
+      </div>
+      <figure class="anh"><img src="anh/pdf-goc.webp" loading="lazy" width="1600" height="1000" alt="Màn đọc với khung PDF gốc mở bên phải"></figure>
+    </div>
+
+    <div class="tinh-nang">
+      <div class="chu">
+        <h3>Slide thuyết trình từ chính bài báo</h3>
+        <p>Hai bước: duyệt <strong>dàn ý</strong> ở mức ý tưởng trước, rồi mới dựng slide. Mỗi tiêu đề
+          là một câu khẳng định, thân slide là bằng chứng (thiết kế khẳng-định-và-bằng-chứng).</p>
+        <ul>
+          <li>Sửa trực tiếp trên slide, bố cục tự do</li>
+          <li>Mọi con số trên slide được soát lại với bài gốc</li>
+          <li>Xuất PDF, HTML, PowerPoint — sơ đồ vẫn sửa được</li>
+        </ul>
+      </div>
+      <figure class="anh"><img src="anh/slide.webp" loading="lazy" width="1600" height="1000" alt="Màn slide: danh sách slide bên trái, slide đang sửa ở giữa với hai thẻ nội dung và một sơ đồ"></figure>
+    </div>
+
+    <div class="tinh-nang">
+      <div class="chu">
+        <h3>Kho tài liệu: hỏi cả ba mươi bài một lúc</h3>
+        <p>Công cụ thứ hai không dịch — nó đánh chỉ mục từng bài và trả lời câu hỏi xuyên kho,
+          mỗi khẳng định trích tới đúng đoạn văn.</p>
+        <ul>
+          <li>Bản tổng hợp: các hướng tiếp cận, chỗ mâu thuẫn, khoảng trống</li>
+          <li>Bài giảng cho một bài: kiến thức nền, cơ chế, so sánh</li>
+          <li>Mọi con số trong câu trả lời phải có trong đoạn được trích</li>
+        </ul>
+      </div>
+      <figure class="anh"><img src="anh/kho-tong-hop.webp" loading="lazy" width="1600" height="1000" alt="Màn Tìm hiểu: bản tổng hợp của một kho tài liệu"></figure>
+    </div>
+
+    <div class="tinh-nang">
+      <div class="chu">
+        <h3>Giấy sổ tay ban ngày, giấy blueprint ban đêm</h3>
+        <p>Đọc lâu không mỏi: cỡ chữ, bề rộng cột, theme sáng/tối, và nhớ chỗ bạn đọc dở.</p>
+        <ul>
+          <li>Bôi vàng năm màu, ghi chú như comment</li>
+          <li>Tự đánh dấu câu đáng nhớ, kèm lý do vì sao</li>
+          <li>Thư viện có thư mục, phiên bản v1/v2 của cùng một bài</li>
+        </ul>
+      </div>
+      <figure class="anh"><img src="anh/ban-ve-toi.webp" loading="lazy" width="1600" height="1000" alt="Màn đọc ở theme tối kiểu giấy blueprint xanh thẫm"></figure>
+    </div>
+  </div>
+</section>
+
+<section class="muc" id="chi-phi">
+  <div class="wrap">
+    <div class="muc-dau">
+      <span class="nhan">Chi phí</span>
+      <h2>Trả đúng phần bạn dùng, thấy giá trước khi bấm.</h2>
+      <p>Không thuê bao. Bạn dùng key OpenRouter của chính mình; mỗi nút tốn tiền đều ghi giá,
+        và chân cột trái ghi tổng bài đã tốn. Số đo trên bài thật với model mặc định.</p>
+    </div>
+    <div class="bang-cuon">
+      <table class="bang">
+        <thead><tr><th>Việc</th><th>Giá thường gặp</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          <tr><td>Nạp bài, bóc tách, cắt hình, soát</td><td class="tien">miễn phí</td><td>chạy hoàn toàn trên máy</td></tr>
+          <tr><td>Dịch trọn một bài, kèm cột giải thích</td><td class="tien">$0,04 – 0,10</td><td>tắt cột nào thì không sinh cột đó</td></tr>
+          <tr><td>Giải thích sâu một đoạn (💡)</td><td class="tien">~$0,003</td><td>rẻ nhất khi bấm ngay sau lúc dịch</td></tr>
+          <tr><td>Thêm một bài vào kho tài liệu</td><td class="tien">~$0,034</td><td>một lần cho mỗi bài</td></tr>
+          <tr><td>Một câu hỏi ba vòng trên kho</td><td class="tien">~$0,03</td><td>hỏi lại đúng câu đó: miễn phí</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="muc" id="cai-dat">
+  <div class="wrap">
+    <div class="muc-dau">
+      <span class="nhan">Cài đặt</span>
+      <h2>Ba lệnh, một key.</h2>
+      <p>Cần Python 3.10+ và một key OpenRouter (<a href="https://openrouter.ai/keys">lấy ở đây</a>).</p>
+    </div>
+<pre class="lenh"><span class="cm"># tải mã nguồn</span>
+git clone https://github.com/tannguyenbmt47/read-paper.git loupe && cd loupe
+
+<span class="cm"># lần đầu: tạo .venv, cài thư viện, sinh tệp .env — mở .env điền OPENROUTER_API_KEY</span>
+./run.sh
+
+<span class="cm"># chạy lại, rồi mở http://localhost:8010</span>
+./run.sh</pre>
+    <p>Muốn dùng Docker? Xem <a href="https://github.com/tannguyenbmt47/read-paper/blob/main/DOCKER.md">DOCKER.md</a>.
+      Muốn bóc hình và công thức chính xác hơn, cài thêm mô hình bố cục — xem
+      <a href="huong-dan.html#cai-dat">hướng dẫn</a>.</p>
+    <div class="cta" style="margin-top:1.6rem">
+      <a class="btn vang" href="huong-dan.html">Đọc hướng dẫn sử dụng →</a>
+      <a class="btn" href="https://github.com/tannguyenbmt47/read-paper">Mã nguồn trên GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="ghi-tay">Loupe — chiếc kính lúp thợ kim hoàn soi từng viên đá một.</p>
+    <span>Chạy cục bộ · model qua OpenRouter · <a href="huong-dan.html">Hướng dẫn</a> ·
+      <a href="https://github.com/tannguyenbmt47/read-paper">GitHub</a></span>
+  </div>
+</footer>
+
+<script>
+/* Nút đổi giấy sáng/tối. Nhớ lựa chọn trong localStorage — bọc try vì trình
+   duyệt chặn bộ nhớ thì trang vẫn phải chạy. */
+(function () {
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("loupe-trang-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById("themeBtn").onclick = () => {
+    const toi = root.dataset.theme ? root.dataset.theme === "dark"
+      : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = toi ? "light" : "dark";
+    try { localStorage.setItem("loupe-trang-theme", root.dataset.theme); } catch (e) {}
+  };
+})();
+</script>
+</body>
+</html>

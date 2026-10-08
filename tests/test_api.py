@@ -1462,3 +1462,25 @@ def test_dung_tom_luoc_treo_thi_het_gio_chu_khong_treo_vo_han(app_client, monkey
     assert r.status_code == 504
     assert "Quá giờ" in r.json()["detail"]
     assert len(goi) == 2
+
+
+def test_trang_gioi_thieu_va_huong_dan(app_client):
+    """`docs/` là trang giới thiệu + hướng dẫn: app phục vụ ở `/gioi-thieu/`, nút
+    "Hướng dẫn" ở màn đầu trỏ vào đó. Ảnh chụp và neo mục lục dễ trôi khi sửa
+    sau này — ảnh hỏng hay mục lục trỏ vào mục không có thì không lỗi nào báo."""
+    import re
+    from pathlib import Path
+    goc = Path(__file__).resolve().parent.parent / "docs"
+    for ten in ("index.html", "huong-dan.html"):
+        r = app_client.get(f"/gioi-thieu/{ten}")
+        assert r.status_code == 200, ten
+        html = r.text
+        for anh in re.findall(r'src="(anh/[^"]+)"', html):
+            assert (goc / anh).is_file(), f"{ten} trỏ tới ảnh không có: {anh}"
+        ids = set(re.findall(r'\sid="([^"]+)"', html))
+        for neo in re.findall(r'href="#([^"]+)"', html):
+            assert neo in ids, f"{ten} có neo #{neo} không trỏ vào đâu"
+        for trang, neo in re.findall(r'href="(huong-dan\.html|index\.html)#([^"]+)"', html):
+            assert f'id="{neo}"' in (goc / trang).read_text(encoding="utf-8"), f"{trang}#{neo}"
+    assert app_client.get("/gioi-thieu/").status_code == 200
+    assert 'href="/gioi-thieu/huong-dan.html"' in app_client.get("/").text

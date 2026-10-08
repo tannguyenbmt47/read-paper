@@ -52,6 +52,7 @@ services:
       # với công cụ chạy local; bỏ hai dòng này nếu đem đi nơi khác.
       # `:ro` để container không ghi bậy vào mã nguồn.
       - ./web:/app/web:ro
+      - ./docs:/app/docs:ro
       - ./server:/app/server:ro
       # Trọng số mô hình bố cục (PP-DocLayoutV2, 205MB). Để ở volume chứ không
       # nướng vào ảnh: dựng lại ảnh mà phải tải lại từ đầu thì rất phiền.
