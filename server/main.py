@@ -1131,6 +1131,17 @@ def _chuan_ten(t: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", (t or "").lower()).split())
 
 
+def _khoa_van_ban(raw: str) -> bytes:
+    """Khoá nhận dạng của một bài NHẬP BẰNG VĂN BẢN (dán hoặc file .txt/.md).
+
+    Chuẩn hoá khoảng trắng và kiểu xuống dòng trước khi băm: dán lại cùng bài từ
+    một trình soạn thảo khác thì khoảng trắng cuối dòng, `\r\n` so với `\n`, dòng
+    trống thừa đều khác — mà vẫn là cùng một bài. Có tiền tố `txt:` để không bao
+    giờ trùng khoá với SHA của một file PDF.
+    """
+    return b"txt:" + " ".join((raw or "").split()).encode("utf-8")
+
+
 def _tom_tat_trung(doc_id: str, kind: str) -> dict:
     """Những gì hộp thoại "bài trùng" cần để người dùng chọn có căn cứ: đã dịch
     bao nhiêu, đã tốn bao nhiêu, và họ phiên bản của nó gồm những bản nào."""
@@ -1231,6 +1242,7 @@ async def import_doc(
         return _tom_tat_trung(prior["id"], "cung_file")
 
     pdf_bytes: bytes | None = None
+    khoa_txt: bytes | None = None   # khoá nhận dạng của bài nhập bằng văn bản
     kieu_nguon = "pdf"          # pdf | text — quyết định câu báo lỗi ở dưới
     try:
         if file is not None:
@@ -1251,8 +1263,14 @@ async def import_doc(
                 source = file.filename or "upload.pdf"
             else:
                 kieu_nguon = "text"
-                t, blocks, imgs = parser.parse_text(data.decode("utf-8", "replace"),
-                                                   name=file.filename or "")
+                raw_txt = data.decode("utf-8", "replace")
+                khoa_txt = _khoa_van_ban(raw_txt)
+                if (cu := _da_co(khoa_txt)):
+                    _say(job, "Bài này đã có trong thư viện", cu["title"], 100)
+                    if (q := _JOBS.get(job or "")) is not None:
+                        q.put_nowait(None)
+                    return {"duplicate": cu}
+                t, blocks, imgs = parser.parse_text(raw_txt, name=file.filename or "")
                 source = file.filename or "upload.txt"
         elif url.strip():
             u = url.strip()
@@ -1280,6 +1298,12 @@ async def import_doc(
             t, blocks, imgs = await loop.run_in_executor(None, parser.parse_pdf, data)
         elif text.strip():
             kieu_nguon = "text"
+            khoa_txt = _khoa_van_ban(text)
+            if (cu := _da_co(khoa_txt)):
+                _say(job, "Bài này đã có trong thư viện", cu["title"], 100)
+                if (q := _JOBS.get(job or "")) is not None:
+                    q.put_nowait(None)
+                return {"duplicate": cu}
             t, blocks, imgs = parser.parse_text(text, name="dán")
             source = "dán trực tiếp"
         else:
@@ -1378,7 +1402,9 @@ async def import_doc(
                  f"{type(e).__name__}: {e} — bóc bằng đường lùi, "
                  "công thức sẽ không được cắt thành ảnh")
 
-    if not layout_used and layout.available():
+    # Chỉ báo khi CÓ PDF mà mô hình không chạy (#21): văn bản dán / Markdown vốn
+    # không qua mô hình bố cục, báo "đường lùi" ở đó là doạ người dùng vô cớ.
+    if pdf_bytes and use_layout and not layout_used and layout.available():
         _say(job, "⚠ Bóc bằng đường lùi", "mô hình bố cục không chạy được")
 
     _say(job, "Cắt hình và bảng", f"{len(imgs)} ảnh", 85)
@@ -1392,6 +1418,8 @@ async def import_doc(
         if pdf_bytes:
             store.save_pdf(goc, pdf_bytes)
             cu["sha256"] = file_sha
+        elif khoa_txt:
+            cu["sha256"] = db.sha(khoa_txt)
         stats = _ghep_ban_boc(cu, blocks, imgs, t,
                               "" if layout_used else "không dùng mô hình bố cục",
                               pdf_bytes or b"")
@@ -1402,6 +1430,8 @@ async def import_doc(
         return {**_with_chunks(cu), "ghi_de": stats}
     doc = pipeline.build_doc(store.new_id(), title or t, blocks, source, model)
     doc["layout_model"] = layout_used
+    if khoa_txt:
+        doc["sha256"] = db.sha(khoa_txt)
     if pdf_bytes:
         doc["sha256"] = file_sha
         if not reused_from:
@@ -1437,6 +1467,10 @@ async def brief(doc_id: str):
         return {"brief": brief_obj, "run": run, "total": total}
     except KeyError:
         raise HTTPException(404, "Không tìm thấy tài liệu")
+    except pipeline.HetGio as e:
+        raise HTTPException(504, f"Quá giờ khi dựng tóm lược — {e}. Chưa bị tính "
+                                 "tiền cho phần chưa sinh ra; thử lại thường được, "
+                                 "hoặc đổi sang model khác.")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"{type(e).__name__}: {e}")
 

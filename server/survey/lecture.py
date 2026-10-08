@@ -392,7 +392,7 @@ def _shallow(warns: list[dict]) -> dict[str, str]:
         name = w["section"]
         if name in out:
             continue
-        out[name] = w["msg"] + (f' — câu: “{w["text"][:110]}”' if w.get("text") else "")
+        out[name] = w["msg"] + (f' — câu: “{depth.cat_gon(w["text"], 110)}”' if w.get("text") else "")
     return out
 
 

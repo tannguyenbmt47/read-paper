@@ -564,8 +564,12 @@ body { padding-left: var(--rail-w); }
   border-bottom: 2.5px solid var(--muc); background: var(--surface); flex: none;
 }
 .topbar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+/* #29: tên bài cắt ở một dòng thì mất đúng phần phân biệt bài này với bài
+   kia (thường nằm ở cuối: "… for Multi-hop Question Answering"). Cho xuống tối
+   đa hai dòng; tên gốc bên dưới vẫn một dòng vì nó chỉ để đối chiếu. */
 .topbar-title strong {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-clamp: 2;
   font-family: var(--display); font-weight: 700; font-size: 1.08rem; line-height: 1.35;
 }
 .topbar-title span {
@@ -810,12 +814,70 @@ mark.hit.cur { background: var(--accent); color: var(--on-accent); }
 .pair:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
 /* Đoạn đang chọn: một vệt dạ quang nhạt phủ cả hàng, không phải nền xanh. */
 .pair.is-on { background: color-mix(in srgb, var(--hl) 20%, transparent); }
-/* Hai cột đọc cùng một serif, khác nhau ở MỰC: gốc là bút chì, dịch là mực đen.
-   Cột giải thích đổi hẳn sang sans trên giấy nhớ, nên ba cột phân biệt được
-   ngay khi liếc — bằng font, bằng nền, bằng khung. */
-.en { color: var(--ink-2); font-size: .93em; font-family: var(--read); line-height: 1.62; }
-.vi { color: var(--ink); font-family: var(--read); line-height: 1.66; }
+/* Gốc và Dịch phải khác nhau ở KIỂU CHỮ, không chỉ ở độ đậm của mực. Bản trước
+   để cả hai cùng serif Literata, gốc nhạt hơn một tông — người dùng soi màn hình
+   và nói thẳng "cột 1 với 2 phân biệt chưa ok": liếc qua thì hai cột là một
+   khối chữ chia đôi.
+
+   Giờ gốc là BẢN IN đem ra đối chiếu: sans nhỏ hơn, màu chì, dòng thưa. Dịch là
+   chữ để ĐỌC: serif đầy đặn, mực đen, cỡ đầy đủ — mắt tự rơi vào cột này. Giữa
+   hai cột là một nét bút chì đứt quãng như vạch chia trang vở. Nét này trung
+   tính và nằm GIỮA hai cột, không phải thanh màu dán cạnh ô chữ (thứ bị chỉ
+   đích danh là dấu hiệu đồ AI làm). */
+.en { color: var(--ink-2); font-size: .88em; font-family: var(--sans); line-height: 1.66; }
+.vi { color: var(--ink); font-family: var(--read); font-size: 1.02em; line-height: 1.68; }
 .en p, .vi p { margin: 0 0 .9rem; }
+.doc.show-en.cols-2 .pair:is(.para, .li, .caption, .h1, .h2, .h3) > .en,
+.doc.show-en.cols-3 .pair:is(.para, .li, .caption, .h1, .h2, .h3) > .en {
+  /* nét đứng giữa khe 2.2rem / 1.5rem: đẩy ra nửa khe bằng padding + margin âm */
+  border-right: 1.5px dashed var(--line);
+  padding-right: 1.1rem; margin-right: -1.1rem;
+  align-self: stretch;
+}
+.doc.show-en.cols-3 .pair:is(.para, .li, .caption, .h1, .h2, .h3) > .en {
+  padding-right: .75rem; margin-right: -.75rem;
+}
+
+/* Dòng tiêu đề cột, dính ở đầu vùng đọc: nói thẳng cột nào là gì. Dùng đúng
+   lưới của `.pair` nên các nhãn đứng thẳng trên cột của chúng. */
+.colbar {
+  /* Mốc dính tính từ mép trong PADDING của `.doc` (1.6rem), không từ mép khung
+     cuộn — để `top: 0` thì chữ chạy lộ ra một dải phía trên thanh. */
+  position: sticky; top: -1.6rem; z-index: 4;
+  display: grid; gap: 0 2.2rem; align-items: end;
+  margin: -1.6rem -.6rem .9rem; padding: 1rem .6rem .4rem;
+  background: var(--surface); border-bottom: 1.5px solid var(--line);
+  font-family: var(--hand); font-size: .98rem; color: var(--muted);
+}
+.doc.cols-1 .colbar { grid-template-columns: minmax(0, 1fr); }
+.doc.cols-2 .colbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.doc.cols-3 .colbar { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 1.5rem; }
+.doc:not(.show-en) .colbar .cb-en,
+.doc:not(.show-vi) .colbar .cb-vi,
+.doc:not(.show-gl) .colbar .cb-gl { display: none; }
+.colbar span { display: flex; align-items: baseline; gap: .45rem; min-width: 0; white-space: nowrap; }
+.colbar b { font-weight: 400; color: var(--ink); font-size: 1.1em; }
+.colbar .cb-vi b { text-decoration: underline; text-decoration-skip-ink: none;
+  text-decoration-color: color-mix(in srgb, var(--hl) 85%, transparent);
+  text-decoration-thickness: .32em; text-underline-offset: -.18em; }
+.colbar .cb-tag { font-family: var(--sans); font-size: .72em; padding: 0 .35rem;
+  border: 1.5px solid var(--line); border-radius: 4px; }
+.colbar .cb-hint { overflow: hidden; text-overflow: ellipsis; font-size: .9em; }
+/* Chỉ một cột thì nhãn cột không phân biệt gì cả */
+.doc.cols-1 .colbar { display: none; }
+
+/* #29 — Cột trái mở trên màn vừa thì ba cột còn ~200px mỗi cột, mỗi dòng ba
+   bốn từ. Không gỡ ô tick của người dùng: chỉ TẠM ẨN cột gốc khi mỗi cột hẹp
+   hơn ngưỡng (`capNhatCotHep`), và dòng tiêu đề nói rõ vì sao. Đóng cột trái
+   hoặc nới cửa sổ là cột gốc tự về. */
+.doc.hep.show-en .pair:not(.equation):not(.code):not(.table) > .en { display: none; }
+.doc.hep.show-en .colbar .cb-en { display: none; }
+.doc.hep.show-en.cols-3 .pair:not(.equation):not(.meta):not(.code):not(.table),
+.doc.hep.show-en.cols-3 .colbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.doc.hep.show-en.cols-2 .pair:not(.equation):not(.meta):not(.code):not(.table),
+.doc.hep.show-en.cols-2 .colbar { grid-template-columns: minmax(0, 1fr); }
+.colbar .cb-hep { display: none; }
+.doc.hep.show-en .colbar .cb-hep { display: inline; }
 
 /* Tên mục: có màu riêng và một vạch nhấn, để lướt mắt là thấy ngay ranh giới
    giữa các phần — trước đây chỉ khác thân bài ở cỡ chữ. */
@@ -1385,6 +1447,9 @@ body.is-resizing { user-select: none; cursor: col-resize; }
     box-shadow: 0 0 40px rgba(0, 0, 0, .3);
   }
   .pair { grid-template-columns: minmax(0, 1fr) !important; gap: .4rem; }
+  /* cột xếp chồng thì nét chia đứng thành thừa, và nhãn cột không còn cột nào để chỉ */
+  .doc .pair > .en { border-right: 0 !important; padding-right: 0 !important; margin-right: 0 !important; }
+  .colbar { display: none !important; }
   .doc.view-both .en { padding-bottom: .3rem; border-bottom: 1px dashed var(--line); margin-bottom: .5rem; }
   /* màn hình hẹp không đủ chỗ cho hai cột — cho khung PDF phủ lên trên */
   .pdfpane { position: fixed; inset: 0; z-index: 46; width: auto; }
@@ -1995,3 +2060,47 @@ mark.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muc) 30%, transpa
   border: 1.5px solid var(--muc); border-radius: 6px; background: var(--surface-2); color: var(--ink-2);
 }
 .ver.moi-nhat { background: var(--hl); color: #1d1b18; }
+
+/* Tài liệu tham khảo cuối bài: gập sẵn, không dịch. `[n]` trong thân bài là chỗ
+   rê chuột ra thấy mục tương ứng, bấm thì mở danh sách và nhảy tới mục đó. */
+a.cite { color: var(--accent); cursor: help; text-decoration: none; border-bottom: 1.5px dotted var(--accent); }
+a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: transparent; }
+.refs { margin: 2.2rem 0 1rem; border-top: 2px dashed var(--line); padding-top: .9rem; }
+.refs summary { cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 1.15rem; line-height: 1.4; }
+.refs summary .muted { font-family: var(--sans); font-weight: 400; font-size: .8rem; }
+.refs-list { margin: .8rem 0 0; padding-left: 2.2rem; font-size: .88em; color: var(--ink-2); line-height: 1.55; }
+.refs-list li { margin: 0 0 .5rem; padding: .15rem .4rem; border-radius: 6px; overflow-wrap: anywhere; }
+.refs-list li.moi-nhay { background: var(--hl); color: #1d1b18; }
+
+/* Popover Aa: nhãn theme không được gãy dòng ("Tự / động" trông như vỡ), và hộp
+   phải đủ rộng cho bốn nút. `nowrap` chặn ở gốc, `min-width` chừa chỗ. (#33) */
+#viewMenu { min-width: 280px; }
+.seg-btn { white-space: nowrap; }
+#themeSeg { display: flex; }
+#themeSeg .seg-btn { flex: 1; }
+.vset-h { display: flex; justify-content: space-between; align-items: baseline; }
+.vset-h b { font-family: var(--sans); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* Màn nhập: CHỪA SẴN chỗ cho dòng "Đã chọn: …" và dòng lỗi. Chúng bật/tắt theo
+   thao tác, nên nếu không chừa thì mỗi lần chọn file là nút "Nạp bài báo" tụt
+   xuống ~25px — người dùng đưa chuột tới chỗ cũ và bấm trượt (#34). */
+#fileName { min-height: 1.6em; margin-top: .4rem; }
+#startErr { margin: .4rem 0 0; min-height: 1.5em; }
+#startErr.hidden { display: block !important; visibility: hidden; }
+
+/* Giải thích của CHÚ THÍCH HÌNH mặc định thu gọn ~3 dòng (#35). Chú thích chỉ một
+   dòng mà thẻ giải thích dài gấp chục lần, nên lưới ba cột kéo cả hàng cao theo —
+   đo trên CIRAG: khoảng trống ~200px giữa chú thích Hình 1 và đoạn kế tiếp. Bấm
+   vào thẻ để mở hết. Băng keo bỏ ở trạng thái thu gọn vì `overflow: hidden` cắt
+   mất nó. */
+.pair.caption .gl:not(.mo-rong):not(:empty) {
+  position: relative; max-height: 5.6em; overflow: hidden; cursor: pointer;
+}
+.pair.caption .gl:not(.mo-rong)::before { display: none; }
+.pair.caption .gl.mo-rong { cursor: pointer; }
+.pair.caption .gl:not(:empty)::after {
+  content: "Bấm để xem hết ▾"; position: absolute; right: .6rem; bottom: .15rem;
+  font-family: var(--hand); font-size: 1rem; color: var(--accent);
+  padding-left: 1.2rem; background: linear-gradient(90deg, transparent, var(--gl-bg) 1rem);
+}
+.pair.caption .gl.mo-rong::after { content: "Thu lại ▴"; position: static; display: block; text-align: right; }

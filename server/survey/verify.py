@@ -110,7 +110,7 @@ def check_answer(survey_id: str, answer: str, allowed: list[str],
 
     def add(i: int, kind: str, msg: str) -> None:
         warns.append({"i": i, "kind": kind, "msg": msg,
-                      "text": sents[i]["text"][:160] if 0 <= i < len(sents) else ""})
+                      "text": depth.cat_gon(sents[i]["text"], 160) if 0 <= i < len(sents) else ""})
 
     for s in sents:
         body = _URLISH.sub(" ", s["text"])
@@ -243,6 +243,6 @@ async def check_entailment(answer: str, allowed: list[str],
                 "msg": str(c.get("why") or
                            ("đoạn được trích không nói điều này" if verdict == "no"
                             else "đoạn được trích chỉ đỡ được một phần")),
-                "text": items[j]["text"][:160],
+                "text": depth.cat_gon(items[j]["text"], 160),
             })
     return out, usage

@@ -1437,3 +1437,28 @@ def test_do_bo_roi_doi_chieu_voi_MOI_khoi():
     assert 'b["text"] for b in doc["blocks"]' in ma, "phải đối chiếu với MỌI khối"
     # và nhận tiêu đề chạy bằng độ lặp, không chỉ bằng dải lề
     assert "lap[" in ma, "phải nhận tiêu đề chạy bằng độ lặp"
+
+
+def test_dung_tom_luoc_treo_thi_het_gio_chu_khong_treo_vo_han(app_client, monkeypatch):
+    """#2: model nhận request rồi im — lượt dựng tóm lược treo hơn 5 phút, nút
+    Dừng kẹt ở "Đang dừng…". Giờ có trần riêng (`tran_brief`), gọi lại đúng MỘT
+    lần, hỏng cả hai thì trả 504 kèm câu nói rõ là quá giờ."""
+    import asyncio
+    from server import llm, pipeline
+
+    goi = []
+
+    async def model_treo(*a, **k):
+        goi.append(1)
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(llm, "complete", model_treo)
+    monkeypatch.setattr(pipeline, "tran_brief", lambda n: 0.05)
+    r = app_client.post("/api/import", data={"text": "Bài treo\n\nMột đoạn văn đủ dài "
+                                            "để thành một khối riêng trong bài thử.",
+                                            "model": "test/treo"})
+    assert r.status_code == 200, r.text
+    r = app_client.post(f"/api/doc/{r.json()['id']}/brief")
+    assert r.status_code == 504
+    assert "Quá giờ" in r.json()["detail"]
+    assert len(goi) == 2

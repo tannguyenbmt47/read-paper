@@ -11,7 +11,7 @@ PORT=9000 ./run.sh       # đổi cổng
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 148 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 266 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
 node --check web/app.js web/survey.js   # chưa có test cho frontend
@@ -211,6 +211,11 @@ Trần 3, không hơn: mỗi mẻ giữ một `EventSource`, mà trình duyệt 
 nối HTTP/1.1** tới một máy chủ. Vượt trần thì kết nối thứ bảy xếp hàng im lặng —
 ảnh, nút giải thích, khung hỏi đáp đều trông như treo.
 
+**Lượt dựng tóm lược có trần riêng** (`pipeline.tran_brief`, 75s + 1s/1000 ký
+tự, tối đa 240s), gọi lại đúng một lần, hỏng cả hai thì 504 *"Quá giờ…"* và
+giao diện hỏi *Thử lại* ngay. Trần 300s chung của `llm` là cho mẻ dịch bài lớn;
+bài dán 9 khối đã treo hơn 5 phút ở đó (#2).
+
 ### Dịch từng phần
 
 `GET /api/doc/{id}/sections` cắt bài theo tiêu đề mục (`type == "heading"`), trả
@@ -333,6 +338,45 @@ tác giả → cơ quan → Abstract → Mở đầu → đoạn mở bài → c
 file PDF. Phải `POST …/reparse`, và `reparse_merge` ghép theo nội dung nên bản
 dịch giữ nguyên; chỉ những đoạn vừa được NỐI LẠI là văn bản mới nên phải dịch
 lại. Đo trên CIRAG: `kept 194 · new 1 · dropped 1`, còn 18 khối chờ dịch.
+
+### Bóc PDF: bốn lỗi từ đợt báo cáo 8–10, đều hỏng câm
+
+**Tách khối theo cỡ chữ phải lệch theo CẢ HAI thước đo** (`_tach_theo_co`).
+PyMuPDF gom tiêu đề mục chung khối với đoạn văn sát nó. Ngưỡng cũ 1,3 lần bỏ
+lọt tiêu đề 12pt trên thân 10pt — bài hai cột của người test mất cả 4 tiêu đề
+mục. Hạ xuống 1,15 thì mỗi thước đo một mình đều cắt nhầm trên `data/`: cỡ LỚN
+NHẤT của dòng cắt đôi caption mở đầu bằng nhãn đậm *"Figure 5:"* 10pt trên chữ
+8pt; cỡ ĐA SỐ (`_co_dong`) tách *"3.1"* khỏi tiêu đề chữ hoa nhỏ *"LATENT
+ACTION…"*. Đòi lệch theo cả hai thì tiêu đề thật vẫn tách, hai ca kia không.
+
+**Bảng không viền** (`_bang_khong_vien`, `bang_mo_coi`). Đường heuristic không
+có gì để cắt bảng không kẻ khung thành ảnh, nên mười mấy dòng ô ngắn bị đọc
+thành tiêu đề mục hoặc nuốt vào đoạn khác. Đường mô hình thì dò RA vùng bảng,
+nhưng bảng không caption thì `apply_layout` không ghép để cắt, còn
+`recover_uncovered` cố ý bỏ chữ trong vùng hình/bảng — chữ rơi giữa hai ghế.
+Cả hai giờ dựng thành khối `table` dạng Markdown, `translate=False`. Bẫy đã vấp:
+**MinerU không trả chữ và không điền `caption` vào vùng**, nên dò "có caption
+không" theo chữ *"Table N"* thì MỌI bảng đều thành mồ côi (73/73 bị nhân đôi).
+Dò theo hình học: item caption cùng trang, sát trên/dưới, chồng bề ngang.
+
+**Khung hình của mô hình bám vùng ĐẬM, sót chữ nhãn mảnh** (`_chinh_khung_hinh`).
+Figure 2 bài Attention mất chữ "Scal" vì khung bắt đầu ở x=165 còn tiêu đề hình
+con ở 147,8. Nới ra trọn dòng chữ mép khung cắt ngang (trần 40pt, dừng ở dòng
+văn/caption làm vách); rồi dòng nào chỉ chạm khung NHỜ phần lề +5pt (dòng văn
+ngay trên Table 2) thì đẩy mép ra. **Chỉ nới theo CHỮ, không theo nét vẽ**:
+`get_drawings()` báo khung của cả ô mẫu hoa văn sọc nên biểu đồ cột có sọc nới
+ra +25pt lề trắng. "Dòng văn" là dòng RỘNG (>45% trang) hoặc mở đầu bằng
+*Figure/Table N*, **bất kể cỡ** — xét theo cỡ thân bài thì caption (nhỏ hơn một
+cỡ) bị coi là chữ trong hình và khung nuốt luôn nó (+34pt).
+
+**Gạch nối cuối dòng không phải lúc nào cũng nối liền** (`_noi_gach_cuoi_dong`).
+`history-` + `conditionally` từng ra `historyconditionally`. Vốn từ của bài
+(`_vocab_cua_bai`, qua `contextvars` vì `clean_text` không nhận tham số) quyết:
+ghép liền ra từ đã gặp thì nối; nửa trái ≥4 chữ là từ trọn vẹn và nửa phải
+≥6 chữ (hoặc ≥4 chữ đã gặp) thì giữ gạch. Nửa phải KHÔNG bắt buộc có trong vốn
+từ — nó hay chỉ xuất hiện đúng ở chỗ ngắt, mà chỗ ngắt bị loại khỏi vốn từ.
+`_GHEP_LIEN` chặn `along-side`, `pre-serving`. Trên 24 PDF: 26 từ ghép thật giữ
+gạch (`real-robot`, `ground-truth`), không ca nào sai.
 
 ### Phễu lọc sau khi bóc — chỗ tiền rò ra mà không ai thấy
 
@@ -957,6 +1001,22 @@ dưới-phải nên nở sang trái và lên trên, không tràn mép màn hình
 `figReset()` gọi mỗi lần mở một hình mới — giữ mức phóng của hình trước thì mở
 hình sau ra thấy một mảng trắng.
 
+### Cột Gốc và cột Dịch phải khác nhau ở KIỂU CHỮ
+
+Bản trước để cả hai cùng serif Literata, gốc nhạt hơn một tông; người dùng soi
+màn hình và nói thẳng hai cột "phân biệt chưa ok". Giờ gốc là sans nhỏ màu chì
+(bản in để đối chiếu), dịch là serif đầy đặn mực đen (chữ để đọc), giữa hai cột
+là một nét bút chì đứt quãng — trung tính, nằm GIỮA hai cột, không phải thanh
+màu dán cạnh ô chữ. Dòng `.colbar` dính đầu vùng đọc gọi tên từng cột.
+
+`.colbar` dính bằng `top: -1.6rem`, **không phải 0**: mốc dính tính từ mép trong
+padding của `.doc`, để 0 thì chữ chạy lộ ra một dải phía trên thanh.
+
+**Cột hẹp thì tạm ẩn gốc, không gỡ ô tick** (`capNhatCotHep`, `COT_TOI_THIEU =
+320`). Cột trái mở trên màn 1366px cho ba cột ~300px — mỗi dòng ba bốn từ. Lớp
+`hep` trên `#doc` ẩn cột gốc và thanh tiêu đề nói vì sao; đóng cột trái là gốc
+tự về. Một `ResizeObserver` trên `#doc` bắt cả cột trái, khung PDF lẫn cửa sổ.
+
 ### Chọn chữ chỉ trong một cột
 
 Lưới song ngữ xếp **theo hàng**, nên thứ tự DOM là `en, vi, gl, en, vi, gl…`.
@@ -1491,6 +1551,22 @@ thay đổi. Đây là `cached_prefix` của cơ chế survey, và bẫy y hệt
 thời gian hay số vòng vào đó là hỏng cache và chi phí nhân lên nhiều lần. Bài xếp
 theo `id` chứ không theo `updated_at` — xếp theo thời gian thì mở lại một bài
 cũng đảo thứ tự và cache trượt sạch. `session_id=survey_id` cho mọi lần gọi.
+
+### Vân tay kho tính từ DIGEST, không từ `updated_at`
+
+Kho một bài, dựng bài giảng xong là tab Tổng hợp báo *"Kho đã đổi từ lúc dựng
+bản này"*: ghi `lecture`/`refs` cũng chạm `updated_at`, trong khi thứ bản tổng
+hợp đọc vào không đổi một byte. `corpus_fingerprint` giờ băm chính
+`corpus_digest` (cộng `status`, vì bơm lại bài đổi kết quả tìm), mang tiền tố
+`_FP_MOI`. Vân tay kiểu cũ (không tiền tố) được `load_survey` chuyển MỘT lần nếu
+`synth.paper_names` khớp đúng bộ bài trong kho — đổi công thức mà bắt mọi bản
+tổng hợp thành "cũ" là bắt người dùng trả ~$0,09 dựng lại thứ không hề đổi.
+
+Cùng đợt: khoá cảnh báo nội bộ (`thiếu_cơ_chế`) hiện qua `tenCanhBao()` — khoá
+lạ chưa có trong bảng vẫn hiện, chỉ đổi `_` thành cách; dòng model chỉ ở cạnh
+nút tiêu tiền của từng tab, không lặp ở thanh trên; mọi chỗ cắt chữ đi qua
+`depth.cat_gon` / `catGon()` (ranh giới từ + "…") — `text[:160]` cắt "an toàn t"
+và người đọc tưởng chính bài viết hỏng.
 
 ### Bẫy FTS5 external content — đã làm hỏng DB một lần
 

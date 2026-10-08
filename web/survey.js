@@ -636,7 +636,7 @@ async function svAsk() {
     const w = JSON.parse(e.data).warns || [];
     $("#svWarns").innerHTML = w.length
       ? `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b><ul>` + w.map((x) =>
-        `<li><i>${esc(x.kind)}</i> ${esc(x.msg)}${x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : ""}</li>`)
+        `<li><i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}${x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : ""}</li>`)
         .join("") + "</ul></div>"
       : '<div class="sv-okbox">Soát cơ học không thấy vấn đề: số liệu khớp đoạn đã trích, mã đoạn có thật.</div>';
   });
@@ -797,7 +797,7 @@ function svRenderSynth(d, stale) {
 
 function svLinRow(g) {
   return `<div class="sv-edge"><b>${esc(g.src)}</b> ${esc(g.rel)} <b>${esc(g.dst)}</b>`
-    + ` <span class="muted">${esc((g.paper_title || "").slice(0, 46))}`
+    + ` <span class="muted">${esc(catGon(g.paper_title, 46))}`
     + `${g.year ? " · " + g.year : ""}</span>${svCite(g.cite)}</div>`;
 }
 
@@ -820,7 +820,7 @@ function svMoreSyn(key, sel, btn, row) {
 function svSynWarns(w) {
   $("#svSynWarns").innerHTML = (w || []).length
     ? `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b><ul>`
-      + w.map((x) => `<li><i>${esc(x.kind)}</i> ${esc(x.msg)}`
+      + w.map((x) => `<li><i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}`
         + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "") + "</li>").join("")
       + "</ul></div>"
     : "";
@@ -1093,7 +1093,7 @@ async function svOpenCite(cid) {
         <p class="sv-quote">${sci(c.text)}</p>
         ${c.vi ? `<p class="sv-hvi">${sci(c.vi)}</p>` : ""}
         ${(d.around || []).filter((a) => a.id !== c.id).map((a) =>
-          `<p class="sv-around">${sci(a.text.slice(0, 400))}</p>`).join("")}
+          `<p class="sv-around">${sci(catGon(a.text, 400))}</p>`).join("")}
       </div></div>`;
     box.onclick = (e) => {
       if (e.target === box || e.target.hasAttribute("data-close")) box.remove();
@@ -1136,7 +1136,7 @@ async function svFindPapers() {
             ${r.pdf_url ? '<i class="chip ok">có PDF mở</i>' : '<i class="chip warn">chỉ abstract</i>'}
             ${r.in_survey ? '<i class="chip">đã có trong kho</i>' : ""}
           </div>
-          <p class="small muted">${esc((r.abstract || "").slice(0, 260))}</p>
+          <p class="small muted">${esc(catGon(r.abstract, 260))}</p>
         </div>
       </label>`).join("")
       : '<p class="muted">Không tìm thấy bài nào.</p>');
@@ -1445,7 +1445,7 @@ function svWire() {
     $("#svCost").textContent = `xem lại · ${money(r.cost)} · ${r.steps.length} vòng`;
     $("#svWarns").innerHTML = (r.warns || []).length
       ? `<div class="sv-warnbox"><b>${r.warns.length} chỗ cần soát lại</b><ul>`
-        + r.warns.map((x) => `<li><i>${esc(x.kind)}</i> ${esc(x.msg)}</li>`).join("") + "</ul></div>"
+        + r.warns.map((x) => `<li><i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}</li>`).join("") + "</ul></div>"
       : "";
   };
 }
@@ -1476,7 +1476,7 @@ function svLecFillPick() {
   const ok = (SV.papers || []).filter((p) => p.status === "carded" || p.status === "indexed");
   el.innerHTML = ok.length
     ? ok.map((p) => `<option value="${esc(p.id)}"${p.id === SV.lecPid ? " selected" : ""}>`
-        + esc(svClip(p.title || "(không tiêu đề)").slice(0, 70)) + "</option>").join("")
+        + esc(catGon(p.title || "(không tiêu đề)", 70)) + "</option>").join("")
     : '<option value="">— chưa bài nào có nội dung —</option>';
   if (!SV.lecPid && ok.length) SV.lecPid = ok[0].id;
   if (SV.lecPid) el.value = SV.lecPid;
@@ -1531,9 +1531,9 @@ async function svLecRefs(pid) {
       <b>${r.influential ? "★ " : ""}${esc(r.title)}</b>
       ${r.year ? `<span class="muted"> (${r.year})</span>` : ""}
       ${r.paper_id ? '<i class="chip ok">có trong kho</i>' : ""}
-      ${r.gist ? `<p class="small muted">${esc(svClip(r.gist).slice(0, 260))}</p>` : ""}
+      ${r.gist ? `<p class="small muted">${esc(catGon(r.gist, 260))}</p>` : ""}
       ${(r.why || []).map((w) =>
-        `<p class="small sv-why">chỗ dẫn: “${esc(svClip(w).slice(0, 300))}”</p>`).join("")}
+        `<p class="small sv-why">chỗ dẫn: “${esc(catGon(w, 300))}”</p>`).join("")}
     </div>`).join("");
 }
 
@@ -1557,13 +1557,13 @@ function svLecWarns(w) {
     groups.get(k).push(x);
   });
 
-  const one = (x) => `<i>${esc(x.kind)}</i> ${esc(x.msg)}`
+  const one = (x) => `<i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}`
     + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "");
 
   const rows = [...groups.values()].map((g) => {
     if (g.length < SV_WARN_GROUP) return g.map((x) => `<li>${one(x)}</li>`).join("");
     const tieu = SV_LEC_TITLE[g[0].section] || g[0].section;
-    return `<li><details><summary><i>${esc(g[0].kind)}</i> ${tieu} — `
+    return `<li><details><summary><i>${esc(tenCanhBao(g[0].kind))}</i> ${tieu} — `
       + `${g.length} chỗ</summary><ul>`
       + g.map((x) => `<li>${esc(x.msg)}</li>`).join("")
       + "</ul></details></li>";

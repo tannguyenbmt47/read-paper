@@ -224,7 +224,7 @@ def check(survey_id: str, d: dict) -> list[dict]:
     for cid, claim in cites:
         if cid not in rows:
             warns.append({"kind": "cite_lạ", "msg": f"trích dẫn [{cid}] không có trong kho",
-                          "text": claim[:140]})
+                          "text": depth.cat_gon(claim, 140)})
 
     # 2) số trong câu phải có mặt nguyên văn trong đoạn đã trích
     for cid, claim in cites:
@@ -240,7 +240,7 @@ def check(survey_id: str, d: dict) -> list[dict]:
         if miss:
             warns.append({"kind": "số_bịa",
                           "msg": f"số {', '.join(miss[:3])} không có trong đoạn [{cid}]",
-                          "text": claim[:140]})
+                          "text": depth.cat_gon(claim, 140)})
 
     # 3) mã bài nhắc tới phải có thật
     # `framings` và `tensions[].sides` cũng mang `papers` mà trước đây không được
@@ -259,14 +259,14 @@ def check(survey_id: str, d: dict) -> list[dict]:
                 if pid not in papers:
                     warns.append({"kind": "bài_lạ",
                                   "msg": f"nhắc tới mã bài [{pid}] không có trong kho",
-                                  "text": (it.get("name") or it.get("new") or "")[:140]})
+                                  "text": depth.cat_gon(it.get("name") or it.get("new") or "", 140)})
 
     # 4) mỗi bài có phiếu nên xuất hiện ở ít nhất một hướng tiếp cận — bài bị bỏ
     #    quên là bản tổng hợp chưa đọc hết kho, mà nhìn thì không thấy.
     placed = {p for a in d.get("approaches", []) for p in a.get("papers", [])}
     forgotten = [p["id"] for p in papers.values() if p.get("card") and p["id"] not in placed]
     if forgotten:
-        names = ", ".join((papers[p].get("title") or p)[:40] for p in forgotten[:4])
+        names = ", ".join(depth.cat_gon(papers[p].get("title") or p, 40) for p in forgotten[:4])
         warns.append({"kind": "bỏ_sót_bài",
                       "msg": f"{len(forgotten)} bài không nằm trong hướng tiếp cận nào: {names}",
                       "text": ""})
@@ -276,15 +276,15 @@ def check(survey_id: str, d: dict) -> list[dict]:
     #    thêm điều gì. Xem `server/depth.py`.
     for a in d.get("approaches", []):
         warns += depth.check_text(a.get("mechanism", ""),
-                                  label=f"cơ chế của “{a.get('name','')[:30]}”",
+                                  label=f"cơ chế của “{depth.cat_gon(a.get('name',''), 30)}”",
                                   term=a.get("name", ""))
         warns += depth.check_text(a.get("bet", ""),
-                                  label=f"đặt cược của “{a.get('name','')[:30]}”")
+                                  label=f"đặt cược của “{depth.cat_gon(a.get('name',''), 30)}”")
         if not a.get("falsify"):
             warns.append({"kind": "thiếu_phản_chứng",
-                          "msg": f"“{a.get('name','')[:40]}” không nêu điều gì sẽ "
+                          "msg": f"“{depth.cat_gon(a.get('name',''), 40)}” không nêu điều gì sẽ "
                                  "chứng minh nó sai — giả định chưa đủ sắc",
-                          "text": a.get("bet", "")[:140]})
+                          "text": depth.cat_gon(a.get("bet", ""), 140)})
     pb = d.get("problem") or {}
     warns += depth.check_text(pb.get("why_hard", ""), label="khó ở đâu")
     for g in d.get("gaps", []):

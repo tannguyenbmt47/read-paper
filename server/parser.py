@@ -7,6 +7,7 @@ công thức / caption / tài liệu tham khảo — để tầng dịch có ng�
 
 from __future__ import annotations
 
+import contextvars
 import io
 import re
 import unicodedata
@@ -62,6 +63,14 @@ _SECTION_EXACT = (
     "methodology", "experiments", "experimental setup", "results", "evaluation",
     "discussion", "limitations", "conclusion", "conclusions", "future work",
     "acknowledgments", "acknowledgements", "references", "bibliography", "appendix",
+    # Tiếng Việt. Thiếu bộ này thì bài tiếng Việt không có mốc "Abstract" nào,
+    # và luật "đầu trang 1 trước Abstract là tác giả/cơ quan" nuốt luôn cả
+    # "1. Giới thiệu" vào khối meta không dịch — đo trên bai_tieng_viet.pdf.
+    "tóm tắt", "giới thiệu", "mở đầu", "tổng quan", "công trình liên quan",
+    "nghiên cứu liên quan", "cơ sở lý thuyết", "phương pháp", "phương pháp đề xuất",
+    "thực nghiệm", "thiết lập thực nghiệm", "kết quả", "đánh giá", "thảo luận",
+    "hạn chế", "kết luận", "hướng phát triển", "lời cảm ơn", "tài liệu tham khảo",
+    "phụ lục",
 )
 # Cũng hay là tên mục, nhưng cũng hay là ô tiêu đề bảng ("Model", "Method").
 # Chỉ nhận khi cỡ chữ lớn hơn thân bài.
@@ -72,7 +81,7 @@ _SECTION_MAYBE = (
 )
 _HEADING_WORDS = _SECTION_EXACT + _SECTION_MAYBE
 
-_REF_START = re.compile(r"^\s*(references|bibliography)\s*$", re.I)
+_REF_START = re.compile(r"^\s*(references|bibliography|tài liệu tham khảo)\s*$", re.I)
 
 # Phụ lục nằm SAU mục tài liệu tham khảo trong hầu hết bài báo. Trước đây cờ
 # `in_refs` bật ở "References" rồi không bao giờ tắt, nên toàn bộ phụ lục — kiến
@@ -107,7 +116,7 @@ def _is_appendix_head(text: str) -> bool:
         return True
     return ("," not in t and not t.endswith(".")
             and bool(_APPENDIX_NUM.match(t)))
-_NUM_HEADING = re.compile(r"^\s*(\d+(?:\.\d+)*)\.?\s+([A-Z][^.]{2,80})\s*$")
+_NUM_HEADING = re.compile(r"^\s*(\d+(?:\.\d+)*)\.?\s+([A-ZĐ][^.]{2,80})\s*$")
 _ROMAN_HEADING = re.compile(r"^\s*([IVXLC]+)\.?\s+([A-Z][^.]{2,80})\s*$")
 # "Table 2:" là caption; "Table 2 summarizes our results…" là câu văn — phải có
 # dấu ngắt sau số, nếu không mọi đoạn nhắc tới bảng đều bị coi là chú thích.
@@ -166,15 +175,76 @@ def _join_accents(s: str) -> str:
     return _LOOSE_COMBINING.sub(r"\1", s)
 
 
+# Vốn từ của CHÍNH bài đang bóc, để phân biệt gạch nối ngắt từ với gạch nối của
+# từ ghép. Đặt theo ngữ cảnh luồng (mỗi lần bóc chạy trong một luồng riêng), không
+# phải biến toàn cục — hai lần nạp cùng lúc không được dẫm lên vốn từ của nhau.
+_VOCAB: contextvars.ContextVar = contextvars.ContextVar("vocab_bai", default=None)
+
+
+def _vocab_cua_bai(doc) -> set[str]:
+    """Các từ nguyên vẹn xuất hiện trong bài, chữ thường, từ 3 chữ cái trở lên.
+
+    Cắt tại mọi ký tự không phải chữ cái — kể cả gạch nối, nên `multi-hop` đóng
+    góp cả `multi` lẫn `hop`. LOẠI mảnh ở hai đầu một chỗ ngắt dòng: `differ-` rồi
+    `ent` không được tính là từ, nếu không thì `ent` lọt vào vốn từ và chính chỗ
+    ngắt từ ấy bị nhận nhầm là từ ghép.
+    """
+    vocab: set[str] = set()
+    for page in doc:
+        dong = [l for l in page.get_text("text").split("\n")]
+        bo_dau = False
+        for l in dong:
+            toks = re.findall(r"[^\W\d_]+", l)
+            if bo_dau and toks:
+                toks = toks[1:]             # mảnh đuôi của từ bị ngắt ở dòng trước
+            bo_dau = l.rstrip().endswith("-")
+            if bo_dau and toks:
+                toks = toks[:-1]            # mảnh đầu của từ bị ngắt
+            vocab.update(t.lower() for t in toks if len(t) >= 3)
+    return vocab
+
+
+# Nửa trái hay ghép LIỀN trong tiếng Anh (`alongside`, `otherwise`, `whereas`):
+# gặp ở chỗ ngắt dòng thì nối, đừng giữ gạch. Đo trên dữ liệu thật: `along-side`.
+_GHEP_LIEN = {"along", "with", "some", "every", "under", "other", "where",
+              "there", "what", "when", "here", "through", "never", "after"}
+
+
+def _noi_gach_cuoi_dong(m: "re.Match") -> str:
+    """Quyết định nối hay giữ dấu gạch cho một chỗ `từ-<xuống dòng>từ`.
+
+    Mặc định là NỐI (`trans-` + `lation` → `translation`) — đúng với phần lớn ca.
+    Ghép liền ra một từ đã gặp trong bài thì chắc chắn nối. Ngược lại, GIỮ gạch
+    khi nửa trái là một từ trọn vẹn đã gặp và nửa phải trông như một từ thật (đã
+    gặp, hoặc dài ≥6 chữ — mảnh vụn của từ bị cắt như `ent`, `tion` thì ngắn).
+    Đo trên CIRAG: `history-` / `conditionally` bị nối thành
+    `historyconditionally` (#18). Không đòi nửa phải có trong vốn từ, vì nhiều
+    khi nó CHỈ xuất hiện đúng ở chỗ ngắt này — mà chỗ đó bị loại khỏi vốn từ.
+    """
+    trai, phai = m.group(1), m.group(2)
+    vocab = _VOCAB.get()
+    if vocab and len(trai) >= 3 and len(phai) >= 3:
+        lt, lp = trai.lower(), phai.lower()
+        if (lt + lp) in vocab:
+            return trai + phai
+        if (len(lt) >= 4 and lt in vocab and lt not in _GHEP_LIEN
+                and ((lp in vocab and len(lp) >= 4) or len(lp) >= 6)):
+            return f"{trai}-{phai}"
+    return trai + phai
+
+
 def clean_text(s: str) -> str:
     for a, b in _LIGATURES.items():
         s = s.replace(a, b)
     s = _join_accents(s)
     s = unicodedata.normalize("NFKC", s)
     # nối từ bị gạch nối cuối dòng: "trans-\nlation" -> "translation"
-    s = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", s)
+    s = re.sub(r"(\w+)-[ \t]*\n\s*(\w+)", _noi_gach_cuoi_dong, s)
     s = re.sub(r"\s*\n\s*", " ", s)
     s = re.sub(r"[ \t]{2,}", " ", s)
+    # Hai dấu chấm liền nhau là lỗi dàn trang (chữ "author." + dấu chấm của
+    # mẫu chú thích chân), không phải dấu ba chấm: "Corresponding author.." (#7).
+    s = re.sub(r"(?<![.…])\.\.(?=\s|$)", ".", s)
     return s.strip()
 
 
@@ -594,6 +664,12 @@ def _bang_va_cot(rects, page_width: float, ncol: int) -> list[tuple[int, int]]:
     Trả về danh sách `(bang, cot)` cùng thứ tự với `rects`; khối trải ngang mang
     `cot = -1` nên nó đứng đầu băng của chính nó.
     """
+    # Trang MỘT cột thì không có băng nào để chia: mọi đoạn văn đều "trải
+    # ngang", và coi chúng là vách ngăn (`cot = -1`) thì đoạn văn vượt lên
+    # TRƯỚC tiêu đề mục ngắn của chính nó — đã thấy trên bai_tieng_viet.pdf:
+    # đoạn tóm tắt đứng trên chữ "Tóm tắt". Một cột thì xếp thuần theo `y`.
+    if ncol == 1:
+        return [(0, 0)] * len(rects)
     mid = page_width / 2
     ngang = [i for i, r in enumerate(rects)
              if r[0] < mid - 12 and r[2] > mid + 12]
@@ -1027,6 +1103,92 @@ def caption_key(text: str) -> str:
     return f"{kind}{num.group(0)}" if num else ""
 
 
+# Trần nới khung mỗi phía (point). Đủ cho một tiêu đề hình con thò ra ngoài
+# (#11: 17pt), không đủ để một nét kẻ ngang cả trang kéo khung phình ra.
+_NOI_TOI_DA = 40.0
+
+
+_DONG_CAPTION = re.compile(r"^\s*(fig\.?|figure|table|tab\.|hình|bảng)\s*\d", re.I)
+
+
+def _chinh_khung_hinh(page, goc, body: float):
+    """Sửa khung hình do mô hình bố cục trả về, theo hai chiều ngược nhau.
+
+    **Nới** ra trọn những dòng chữ trong hình mà mép khung cắt ngang. Đo trên arXiv 1706.03762: khung Figure 2 bắt đầu ở x=165 trong khi
+    tiêu đề hình con "Scaled Dot-Product Attention" bắt đầu ở 147,8 — ảnh cắt ra
+    mất chữ "Scal" (#11). Mô hình dò khung theo vùng ĐẬM của hình, còn chữ nhãn
+    mảnh thì hay rơi ra ngoài.
+
+    **Cắt** bỏ dòng văn mà phần lề +5pt vô tình kéo vào: Table 2 cùng bài
+    dính một vệt chữ của đoạn ngay phía trên.
+
+    "Dòng văn" ở đây là dòng RỘNG (>45% bề ngang trang) hoặc dòng mở đầu bằng
+    `Figure N` / `Table N`, **bất kể cỡ chữ**. Bản đầu chỉ xét cỡ ≈ thân bài,
+    thế là caption — vốn nhỏ hơn thân bài một cỡ — bị coi là chữ trong hình và
+    khung nới xuống nuốt luôn caption (đo trên `data/`: tới +34pt). Chữ trong
+    hình thật thì ngắn: nhãn trục, tiêu đề hình con.
+    """
+    import fitz
+
+    dong_than: list = []      # dòng văn thân bài: không được nằm trong ảnh
+    ung_vien: list = []       # thứ thuộc hình: được kéo khung ra cho trọn
+    rong_trang = page.rect.width
+    for bl in page.get_text("dict")["blocks"]:
+        for l in bl.get("lines", []):
+            spans = [sp for sp in l["spans"] if sp["text"].strip()]
+            if not spans:
+                continue
+            lr = fitz.Rect(l["bbox"])
+            chu = "".join(sp["text"] for sp in spans)
+            if lr.width > rong_trang * 0.45 or _DONG_CAPTION.match(chu):
+                dong_than.append(lr)
+            else:
+                ung_vien.append(lr)
+    # CHỈ nới theo chữ, không theo nét vẽ. Bản đầu nới theo cả `get_drawings()`
+    # và ra +25pt lề trắng trên biểu đồ cột có hoa văn sọc: PyMuPDF báo khung
+    # của cả Ô MẪU hoa văn, rộng hơn phần thực sự hiện ra sau khi bị clip.
+
+    tran = fitz.Rect(goc.x0 - _NOI_TOI_DA, goc.y0 - _NOI_TOI_DA,
+                     goc.x1 + _NOI_TOI_DA, goc.y1 + _NOI_TOI_DA)
+    # Dòng văn nằm ngoài khung gốc là vách: nới khung mà chạm nó thì thôi
+    vach = [lr for lr in dong_than if not goc.intersects(lr)]
+
+    rect = fitz.Rect(goc)
+    for _ in range(3):                      # vài lượt: nới xong có thể chạm thêm thứ khác
+        doi = False
+        for c in ung_vien:
+            if not rect.intersects(c) or c in rect:
+                continue
+            if c not in tran:               # thò quá xa: thuộc thứ khác, bỏ qua
+                continue
+            moi = rect | c
+            if any(moi.intersects(v) for v in vach):
+                continue
+            if moi != rect:
+                rect, doi = moi, True
+        if not doi:
+            break
+
+    # Lề +5pt cho dễ nhìn — nhưng dòng chữ nào chỉ chạm khung NHỜ phần lề này
+    # (dòng văn phía trên Table 2, tiêu đề của hình ngay bên dưới) thì đẩy mép
+    # ra khỏi nó. Dòng đã nằm trong khung trước khi thêm lề là thứ đã chủ ý lấy.
+    truoc_le = fitz.Rect(rect)
+    rect = rect + (-5, -5, 5, 5)
+    rect &= tran | goc
+    for lr in dong_than + ung_vien:
+        if not rect.intersects(lr) or truoc_le.intersects(lr):
+            continue
+        if lr.y1 <= truoc_le.y0 + 0.5:
+            rect.y0 = max(rect.y0, lr.y1 + 0.5)
+        elif lr.y0 >= truoc_le.y1 - 0.5:
+            rect.y1 = min(rect.y1, lr.y0 - 0.5)
+        elif lr.x1 <= truoc_le.x0 + 0.5:
+            rect.x0 = max(rect.x0, lr.x1 + 0.5)
+        elif lr.x0 >= truoc_le.x1 - 0.5:
+            rect.x1 = min(rect.x1, lr.x0 - 0.5)
+    return rect
+
+
 def apply_layout(blocks: list[Block], regions: list[dict], pdf_bytes: bytes,
                  dpi: int = 160) -> dict[str, bytes]:
     """Thay khung cắt heuristic bằng khung do mô hình bố cục trả về.
@@ -1070,13 +1232,15 @@ def apply_layout(blocks: list[Block], regions: list[dict], pdf_bytes: bytes,
 
     out: dict[str, bytes] = {}
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        body = _body_size(doc)
         for b, r in pairs:
             pno = r["page"]
             if not 0 <= pno < len(doc):
                 continue
             page = doc[pno]
             # nới nhẹ: mô hình bám sát mép nội dung, thêm chút lề cho dễ nhìn
-            rect = fitz.Rect(*r["bbox"]) + (-5, -5, 5, 5)
+            goc = fitz.Rect(*r["bbox"])
+            rect = _chinh_khung_hinh(page, goc, body)
             rect &= page.rect
             if rect.is_empty or rect.height < 20:
                 continue
@@ -1274,8 +1438,117 @@ def mo_pdf(data: bytes):
     return doc
 
 
+# Hai dòng liền nhau lệch cỡ chữ quá ngưỡng này thì không thuộc cùng một đoạn.
+# 1,15 lần: tiêu đề mục to hơn thân bài từ 1,2 lần — bản đầu đặt 1,3 nên tiêu
+# đề 12pt trên thân 10pt (bài hai cột của #6) dính luôn vào cuối đoạn phía trên.
+# Chỉ cắt khi lệch theo CẢ HAI thước đo: cỡ lớn nhất của dòng và cỡ phủ nhiều
+# ký tự nhất (`_co_dong`). Mỗi thước đo một mình đều cắt nhầm, đo trên `data/`:
+# - cỡ lớn nhất: nhãn đậm "Figure 5:" 10pt mở đầu caption 8pt → caption đứt đôi;
+# - cỡ đa số: tiêu đề chữ hoa nhỏ "3.1 LATENT ACTION…" (số 12pt, chữ 9,6pt) →
+#   "3.1" thành một khối riêng.
+# Tiêu đề thật lệch theo cả hai, nên vẫn cắt được.
+_LECH_CO_DOAN = 1.15
+
+
+def _co_dong(l: dict) -> float:
+    """Cỡ chữ của một dòng: cỡ phủ nhiều ký tự nhất (không phải cỡ lớn nhất).
+
+    Lấy cỡ lớn nhất thì dòng caption 8pt mở đầu bằng nhãn đậm "Figure 5:" 10pt
+    thành dòng 10pt, và caption bị cắt đôi ngay sau dòng đầu.
+    """
+    dem: Counter = Counter()
+    for sp in l.get("spans", []):
+        n = len(sp["text"].strip())
+        if n:
+            dem[round(sp["size"], 1)] += n
+    return dem.most_common(1)[0][0] if dem else 0.0
+
+
+def _tach_theo_co(lines: list[dict]) -> list[list[dict]]:
+    """Tách các dòng của một khối PyMuPDF thành những đoạn CÙNG CỠ CHỮ.
+
+    Cỡ của một dòng là cỡ phủ nhiều ký tự nhất (`_co_dong`), nên chỉ số dưới
+    nhỏ hơn không làm dòng bị tách. Chỉ cắt khi hai dòng LIỀN NHAU lệch quá
+    `_LECH_CO_DOAN` lần — tiêu đề mục gom chung khối với đoạn văn bên dưới.
+    """
+    def lech(a: float, b: float) -> bool:
+        return max(a, b) / max(min(a, b), 0.1) > _LECH_CO_DOAN
+
+    doan: list[list[dict]] = []
+    truoc = None
+    for l in lines:
+        co = _co_dong(l)
+        if not co:
+            continue
+        lon = max((s["size"] for s in l.get("spans", []) if s["text"].strip()), default=co)
+        if truoc and lech(co, truoc[0]) and lech(lon, truoc[1]):
+            doan.append([])
+        if not doan:
+            doan.append([])
+        doan[-1].append(l)
+        truoc = (co, lon)
+    return [d for d in doan if d]
+
+
+_O_SO = re.compile(r"^[\d.,±%x×()+\-–]+\s*[A-Za-zµ%]{0,3}$")
+
+
+def _bang_khong_vien(lines: list[dict]) -> str | None:
+    """Nhận ra BẢNG KHÔNG VIỀN trong một khối PyMuPDF, trả về bảng Markdown.
+
+    Đường heuristic không có mô hình bố cục để dò bảng; bảng không kẻ khung thì
+    cũng không có nét vẽ để `_render_figures` cắt thành ảnh. Thế là cả bảng
+    thành một khối mười mấy dòng ngắn, bị đọc nhầm là tiêu đề mục (#6: "Model
+    GLUE Mem Base 84.1 16GB…") hoặc bị nuốt vào đoạn khác — người đọc mất số
+    liệu mà không có gì báo.
+
+    Đòi đủ ba dấu hiệu, vì dương tính giả là xé một đoạn văn thành bảng:
+    ≥3 hàng (gom theo baseline), ≥2 cột mà mép trái THẲNG HÀNG giữa các hàng,
+    và ít nhất một ô là số liệu. Dòng nào dài như câu văn thì không phải bảng.
+    """
+    o = []                      # (y giữa, x trái, chữ)
+    for l in lines:
+        chu = "".join(sp["text"] for sp in l.get("spans", [])).strip()
+        if not chu:
+            continue
+        if len(chu) > 40:       # ô bảng ngắn; dòng dài là văn
+            return None
+        x0, y0, x1, y1 = l["bbox"]
+        o.append(((y0 + y1) / 2, x0, chu))
+    if len(o) < 6:
+        return None
+    o.sort()
+    hang: list[list[tuple]] = []
+    for y, x, chu in o:
+        if hang and abs(hang[-1][0][0] - y) <= 2.5:
+            hang[-1].append((y, x, chu))
+        else:
+            hang.append([(y, x, chu)])
+    if len(hang) < 3:
+        return None
+    so_cot = Counter(len(h) for h in hang).most_common(1)[0][0]
+    if so_cot < 2 or sum(len(h) == so_cot for h in hang) < max(3, len(hang) * 0.7):
+        return None
+    # mép trái từng cột phải thẳng hàng giữa các hàng đủ cột
+    day = [sorted(h, key=lambda c: c[1]) for h in hang if len(h) == so_cot]
+    for k in range(so_cot):
+        xs = [h[k][1] for h in day]
+        if max(xs) - min(xs) > 4:
+            return None
+    if not any(_O_SO.match(c[2]) for h in hang for c in h):
+        return None
+    md = []
+    for i, h in enumerate(hang):
+        o_hang = [c[2].replace("|", "\\|") for c in sorted(h, key=lambda c: c[1])]
+        md.append("| " + " | ".join(o_hang) + " |")
+        if i == 0:
+            md.append("|" + "---|" * len(o_hang))
+    return "\n".join(md)
+
+
 def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
     doc = mo_pdf(data)
+    _VOCAB.set(_vocab_cua_bai(doc))
     raw: list[dict] = []
     sizes: Counter = Counter()
     per_page: dict[int, list[dict]] = {}
@@ -1290,27 +1563,49 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
             spans = [s for line in b.get("lines", []) for s in line.get("spans", [])]
             if not spans:
                 continue
-            size = round(max(s["size"] for s in spans), 1)
-            bold = any("bold" in (s.get("font") or "").lower() for s in spans)
             for s in spans:
                 sizes[round(s["size"], 1)] += len(s["text"])
 
-            raw_lines = [(_line_text(l), l["bbox"]) for l in b["lines"]]
-            parts = _list_items(raw_lines)
-            # danh sách -> mỗi mục là một khối riêng, để cột song ngữ căn theo mục
-            chunks = ([(marker, ls) for marker, ls in parts] if parts
-                      else [("", raw_lines)])
-            for marker, ls in chunks:
-                text = clean_text("\n".join(t for t, _ in ls))
-                if not text:
+            # Mỗi KHỐI PyMuPDF tách thành các đoạn CÙNG CỠ CHỮ trước đã.
+            # PyMuPDF gom theo khoảng cách hình học, nên tiêu đề mục đứng sát
+            # đoạn văn bị gom chung một khối: đo trên bai_tieng_viet.pdf, khối
+            # thứ hai là "Tóm tắt" (16pt) + 11 dòng thân bài (10pt). Cả khối mang
+            # cỡ lớn nhất là 16 — bằng cỡ tên bài, nằm ngay dưới — nên bộ gộp
+            # tiêu đề nuốt cả bài vào tiêu đề, còn lại 0 khối, và người dùng nhận
+            # 422 "PDF có thể là bản scan ảnh". Tách ra thì "Tóm tắt" thành tiêu đề
+            # mục đúng nghĩa (cũng là lỗi #13: heading dính vào đoạn).
+            for b_lines in _tach_theo_co(b.get("lines", [])):
+                l_spans = [s for line in b_lines for s in line.get("spans", [])]
+                if (bang := _bang_khong_vien(b_lines)):
+                    bb = (min(l["bbox"][0] for l in b_lines), min(l["bbox"][1] for l in b_lines),
+                          max(l["bbox"][2] for l in b_lines), max(l["bbox"][3] for l in b_lines))
+                    items.append({
+                        "text": bang, "size": round(max(s["size"] for s in l_spans), 1),
+                        "bold": False, "bbox": bb, "page": pno,
+                        "page_h": page.rect.height, "nlines": len(b_lines),
+                        "marker": "", "bang": True,
+                    })
                     continue
-                bb = (min(x[1][0] for x in ls), min(x[1][1] for x in ls),
-                      max(x[1][2] for x in ls), max(x[1][3] for x in ls)) if parts else b["bbox"]
-                items.append({
-                    "text": text, "size": size, "bold": bold,
-                    "bbox": bb, "page": pno, "page_h": page.rect.height,
-                    "nlines": len(ls), "marker": marker,
-                })
+                size = round(max(s["size"] for s in l_spans), 1)
+                bold = any("bold" in (s.get("font") or "").lower() for s in l_spans)
+                raw_lines = [(_line_text(l), l["bbox"]) for l in b_lines]
+                parts = _list_items(raw_lines)
+                # danh sách -> mỗi mục là một khối riêng, để cột song ngữ căn theo mục
+                chunks = ([(marker, ls) for marker, ls in parts] if parts
+                          else [("", raw_lines)])
+                for marker, ls in chunks:
+                    text = clean_text("\n".join(t for t, _ in ls))
+                    if not text:
+                        continue
+                    # Khung lấy theo DÒNG của đoạn, không theo cả khối PyMuPDF:
+                    # khối có thể vừa bị tách theo cỡ chữ ở trên.
+                    bb = (min(x[1][0] for x in ls), min(x[1][1] for x in ls),
+                          max(x[1][2] for x in ls), max(x[1][3] for x in ls))
+                    items.append({
+                        "text": text, "size": size, "bold": bold,
+                        "bbox": bb, "page": pno, "page_h": page.rect.height,
+                        "nlines": len(ls), "marker": marker,
+                    })
         _word_gaps(page, items)
         ncol = _page_columns([i["bbox"] for i in items], pw)
         bc = _bang_va_cot([i["bbox"] for i in items], pw, ncol)
@@ -1344,6 +1639,7 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
         k = max(range(len(dau)), key=lambda i: dau[i]["size"])
         if dau[k]["size"] > body_size * 1.25:
             phan = [{"size": i["size"], "text": i["text"], "key": i["idx"],
+                     "nlines": i.get("nlines", 1),
                      "y0": i["bbox"][1], "y1": i["bbox"][3]} for i in dau]
             title, dung = gop_tieu_de(phan, k)
             # Dòng đã gộp vào tiêu đề phải RỜI khỏi mạch đọc, không thì chúng
@@ -1372,7 +1668,33 @@ def parse_pdf(data: bytes) -> tuple[str, list[Block], dict[str, bytes]]:
     stitch_hyphenated(blocks)
     mark_continuations(blocks)
     mark_noise(blocks)
+
+    # LƯỚI AN TOÀN: PDF có lớp chữ thì không bao giờ được ra 0 khối. 0 khối nghĩa
+    # là người dùng nhận 422 "PDF có thể là bản scan ảnh — cần OCR", tức một lời
+    # khuyên SAI (đã thấy trên bai_tieng_viet.pdf: lớp chữ đọc ra bình thường,
+    # nhưng một lỗi ở bộ gộp tiêu đề nuốt cả bài). Còn chữ mà bộ bóc không dựng
+    # nổi khối nào thì đó là lỗi của bộ bóc — rơi về bóc như văn bản thường,
+    # mất cấu trúc nhưng không mất bài.
+    if not any(b.text.strip() for b in blocks):
+        tho = _toan_van_pdf(data)
+        if len(tho.strip()) >= _CHU_TOI_THIEU:
+            t2, blocks = _parse_plain(tho)
+            title = title or t2
     return title, blocks, named
+
+
+# Ít hơn ngần này ký tự trong lớp chữ thì coi như không có lớp chữ (bản scan).
+_CHU_TOI_THIEU = 200
+
+
+def _toan_van_pdf(data: bytes) -> str:
+    """Toàn bộ lớp chữ của PDF, theo thứ tự PyMuPDF đọc ra."""
+    import fitz
+    try:
+        with fitz.open(stream=data, filetype="pdf") as d:
+            return "\n\n".join(p.get_text() for p in d)
+    except Exception:  # noqa: BLE001 — file hỏng đã bị `mo_pdf` chặn từ trước
+        return ""
 
 
 # Tiêu đề bài báo rất hay nằm trên NHIỀU DÒNG, và cỡ chữ của các dòng đó bằng
@@ -1415,6 +1737,18 @@ def gop_tieu_de(phan: list[dict], bat_dau: int) -> tuple[str, set[int]]:
             break
         t = it["text"].strip()
         if not t:
+            break
+        # Tên mục chuẩn ("Tóm tắt", "Abstract", "1. Giới thiệu") không bao giờ là
+        # dòng tiếp của tên bài, dù cùng cỡ chữ và nằm ngay dưới — đã thấy tên
+        # bài thành "Tinh chỉnh LLM … với LoRA Tóm tắt".
+        if (t.lower().rstrip(":.") in _SECTION_EXACT or _NUM_HEADING.match(t)
+                or _ROMAN_HEADING.match(t)):
+            break
+        # Chỉ nối mục NGẮN, một–hai dòng: dòng thứ hai của tên bài không bao
+        # giờ là cả một đoạn văn. Thiếu chốt này thì một khối PyMuPDF gom cả
+        # tiêu đề mục lẫn thân bài (cỡ chữ lớn nhất trùng cỡ tên bài) bị nuốt
+        # trọn vào tiêu đề — đã ra 0 khối và lỗi 422 trên bai_tieng_viet.pdf.
+        if it.get("nlines", 1) > 2 or len(t) > 200:
             break
         chu.append(t)
         dung.add(it["key"])
@@ -1462,7 +1796,11 @@ def _to_blocks(items: list[dict], body_size: float, title: str,
             continue
 
         rel = it["size"] / body_size if body_size else 1.0
-        if text.lower().lstrip().startswith("abstract"):
+        # Hết phần đầu trang (tác giả, cơ quan) khi gặp Tóm tắt/Abstract — HOẶC
+        # gặp mục đánh số đầu tiên, với bài không có phần tóm tắt.
+        dau_dong = text.lower().lstrip()
+        if (dau_dong.startswith(("abstract", "tóm tắt"))
+                or _NUM_HEADING.match(text.strip())):
             seen_abstract = True
 
         # phần đầu trang 1 trước Abstract: tên tác giả, cơ quan, email — không dịch
@@ -1497,6 +1835,12 @@ def _to_blocks(items: list[dict], body_size: float, title: str,
             # tạm mang chỉ số item; parse_pdf sẽ đổi thành id block sau khi ghép ảnh
             blocks.append(Block(nid(), "caption", text, section, 0, it["page"], True,
                                 figure=str(it.get("idx", ""))))
+            continue
+
+        # Bảng không viền (`_bang_khong_vien`): giữ nguyên dạng Markdown, không
+        # dịch — số liệu thì không có gì để dịch, mà dịch thì dễ làm lệch số.
+        if it.get("bang"):
+            blocks.append(Block(nid(), "table", it["text"], section, 0, it["page"], False))
             continue
 
         # xét công thức TRƯỚC heading: dòng toán cỡ chữ lớn hay bị nhầm là mục
@@ -1739,6 +2083,57 @@ def recover_uncovered(doc, items: list[dict], regions: list[dict] | None) -> lis
             extra.append({"kind": "para", "text": text, "marker": "", "level": 0,
                           "page": pno, "bbox": list(bbox), "recovered": True})
     return items + extra
+
+
+def bang_mo_coi(doc, items: list[dict], regions: list[dict] | None) -> list[dict]:
+    """Vùng BẢNG mô hình dò ra mà không có caption đi kèm → khối `table` chữ.
+
+    Vùng hình/bảng chỉ thành ảnh khi `apply_layout` ghép được nó với một
+    caption. Bảng không caption thì không ai cắt — mà `recover_uncovered` lại
+    cố ý BỎ chữ nằm trong vùng hình/bảng (vì lẽ ra nó nằm trong ảnh). Chữ rơi
+    giữa hai ghế: #6, bảng "Model / GLUE / Mem · Base 84.1 16GB" mất sạch, không
+    thành hình, không thành chữ, không báo gì.
+
+    Dựng lại bằng `_bang_khong_vien` nếu ra lưới; không ra lưới thì giữ nguyên
+    chữ thành một khối bảng một ô — mất bố cục còn hơn mất số liệu.
+    """
+    out: list[dict] = []
+    for r in regions or []:
+        if r.get("kind") != "table" or (r.get("caption") or "").strip():
+            continue
+        pno = r["page"]
+        if not 0 <= pno < doc.page_count:
+            continue
+        x0, y0, x1, y1 = r["bbox"]
+        # Có caption sát trên/dưới thì `apply_layout` sẽ ghép theo khoảng cách và
+        # cắt thành ảnh — đừng đẻ thêm bản chữ trùng. Dò theo HÌNH HỌC chứ không
+        # theo chữ "Table N": MinerU không trả chữ, và không điền `caption` vào
+        # vùng, nên dò theo chữ thì MỌI bảng đều thành mồ côi (đo trên `data/`:
+        # 73/73 bảng bị nhân đôi).
+        if any(it["page"] == pno and it.get("kind") == "caption"
+               and it["bbox"][0] < x1 and it["bbox"][2] > x0
+               and (-5 < y0 - it["bbox"][3] < 60 or -5 < it["bbox"][1] - y1 < 60)
+               for it in items):
+            continue
+        lines = []
+        for bl in doc[pno].get_text("dict")["blocks"]:
+            for l in bl.get("lines", []):
+                cx = (l["bbox"][0] + l["bbox"][2]) / 2
+                cy = (l["bbox"][1] + l["bbox"][3]) / 2
+                if x0 - 2 <= cx <= x1 + 2 and y0 - 2 <= cy <= y1 + 2:
+                    lines.append(l)
+        if not lines:
+            continue
+        md = _bang_khong_vien(lines)
+        if not md:
+            chu = clean_text(" ".join("".join(sp["text"] for sp in l["spans"])
+                                      for l in lines))
+            if not chu:
+                continue
+            md = "| " + chu.replace("|", "\\|") + " |\n|---|"
+        out.append({"kind": "bang_chu", "text": md, "marker": "", "level": 0,
+                    "page": pno, "bbox": list(r["bbox"])})
+    return out
 
 
 # ==================================================== phễu lọc sau khi bóc
@@ -2062,10 +2457,12 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
 
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         body = _body_size(doc)
+        _VOCAB.set(_vocab_cua_bai(doc))
 
         # Nhặt lại phần chữ mô hình bố cục bỏ sót TRƯỚC khi sắp thứ tự đọc, để
         # khối nhặt được đi chung đường với mọi khối khác. Xem `recover_uncovered`.
         items = recover_uncovered(doc, items, regions)
+        items = items + bang_mo_coi(doc, items, regions)
 
         # Ranh giới khối của mô hình thì đáng tin, nhưng thứ tự đọc của nó thì
         # không phải lúc nào cũng đúng — nó hay dồn cả cụm công thức xuống cuối.
@@ -2101,7 +2498,10 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
         best = max(dau, key=lambda i: co_cua[i], default=None)
         bo_tieu_de: set[int] = set()
         if best is not None and co_cua[best] > body * 1.25:
+            # Số dòng của vùng = số baseline khác nhau của các span trong nó —
+            # bộ gộp tiêu đề cần nó để không nối nhầm cả một đoạn văn.
             phan = [{"size": co_cua[i], "text": text_from_spans(spans_of.get(i, [])),
+                     "nlines": len({round(sp["bbox"][3]) for sp in spans_of.get(i, [])}) or 1,
                      "key": i, "y0": items[i]["bbox"][1], "y1": items[i]["bbox"][3]}
                     for i in dau]
             vi = dau.index(best)
@@ -2110,6 +2510,9 @@ def blocks_from_layout(items: list[dict], pdf_bytes: bytes,
         for i, it in enumerate(items):
             pno = it["page"]
             if not 0 <= pno < len(doc):
+                continue
+            if it["kind"] == "bang_chu":         # `bang_mo_coi`: đã dựng sẵn bảng
+                blocks.append(Block(nid(), "table", it["text"], section, 0, pno, False))
                 continue
             text = text_from_spans(spans_of.get(i, [])) or clean_text(it.get("text") or "")
             # `i in bo_tieu_de`: dòng đã gộp vào tiêu đề nhiều dòng. So theo

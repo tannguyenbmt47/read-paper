@@ -272,6 +272,18 @@ def test_van_tay_kho_doi_khi_them_bot_bai(client, sdb, kho):
     assert sdb.corpus_fingerprint(kho["sid"]) != before
 
 
+def test_dung_bai_giang_khong_lam_kho_doi(client, sdb, kho):
+    """#26: kho MỘT bài, dựng bài giảng xong thì tab Tổng hợp báo "Kho đã đổi từ
+    lúc dựng bản này" — vì vân tay lấy `updated_at`, mà ghi bài giảng cũng chạm
+    cột đó. Thứ bản tổng hợp đọc vào là digest, nên vân tay phải theo digest."""
+    sdb.update_paper(kho["p1"], card={"tldr_vi": "một câu", "keywords_en": ["rag"]})
+    before = sdb.corpus_fingerprint(kho["sid"])
+    sdb.update_paper(kho["p1"], lecture='{"problem": "x"}', refs='{"items": []}')
+    assert sdb.corpus_fingerprint(kho["sid"]) == before
+    sdb.update_paper(kho["p1"], title="CIRAG: tiêu đề đã sửa tay")
+    assert sdb.corpus_fingerprint(kho["sid"]) != before
+
+
 def test_rrf_chi_doc_thu_hang(kho):
     """Trộn được BM25 (điểm âm) với cosine ([-1,1]) mà không phải chuẩn hoá gì."""
     from server.survey import search
@@ -1147,3 +1159,18 @@ def test_digest_mang_du_moi_truong_phieu_da_boc():
     # và kết quả không bị cắt dưới 5 — phiếu thật thường có đúng 5
     for i in range(5):
         assert f"DAUclaim{i}" in d, f"kết quả thứ {i} bị cắt mất"
+
+
+def test_van_tay_kieu_cu_duoc_chuyen_khi_kho_khong_doi(client, sdb, kho):
+    """Đổi công thức vân tay không được bắt mọi bản tổng hợp cũ thành "Kho đã
+    đổi" — dựng lại tốn tiền cho thứ không hề đổi. Bộ bài khớp thì chuyển."""
+    ids = {p["id"]: p["title"] for p in sdb.list_papers(kho["sid"])}
+    sdb.save_synth(kho["sid"], {"title": "x", "paper_names": ids})
+    with sdb.conn() as c:
+        c.execute("UPDATE survey SET synth_fp = 'abc123kieucu' WHERE id = ?", (kho["sid"],))
+    assert sdb.load_survey(kho["sid"])["synth_stale"] is False
+    # bộ bài đã khác (thêm bài) thì vẫn phải báo cũ
+    with sdb.conn() as c:
+        c.execute("UPDATE survey SET synth_fp = 'abc123kieucu' WHERE id = ?", (kho["sid"],))
+    sdb.add_paper(kho["sid"], title="bài thêm sau", status="new", sha256="sMoi")
+    assert sdb.load_survey(kho["sid"])["synth_stale"] is True

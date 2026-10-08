@@ -41,6 +41,20 @@ from __future__ import annotations
 import re
 import unicodedata
 
+
+def cat_gon(s: str, n: int) -> str:
+    """Cắt chuỗi cho cảnh báo / nhãn: ở RANH GIỚI TỪ và kèm "…" khi có cắt.
+
+    `text[:160]` cắt giữa chữ và không báo là đã cắt — người dùng đọc thấy câu
+    trích kết thúc bằng "an toàn t" và tưởng chính bài viết bị hỏng (#26).
+    """
+    s = " ".join(str(s or "").split())
+    if len(s) <= n:
+        return s
+    cut = s[:n]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > n * 0.6 else cut).rstrip(" ,.;:") + "…"
+
 # --------------------------------------------------------------- câu độn
 #
 # Cụm từ chỉ làm câu dài ra. Chúng khác "từ nối" ở chỗ: bỏ đi thì nghĩa không
@@ -179,22 +193,22 @@ def check_text(text: str, *, label: str = "", term: str = "") -> list[dict]:
         out.append({"kind": "câu_độn",
                     "msg": f"{label + ': ' if label else ''}cụm rỗng — "
                            + ", ".join(f'"{x}"' for x in f[:3]),
-                    "text": text[:160]})
+                    "text": cat_gon(text, 160)})
     if (v := vague_claim(text)):
         out.append({"kind": "nói_chung_chung",
                     "msg": f"{label + ': ' if label else ''}“{v[0]}” mà không nói "
                            "bằng cách nào — đây là chỗ lời giải thích lẽ ra phải bắt đầu",
-                    "text": text[:160]})
+                    "text": cat_gon(text, 160)})
     elif missing_mechanism(text):
         out.append({"kind": "thiếu_cơ_chế",
                     "msg": f"{label + ': ' if label else ''}đủ dài để là một lời "
                            "giải thích nhưng không có quan hệ nhân quả nào, cũng không có số liệu",
-                    "text": text[:160]})
+                    "text": cat_gon(text, 160)})
     if term and circular(term, text):
         out.append({"kind": "vòng_tròn",
                     "msg": f"{label + ': ' if label else ''}lời giải thích chỉ lặp "
                            f"lại chính “{term[:40]}”",
-                    "text": text[:160]})
+                    "text": cat_gon(text, 160)})
     return out
 
 

@@ -551,21 +551,47 @@ async def relayout(doc_id: str, batch_chars: int = 12_000) -> tuple[dict, dict, 
 # ------------------------------------------------------ pass 1: brief+glossary
 
 
+class HetGio(Exception):
+    """Lượt gọi model quá trần thời gian của chính nó (khác lỗi mạng/lỗi model)."""
+
+
+def tran_brief(n_chars: int) -> float:
+    """Trần thời gian cho MỘT lượt dựng tóm lược, co theo độ dài bài.
+
+    #2: bài dán 9 khối treo ở "Đang đọc toàn bài…" hơn 5 phút — provider nhận
+    request rồi im, và trần duy nhất là 300 giây chung của `llm`. Bài ngắn thì
+    tóm lược xong trong vài chục giây; chờ tới 300 giây là bắt người dùng ngồi
+    nhìn một thứ đã hỏng. Bài dài (~100k ký tự) thật sự cần vài phút nên trần
+    phải co giãn, không đặt một số cứng.
+    """
+    return min(240.0, 75.0 + n_chars / 1000)
+
+
 async def run_brief(doc_id: str) -> tuple[dict, dict, dict]:
-    """Trả về (brief, chi phí lượt này, chi phí cộng dồn của bài)."""
+    """Trả về (brief, chi phí lượt này, chi phí cộng dồn của bài).
+
+    Quá trần (`tran_brief`) thì gọi lại MỘT lần — lượt treo thường là do một
+    endpoint của provider, lượt sau đi đường khác. Hỏng cả hai thì ném `HetGio`
+    để giao diện nói rõ "quá giờ" và mời thử lại, thay vì treo vô hạn.
+    """
+    import asyncio
+
     doc = store.load(doc_id)
     text = full_source_text(doc["blocks"], limit=300_000)
-    raw, usage = await llm.complete(
-        [
-            {"role": "system", "content": prompts.BRIEF_SYSTEM},
-            {"role": "user", "content": prompts.brief_user(doc.get("title", ""), text)},
-        ],
-        model=doc["model"],
-        session_id=doc_id,
-        max_tokens=20000,
-        temperature=0.3,
-        reasoning=LOW_REASONING,
-    )
+    tran = tran_brief(len(text))
+    msgs = [
+        {"role": "system", "content": prompts.BRIEF_SYSTEM},
+        {"role": "user", "content": prompts.brief_user(doc.get("title", ""), text)},
+    ]
+    for lan in range(2):
+        try:
+            raw, usage = await asyncio.wait_for(llm.complete(
+                msgs, model=doc["model"], session_id=doc_id, max_tokens=20000,
+                temperature=0.3, reasoning=LOW_REASONING), timeout=tran)
+            break
+        except asyncio.TimeoutError:
+            if lan == 1:
+                raise HetGio(f"model không trả lời sau {int(tran)} giây, đã thử hai lần")
     if cjk_leak(raw, text):
         raw, u2 = await llm.complete(
             [

@@ -218,7 +218,21 @@ const sci = (s) => refs(esc(s)
    tham chiếu thành chỗ bấm được để xem ngay hình đó, khỏi mất chỗ đang đọc. */
 const REF_RE = /\b(Figures?|Figs?\.?|Tables?|Algorithms?|Hình|Bảng|Thuật toán)\s*(\d{1,2})\b/gi;
 
+/* `[3]`, `[3, 7]` trong thân bài → chỗ rê chuột ra thấy mục tham khảo tương ứng,
+   bấm thì mở danh sách và nhảy tới mục đó. Chỉ gắn khi bài CÓ mục `[n]` khớp:
+   `[1]` trong một đoạn nói về công thức thì không phải trích dẫn. */
+const CITE_RE = /\[(\d{1,3}(?:\s*[,–-]\s*\d{1,3})*)\]/g;
+
 function refs(html) {
+  const cite = state.citeIndex;
+  if (cite && Object.keys(cite).length) {
+    html = html.replace(CITE_RE, (whole, inner) => {
+      const so = inner.split(/\s*[,–-]\s*/);
+      if (!so.every((x) => cite[x])) return whole;
+      const tip = so.map((x) => `[${x}] ${cite[x].text}`).join("\n");
+      return `<a class="cite" data-cite="${esc(so[0])}" title="${esc(tip)}">${whole}</a>`;
+    });
+  }
   const map = state.figIndex;
   if (!map) return html;
   return html.replace(REF_RE, (whole, word, num) => {
@@ -231,6 +245,19 @@ function refs(html) {
 }
 
 /** Bảng tra "fig2" -> mã khối caption, dựng từ chính caption bóc được. */
+/** Chỉ mục tài liệu tham khảo: `{ "1": { id, text }, … }` từ các khối `reference`
+    mở đầu bằng `[n]` hoặc `n.`. Khối không có số thì không vào chỉ mục (không có
+    gì để `[n]` trỏ tới) nhưng vẫn hiện trong danh sách. */
+function buildCiteIndex() {
+  const map = {};
+  for (const b of state.doc.blocks) {
+    if (b.type !== "reference") continue;
+    const m = b.text.match(/^\s*\[?(\d{1,3})[\].]\s*(.+)/s);
+    if (m) map[m[1]] ??= { id: b.id, text: m[2].replace(/\s+/g, " ").trim() };
+  }
+  state.citeIndex = map;
+}
+
 function buildFigIndex() {
   const map = {};
   for (const b of state.doc.blocks) {
@@ -1297,6 +1324,9 @@ async function doImport() {
   function sachNguon() {
     $("#fileInput").value = "";
     $("#urlInput").value = "";
+    // Ô dán cũng phải xoá: còn nguyên văn bản thì bấm Nạp lần nữa là nạp lại
+    // đúng bài vừa xong (#32).
+    $("#textInput").value = "";
     const fn = $("#fileName");
     if (fn) fn.textContent = "";
   }
@@ -1321,7 +1351,7 @@ async function doImport() {
       + `Bản đang có: ${d.blocks} khối, đã dịch ${pct}%${gia}.${ver}`;
     const mo = { key: "mo", nhan: "Mở bản đang có", giai: "Không nạp gì thêm." };
     const chon = d.kind === "cung_file"
-      ? await chonMot("Bài này đã có trong thư viện", than + "\n\nĐúng y file này đã được nạp trước đây.", [
+      ? await chonMot("Bài này đã có trong thư viện", than + "\n\nĐúng y nội dung này đã được nạp trước đây.", [
         { ...mo, kieu: "chinh" },
         { key: "ghi_de", nhan: "Bóc lại vào bản đang có",
           giai: "Dùng bộ bóc mới nhất cho chính bài cũ. Đoạn nào chữ không đổi giữ nguyên bản dịch, ghi chú, vệt bôi. Miễn phí." },
@@ -1446,6 +1476,19 @@ function syncRail(id) {
 
 function mountReview(doc) {
   state.doc = doc;
+  apCotTheoNguon(doc);
+  const lang = $("#revLang");
+  lang.classList.toggle("hidden", !state.nguonViet);
+  lang.textContent = state.nguonViet
+    ? "Bài này đã là tiếng Việt nên sẽ KHÔNG dịch — bước sau chỉ sinh cột Giải "
+      + "thích (nói lại bằng lời thường, vai trò của từng đoạn trong lập luận). "
+      + "Báo giá dưới đây đã tính theo đó."
+    : "";
+  // Thẻ "Căn chỉnh" chữa lỗi RIÊNG của chữ bóc từ PDF (khoảng trắng dính, gạch
+  // nối đứt, công thức đảo mảnh). Văn bản dán không có mấy lỗi đó — hiện nút
+  // tốn tiền ở đây là mời người dùng trả tiền cho việc không cần (#21).
+  $(".tidy-card").classList.toggle("hidden", !doc.has_pdf);
+  $("#tidyMsg").classList.add("hidden");
   showScreen("review");
   $("#revTitle").textContent = doc.title || doc.source || "";
   fillModels($("#revModel"), doc.model, { short: true });
@@ -1533,8 +1576,12 @@ function renderReview() {
   const src = state.doc.layout_model
     ? "Khung hình do mô hình bố cục xác định. "
     : "Khung hình suy từ vị trí chú thích (heuristic). ";
+  // Câu báo theo ĐÚNG loại nguồn (#21): bài dán chữ mà bị khuyên "PDF có thể
+  // là bản scan" thì người dùng đi tìm một vấn đề không tồn tại.
   $("#figHint").textContent = !figs.length
-    ? "Không bóc được hình nào — PDF có thể là bản scan, hoặc bài không có hình."
+    ? (state.doc.has_pdf
+        ? "Không bóc được hình nào — PDF có thể là bản scan, hoặc bài không có hình."
+        : "Bài nhập từ văn bản nên không có hình để cắt.")
     : hasPdf
       ? src + "Hình nào cắt sai thì bấm Chỉnh khung để tự kéo lại, hoặc Bỏ hình."
       : "Bài nhập bằng cách dán văn bản nên không chỉnh khung được.";
@@ -1545,7 +1592,7 @@ function renderReview() {
         ? `<img src="/api/doc/${esc(state.doc.id)}/img/${esc(b.figure)}.png?v=${esc((b.figure_rect || []).join("_"))}"`
           + ` alt="" loading="lazy" decoding="async">`
         : `<div class="cap" style="padding:1.4rem;text-align:center">Chưa cắt được hình cho chú thích này</div>`}
-      <div class="cap">${esc(b.text.slice(0, 130))}</div>
+      <div class="cap" title="${esc(b.text)}">${esc(catGon(b.text, 130))}</div>
       <div class="act">
         ${b.figure_page >= 0 ? `<button data-crop="${esc(b.id)}">${ico("scissors")} Chỉnh khung</button>` : ""}
         ${b.figure ? `<button data-dropfig="${esc(b.id)}">Bỏ hình</button>` : ""}
@@ -1843,6 +1890,10 @@ async function patchBlocks(payload) {
 function mountDoc(doc) {
   state.doc = doc;
   state.chunks = doc.chunks || 0;
+  // Sau `state.chunks`: `applyCols` đặt lại nhãn nút Dịch, mà nhãn đó tính
+  // theo số mẻ của bài ĐANG mở.
+  apCotTheoNguon(doc);
+  applyCols();
   state.history = [];
   /* Mọi thứ thuộc về BÀI TRƯỚC phải dọn ngay ở đây, vì màn `#reader` không bị
      dựng lại — nó chỉ được nạp nội dung khác.
@@ -1891,6 +1942,7 @@ function mountDoc(doc) {
   closeFigPeek();
   Object.assign(pdfv, { page: -1, pages: 0 });
   buildFigIndex();          // phải dựng trước renderDoc, vì sci() tra bảng này
+  buildCiteIndex();
   renderDoc();
   renderSide();
   renderUsage();
@@ -1972,6 +2024,9 @@ function wireReader() {
   $("#sideClose").onclick = () => toggleSide(false);
   // màn rộng mặc định mở, màn hẹp mặc định đóng; sau đó theo lựa chọn đã lưu
   toggleSide(pref("side", narrow() ? "0" : "1") === "1");
+  // Bề rộng vùng đọc đổi vì cột trái, khung PDF, hay cửa sổ — đo một chỗ là đủ
+  // cả ba, thay vì nhớ gọi lại ở từng nút.
+  new ResizeObserver(() => capNhatCotHep()).observe($("#doc"));
 
   $("#figPeekClose").onclick = closeFigPeek;
   addEventListener("keydown", (e) => { if (e.key === "Escape") closeFigPeek(); });
@@ -2143,9 +2198,36 @@ function wireReader() {
    dịch dở thì model tự viết lấy phần còn thiếu, mà đó đúng là thứ công cụ này
    sinh ra để tránh. */
 /** Còn bao nhiêu khối cần dịch mà chưa dịch. 0 = xong cả bài. */
+/** Bài này vốn đã là tiếng Việt?
+
+    Bên test nạp một PDF tiếng Việt và app vẫn cho dịch VI→VI rồi tính tiền
+    (#13). Đo bằng tỉ lệ chữ cái MANG DẤU TIẾNG VIỆT trong các đoạn văn: văn
+    xuôi tiếng Việt khoảng 20–30%, bài tiếng Anh gần 0 (dấu chỉ xuất hiện ở tên
+    riêng lác đác). Ngưỡng 8% là rộng tay về cả hai phía; dưới 200 chữ cái thì
+    không đủ căn cứ, coi như không phải. */
+function laBaiTiengViet(doc) {
+  const chu = (doc?.blocks || []).filter((b) => b.type === "para").map((b) => b.text).join(" ");
+  const cai = chu.match(/\p{L}/gu)?.length || 0;
+  if (cai < 200) return false;
+  const viet = chu.match(/[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/giu)?.length || 0;
+  return viet / cai > 0.08;
+}
+
+/** Bài tiếng Việt thì KHÔNG sinh cột dịch — chỉ cột Giải thích. Đặt ô cột
+    theo từng bài (ô cột không lưu vào localStorage, nên đổi ở đây không lan
+    sang bài khác), và mở bài tiếng Anh thì trả cột Việt về như cũ. */
+function apCotTheoNguon(doc) {
+  state.nguonViet = laBaiTiengViet(doc);
+  $("#colVi").checked = !state.nguonViet;
+  $("#colVi").closest("label").title = state.nguonViet
+    ? "Bài này đã là tiếng Việt nên không dịch — chỉ sinh cột Giải thích."
+    : "Bản dịch tiếng Việt.";
+}
+
 function untranslatedCount() {
   const d = state.doc;
   if (!d?.blocks?.length) return 0;
+  if (state.nguonViet) return 0;     // bài tiếng Việt: không có gì để dịch
   return d.blocks.filter((b) => b.translate && !b.hidden && !d.translations?.[b.id]).length;
 }
 
@@ -3855,8 +3937,15 @@ function wireViewMenu() {
   const fs = $("#fontSize"), cw = $("#colWidth");
   fs.value = pref("font", "16");
   cw.value = pref("width", "100");
-  fs.oninput = () => { setPref("font", fs.value); applyReaderPrefs(); };
-  cw.oninput = () => { setPref("width", cw.value); applyReaderPrefs(); };
+  // Hiện GIÁ TRỊ cạnh thanh trượt: kéo mà không biết đang ở đâu thì không có
+  // cách nào quay lại đúng mức cũ (#33).
+  const hienGiaTri = () => {
+    $("#fontVal").textContent = `${fs.value}px`;
+    $("#widthVal").textContent = `${cw.value}%`;
+  };
+  fs.oninput = () => { setPref("font", fs.value); applyReaderPrefs(); hienGiaTri(); };
+  cw.oninput = () => { setPref("width", cw.value); applyReaderPrefs(); hienGiaTri(); };
+  hienGiaTri();
 
   $$("#themeSeg .seg-btn").forEach((b) => (b.onclick = () => {
     setPref("theme", b.dataset.theme);
@@ -4079,6 +4168,26 @@ function applyCols() {
     shown.map(([k]) => " show-" + k).join("");
   applyReaderPrefs();      // bề rộng mặc định phụ thuộc số cột đang bật
   capNhatNutDich();        // bật thêm cột Giải thích là có thêm việc để làm
+  capNhatCotHep();
+}
+
+/** Bề rộng tối thiểu của một cột đọc (~45 ký tự một dòng). Dưới mức này chữ vụn
+    (#29: cột trái mở trên màn 1366px cho ~200px mỗi cột). */
+const COT_TOI_THIEU = 320;
+
+/** Tạm ẩn cột gốc khi ba cột không đủ chỗ — KHÔNG gỡ ô tick của người dùng,
+    chỉ gắn lớp `hep` lên `#doc`. Đóng cột trái hay nới cửa sổ là gốc tự về.
+    Chỉ xét khi bật cả gốc lẫn ít nhất một cột khác: gốc là cột duy nhất mà
+    thiếu nó người đọc vẫn đọc được bài. */
+function capNhatCotHep() {
+  const d = $("#doc");
+  if (!d) return;
+  const n = ["en", "vi", "gl"].filter((k) => d.classList.contains("show-" + k)).length;
+  const inner = d.querySelector(".doc-inner");
+  const rong = (inner || d).clientWidth;
+  const hep = !narrow() && n >= 2 && d.classList.contains("show-en") &&
+    rong > 0 && rong / n < COT_TOI_THIEU;
+  d.classList.toggle("hep", hep);
 }
 
 /* --------------------------------------------------- tìm trong bài */
@@ -4224,13 +4333,28 @@ function renderDoc() {
   const { blocks, translations, notes } = state.doc;
   const host = $("#doc");
   const nHidden = blocks.filter((b) => b.hidden).length;
-  host.innerHTML = `<div class="doc-inner">${blocks
+  const thamKhao = blocks.filter((b) => b.type === "reference" && !b.hidden);
+  // Nhãn gốc nói luôn ngôn ngữ: bài tiếng Việt thì "gốc" cũng là tiếng Việt
+  const langGoc = state.nguonViet ? "VI" : "EN";
+  host.innerHTML = `<div class="doc-inner">
+    <div class="colbar" aria-hidden="true">
+      <span class="cb-en"><b>Bản gốc</b><i class="cb-tag">${langGoc}</i></span>
+      <span class="cb-vi"><b>Bản dịch</b><i class="cb-tag">VI</i>
+        <em class="cb-hint cb-hep">· gốc tạm ẩn vì cột hẹp</em></span>
+      <span class="cb-gl"><b>Giải thích</b></span>
+    </div>${blocks
     .filter((b) => b.type !== "reference")
     .filter((b) => !b.hidden || state.showHidden)
     .map((b, i, arr) => pairHTML(b, translations[b.id], notes[b.id],
       // công thức nằm giữa hai nửa của một đoạn: siết luôn khoảng cách của nó
       b.type === "equation" && arr[i + 1]?.cont))
-    .join("")}</div>`;
+    .join("")}${thamKhao.length ? `
+    <details class="refs" id="refList">
+      <summary>Tài liệu tham khảo <span class="muted">· ${thamKhao.length} mục, không dịch</span></summary>
+      <ol class="refs-list">${thamKhao.map((b) => `
+        <li id="ref-${esc(b.id)}" data-ref-id="${esc(b.id)}">${esc(b.text.replace(/^\s*\[?\d{1,3}[\].]\s*/, ""))}</li>`).join("")}
+      </ol>
+    </details>` : ""}</div>`;
   syncHiddenBar(nHidden);
   wirePairs();
   repaintHighlights();
@@ -4406,6 +4530,26 @@ function hydrateDiagrams(root) {
 function wirePairs() {
   $$("#doc .pair").forEach((el) => {
     el.addEventListener("click", (e) => {
+      // Thẻ giải thích của chú thích hình được thu gọn sẵn (xem `.pair.caption
+      // .gl` trong style.css): bấm vào là mở hết / thu lại.
+      const gl = e.target.closest(".pair.caption .gl");
+      if (gl && !e.target.closest("a, button, textarea")) {
+        gl.classList.toggle("mo-rong");
+        return;
+      }
+      const cite = e.target.closest("[data-cite]");
+      if (cite) {
+        e.stopPropagation();
+        const m = state.citeIndex?.[cite.dataset.cite];
+        const li = m && $(`#ref-${CSS.escape(m.id)}`);
+        if (li) {
+          $("#refList").open = true;
+          li.scrollIntoView({ block: "center" });
+          li.classList.add("moi-nhay");
+          setTimeout(() => li.classList.remove("moi-nhay"), 1600);
+        }
+        return;
+      }
       const ref = e.target.closest("[data-figref]");
       if (ref) { e.stopPropagation(); return openFigPeek(ref.dataset.figref); }
       const cut = e.target.closest("[data-crop]");
@@ -4659,6 +4803,7 @@ async function runTranslate() {
   }
 
   state.bo = new AbortController();
+  let thuLaiTomLuoc = "";        // lý do hỏng ở bước tóm lược, nếu có
   try {
     if (!state.doc.brief) {
       // Đồng hồ chạy ngay: một thanh trạng thái đứng im không phân biệt được
@@ -4666,7 +4811,11 @@ async function runTranslate() {
       dongHo("Đang đọc toàn bài để dựng tóm lược và chốt bảng thuật ngữ");
       const r = await fetch(`/api/doc/${state.doc.id}/brief`,
                            { method: "POST", signal: state.bo?.signal });
-      if (!r.ok) throw new Error(await apiErr(r, "Không dựng được tóm lược"));
+      if (!r.ok) {
+        const e = new Error(await apiErr(r, "Không dựng được tóm lược"));
+        e.laTomLuoc = true;           // hỏng ở bước đầu: mời thử lại ngay (#2)
+        throw e;
+      }
       const res = await r.json();
       state.doc.brief = res.brief;
       $("#docTitleVi").textContent = state.doc.brief.title_vi || state.doc.title;
@@ -4760,6 +4909,7 @@ async function runTranslate() {
     status(e.name === "AbortError"
       ? "Đã dừng theo yêu cầu. Phần đã dịch xong vẫn giữ nguyên — bấm Dịch tiếp để chạy nốt."
       : "Lỗi: " + e.message);
+    if (e.laTomLuoc) thuLaiTomLuoc = e.message;
   } finally {
     dongHoTat();
     state.bo = null;
@@ -4772,6 +4922,15 @@ async function runTranslate() {
     renderSide();
     renderUsage();
     syncSlidesBtn();      // dịch xong cả bài thì mở khoá nút dựng slide
+  }
+
+  // Bước tóm lược hỏng thì chưa mẻ nào chạy: hỏi thử lại NGAY, kèm lý do —
+  // một dòng trạng thái đỏ dễ trôi mất, và người dùng không biết nên chờ hay
+  // bấm gì (#2). Hỏi sau `finally` để nút Dịch đã mở khoá.
+  if (thuLaiTomLuoc && await xacNhan("Chưa dựng được tóm lược",
+      thuLaiTomLuoc,
+      { ok: "Thử lại", cancel: "Để sau" })) {
+    runTranslate();
   }
 
   function bar(f) { $("#progressBar").style.width = Math.round(f * 100) + "%"; }
@@ -4803,6 +4962,7 @@ function capNhatNutDich() {
 }
 
 function allTranslated() {
+  if (state.nguonViet) return true;
   const tr = state.doc.translations || {};
   const b = (state.doc.blocks || []).filter(
     (x) => (x.type === "para" || x.type === "caption") && !x.hidden && x.translate);
@@ -5049,6 +5209,41 @@ function tidyMath(s) {
    nhất**, chỉ số dài 1–2 ký tự. Nhờ đó `paper_id`, `chunk_id`, `t_max`,
    `source_block_ids` không bị chạm — nới ra là mọi tên biến trong câu trả lời
    hoá thành công thức. */
+/** Nhãn đọc được cho khoá cảnh báo của các chốt chặn bên server (#26).
+    Khoá như `thiếu_cơ_chế` là tên NỘI BỘ — viết vậy cho dễ grep, không phải
+    để người dùng đọc. Khoá lạ chưa có trong bảng thì vẫn hiện, chỉ đổi `_`
+    thành dấu cách, để cảnh báo mới không bị nuốt mất. `survey.js` dùng nhờ. */
+const TEN_CANH_BAO = {
+  "vòng_tròn": "Giải thích vòng tròn",
+  "thiếu_phản_chứng": "Thiếu phản chứng",
+  "thiếu_mục": "Thiếu mục",
+  "thiếu_cơ_chế": "Thiếu cơ chế",
+  "số_không_có_trong_bài": "Số không có trong bài",
+  "số_bịa": "Số không có nguồn",
+  "rò_hệ_chữ": "Lẫn chữ lạ",
+  "nói_chung_chung": "Nói chung chung",
+  "năm_lệch": "Năm lệch",
+  "mã_đoạn_không_có": "Trích đoạn không có thật",
+  "không_được_đỡ": "Nguồn không đỡ câu này",
+  "giấu_thiếu": "Giấu chỗ chưa tìm ra",
+  "cite_lạ": "Trích dẫn lạ",
+  "chữ_hán": "Lẫn chữ Hán",
+  "chưa_gom_được": "Chưa gom được bằng chứng",
+  "câu_độn": "Câu độn",
+  "bỏ_sót_bài": "Bỏ sót bài",
+  "bài_lạ": "Bài không có trong kho",
+};
+/** Cắt chữ ở ranh giới từ, kèm "…" khi có cắt — bản client của
+    `depth.cat_gon`. `slice(0, n)` trơn cắt giữa chữ mà không báo là đã cắt,
+    nên người đọc tưởng chính văn bản bị hỏng (#11, #26). `survey.js` dùng nhờ. */
+function catGon(s, n) {
+  s = String(s || "").replace(/\s+/g, " ").trim();
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n), sp = cut.lastIndexOf(" ");
+  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,.;:]+$/, "") + "…";
+}
+const tenCanhBao = (k) => TEN_CANH_BAO[k] || String(k || "").replace(/_/g, " ");
+
 const _SUBSCRIPTISH = /(?<![\w`>])([A-Za-z])_([A-Za-z0-9](?:\+[A-Za-z0-9]{1,2})?)(?![\w{])/g;
 
 function mdInline(s) {

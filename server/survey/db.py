@@ -278,8 +278,28 @@ def load_survey(sid: str) -> dict:
     # Bản tổng hợp dựng từ phiếu của cả kho, nên thêm/bớt bài là nó cũ đi. Không
     # xoá — công đọc của người dùng nằm trong đó, và bản cũ vẫn đúng phần lớn.
     # Chỉ gắn cờ, giống `mark_stale()` bên luồng slide.
-    s["synth_stale"] = bool(s.get("synth")) and s.get("synth_fp") != corpus_fingerprint(sid)
+    fp = corpus_fingerprint(sid)
+    cu = s.get("synth_fp") or ""
+    if s["synth"] and cu and not cu.startswith(_FP_MOI) and _cung_bo_bai(sid, s["synth"]):
+        # Vân tay kiểu cũ (theo `updated_at`) không so được với kiểu mới. Đổi công
+        # thức mà bắt mọi bản tổng hợp thành "cũ" là bắt người dùng trả ~$0,09
+        # dựng lại thứ không hề đổi. Bản tổng hợp ghi sẵn nó đã đọc những bài nào
+        # (`paper_names`): khớp đúng bộ bài trong kho thì nhận vân tay mới luôn.
+        with conn() as c:
+            c.execute("UPDATE survey SET synth_fp = ? WHERE id = ?", (fp, check_id(sid)))
+        cu = s["synth_fp"] = fp
+    s["synth_stale"] = bool(s.get("synth")) and cu != fp
     return s
+
+
+def _cung_bo_bai(sid: str, synth: dict) -> bool:
+    """Bản tổng hợp có dựng từ đúng bộ bài đang ở trong kho không.
+
+    `synth._clean` ghi `paper_names` cho MỌI bài của kho lúc dựng (không chỉ bài
+    có phiếu), nên so với mọi bài hiện có.
+    """
+    da_doc = set((synth or {}).get("paper_names") or {})
+    return bool(da_doc) and da_doc == {p["id"] for p in list_papers(sid)}
 
 
 def save_synth(sid: str, synth: dict) -> None:
@@ -1075,13 +1095,26 @@ def corpus_fingerprint(survey_id: str) -> str:
     hợp và câu trả lời cũ dựng từ digest thiếu `novelty` / `problem` /
     `contribution_type` thì không còn đúng nữa, mà nếu chỉ soi danh sách bài thì
     chúng vẫn hiện ra như còn mới.
+
+    Tính từ CHÍNH digest chứ không từ `updated_at` (#26): dựng bài giảng hay lấy
+    hồ sơ tham khảo cũng ghi `updated_at`, nên kho một bài vừa dựng bài giảng
+    xong đã báo "Kho đã đổi từ lúc dựng bản này" — trong khi thứ bản tổng hợp
+    đọc vào không đổi một byte. Cột `refs`/`lecture` vốn nằm ngoài
+    `list_papers()` (xem `_HEAVY`), nên chúng không lọt vào vân tay nữa.
+    `status` vẫn đi kèm: bơm lại bài đổi đoạn và vector, tức đổi kết quả tìm.
     """
     rows = conn().execute(
-        "SELECT id, updated_at, status FROM paper WHERE survey_id = ? ORDER BY id",
+        "SELECT id, status FROM paper WHERE survey_id = ? ORDER BY id",
         (check_id(survey_id),)).fetchall()
-    from .prompts import DIGEST_V      # nạp muộn: prompts không import db
-    return db.sha(f"v{DIGEST_V}|"
-                  + "|".join(f"{r['id']}:{r['updated_at']}:{r['status']}" for r in rows))
+    from .prompts import DIGEST_V, corpus_digest   # nạp muộn: prompts không import db
+    return _FP_MOI + db.sha(f"v{DIGEST_V}|"
+                            + "|".join(f"{r['id']}:{r['status']}" for r in rows)
+                            + "|" + db.sha(corpus_digest(list_papers(survey_id))))
+
+
+# Tiền tố của vân tay tính theo digest. Vân tay kiểu cũ (theo `updated_at`) không
+# có tiền tố này — `load_survey` nhận ra chúng để chuyển đổi một lần.
+_FP_MOI = "d1:"
 
 
 def qcache_key(survey_id: str, question: str) -> str:

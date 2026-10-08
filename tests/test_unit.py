@@ -1350,3 +1350,146 @@ def test_nhan_dong_kieu_the_khong_lot_vao_noi_dung():
     # Nhắc tới mã khối GIỮA câu thì giữ nguyên — nhãn đóng phải đứng một mình.
     r = _parse_labeled("<<<b5>>>\nXem </b4> ở phụ lục.\n", ["b4", "b5"])
     assert r["b5"] == "Xem </b4> ở phụ lục."
+
+
+def test_pdf_tieng_viet_khong_bi_coi_la_scan():
+    """HỒI QUY #30: bai_tieng_viet.pdf có lớp chữ đọc ra bình thường mà nhận 422
+    "PDF có thể là bản scan ảnh — cần OCR".
+
+    Gốc: PyMuPDF gom dòng "Tóm tắt" (16pt) cùng 11 dòng thân bài (10pt) vào MỘT
+    khối; khối mang cỡ lớn nhất 16 — bằng tên bài, nằm ngay dưới — nên bộ gộp
+    tiêu đề nhiều dòng nuốt cả bài vào tiêu đề và còn 0 khối. Kéo theo #13:
+    "Tóm tắt", "1. Giới thiệu" không thành tiêu đề mục, và vì bài tiếng Việt
+    không có mốc "Abstract", luật "đầu trang 1 là tác giả" nuốt luôn mục 1.
+    """
+    from pathlib import Path
+    from server.parser import parse_pdf
+    data = (Path(__file__).parent / "fixtures" / "bai_tieng_viet.pdf").read_bytes()
+    title, blocks, _ = parse_pdf(data)
+    assert title == "Tinh chỉnh LLM cho tiếng Việt với LoRA", title
+    kieu = [(b.type, b.text[:14]) for b in blocks]
+    assert kieu[0] == ("heading", "Tóm tắt"), kieu
+    assert ("heading", "1. Giới thiệu") in kieu, kieu
+    assert sum(b.type == "para" for b in blocks) == 2, kieu
+    assert all(b.translate for b in blocks if b.type == "para"), "mục 1 bị xếp vào meta"
+
+
+def test_pdf_co_lop_chu_khong_bao_gio_ra_khong_khoi(monkeypatch):
+    """Lưới an toàn: bộ bóc có hỏng kiểu gì thì PDF có lớp chữ vẫn ra khối.
+
+    0 khối = 422 "bản scan ảnh — cần OCR", một lời khuyên SAI làm người dùng đi
+    tìm OCR cho một file vốn đọc được. Rơi về bóc như văn bản thường thì mất cấu
+    trúc nhưng không mất bài.
+    """
+    from pathlib import Path
+    from server import parser as P
+    monkeypatch.setattr(P, "_to_blocks", lambda *a, **k: [])
+    data = (Path(__file__).parent / "fixtures" / "bai_tieng_viet.pdf").read_bytes()
+    _, blocks, _ = P.parse_pdf(data)
+    assert blocks and any("tiếng Việt" in b.text for b in blocks)
+
+
+def test_gach_noi_cuoi_dong_giu_tu_ghep_that():
+    """#18: `history-` / `conditionally` bị nối thành `historyconditionally`.
+
+    Mảnh vụn của từ bị cắt (`differ-ent`, `trans-lation`) vẫn phải nối liền;
+    từ ghép thật thì giữ gạch; nửa trái hay ghép liền (`along-side`) thì nối.
+    """
+    from server import parser as P
+    tu = {"history", "differ", "ent", "translation", "along", "side", "ground",
+          "truth", "pre", "built"}
+    tok = P._VOCAB.set(tu)
+    try:
+        assert P.clean_text("and history-\nconditionally integrates") == \
+            "and history-conditionally integrates"
+        assert P.clean_text("compares differ-\nent methods") == "compares different methods"
+        assert P.clean_text("trans-\nlation") == "translation"
+        assert P.clean_text("along-\nside it") == "alongside it"
+        assert P.clean_text("ground-\ntruth") == "ground-truth"
+        assert P.clean_text("pre-\nserving") == "preserving"
+    finally:
+        P._VOCAB.reset(tok)
+    # không có vốn từ (văn bản dán) thì giữ đúng hành vi cũ: nối
+    assert P.clean_text("history-\nconditionally") == "historyconditionally"
+
+
+def test_khung_hinh_mo_hinh_noi_ra_tron_nhan_va_khong_nuot_dong_van():
+    """#11: khung Figure 2 (arXiv 1706.03762) cắt ngang tiêu đề hình con nên
+    ảnh mất chữ "Scal"; còn Table 2 thì phần lề +5pt kéo vào một vệt dòng văn
+    phía trên. Nới theo dòng chữ bị cắt ngang, cắt khỏi dòng chỉ chạm nhờ lề."""
+    import fitz
+    from server import parser as P
+    d = fitz.open()
+    pg = d.new_page(width=612, height=792)
+    # dòng văn thân bài rộng, ngay trên vùng hình
+    pg.insert_text((72, 96), "This is a long body text line that spans most of the "
+                   "page width above the figure region here.", fontsize=10)
+    # nhãn hình con thò ra ngoài mép trái của khung mô hình
+    pg.insert_text((140, 120), "Scaled Dot-Product Attention", fontsize=10)
+    pg.draw_rect(fitz.Rect(170, 130, 400, 250), color=(0, 0, 0))
+    goc = fitz.Rect(165, 101, 405, 255)        # mô hình: bám vùng đậm, sót chữ
+    r = P._chinh_khung_hinh(pg, goc, 10.0)
+    nhan = [fitz.Rect(l["bbox"]) for b in pg.get_text("dict")["blocks"]
+            for l in b.get("lines", []) if "Scaled" in "".join(s["text"] for s in l["spans"])][0]
+    van = [fitz.Rect(l["bbox"]) for b in pg.get_text("dict")["blocks"]
+           for l in b.get("lines", []) if "body text" in "".join(s["text"] for s in l["spans"])][0]
+    assert r.x0 <= nhan.x0, "nhãn hình con phải nằm trọn trong ảnh"
+    assert r.y0 >= van.y1, "dòng văn phía trên không được lọt vào ảnh"
+    assert r.y1 >= 255                                     # vẫn giữ lề phía dưới
+
+
+def _pdf_hai_cot_co_bang() -> bytes:
+    """PDF hai cột, tiêu đề mục 12pt trên thân 10pt, bảng không viền ở mục 3 —
+    dựng lại đúng điều kiện của #6 (bản gốc của người test là ReportLab)."""
+    import fitz
+    d = fitz.open()
+    pg = d.new_page(width=612, height=792)
+    pg.insert_text((150, 60), "Efficient Sparse Adapters for Language Models", fontsize=16)
+    para = ("We study parameter efficient fine tuning and show that sparse adapters "
+            "reduce memory while keeping accuracy on standard benchmarks. ") * 2
+
+    def cot(x, y, phan):
+        for kieu, t in phan:
+            if kieu == "h":
+                pg.insert_text((x, y), t, fontsize=12)
+                y += 20
+            elif kieu == "p":
+                con = pg.insert_textbox(fitz.Rect(x, y - 9, x + 250, y + 140), t, fontsize=10)
+                y += (140 - con) + 18
+            else:
+                for hang in t:
+                    for i, o in enumerate(hang):
+                        pg.insert_text((x + i * 80, y), o, fontsize=10)
+                    y += 14
+    cot(54, 100, [("h", "1 Introduction"), ("p", para), ("h", "2 Related Work"), ("p", para),
+                  ("h", "3 Results"),
+                  ("t", [["Model", "GLUE", "Mem"], ["Base", "84.1", "16GB"], ["Ours", "86.2", "10GB"]])])
+    cot(318, 100, [("p", para), ("h", "4 Analysis"), ("p", para), ("h", "5 Conclusion"), ("p", para)])
+    return d.tobytes()
+
+
+def test_pdf_hai_cot_giu_bang_khong_vien_va_tieu_de_muc():
+    """#6: bảng không viền mất sạch số liệu, không báo gì; và tiêu đề mục 12pt
+    dính vào cuối đoạn 10pt phía trên (ngưỡng lệch cỡ cũ là 1,3 lần)."""
+    from server import parser as P
+    _, bl, _ = P.parse_pdf(_pdf_hai_cot_co_bang())
+    bang = [b for b in bl if b.type == "table"]
+    assert len(bang) == 1 and "| Base | 84.1 | 16GB |" in bang[0].text
+    assert not bang[0].translate
+    tieu_de = [b.text for b in bl if b.type == "heading"]
+    assert tieu_de == ["1 Introduction", "2 Related Work", "3 Results",
+                       "4 Analysis", "5 Conclusion"]
+
+
+def test_doan_van_khong_bi_nhan_nham_la_bang():
+    """Dương tính giả của bộ dò bảng là xé một đoạn văn thành lưới."""
+    from server import parser as P
+    def dong(x, y, chu):
+        return {"bbox": (x, y, x + 6 * len(chu), y + 10), "spans": [{"text": chu, "size": 10}]}
+    van = [dong(54, 100 + 12 * i, "We study parameter efficient fine tuning and show")
+           for i in range(6)]
+    assert P._bang_khong_vien(van) is None
+    # danh sách hai cột không có số liệu nào: cũng không phải bảng số
+    ds = [dong(54 + 80 * k, 100 + 12 * i, w) for i, w2 in enumerate(
+          [("alpha", "beta"), ("gamma", "delta"), ("eps", "zeta")]) for k, w in enumerate(w2)]
+    assert P._bang_khong_vien(ds) is None

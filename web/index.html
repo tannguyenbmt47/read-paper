@@ -243,6 +243,8 @@
       hình nào cắt sai thì bỏ, khối nào là rác thì loại — làm ở đây rẻ hơn nhiều
       so với phát hiện sau khi đã dịch cả bài.
     </p>
+    <!-- Bài vốn đã là tiếng Việt: nói ra NGAY ở bước soát, trước chỗ báo giá. -->
+    <p id="revLang" class="warn hidden"></p>
 
     <div id="revStats" class="stats"></div>
 
@@ -335,10 +337,10 @@
       <div class="menu">
         <button id="viewBtn" class="icon-btn" title="Cỡ chữ · bề rộng · sáng tối">Aa</button>
         <div class="menu-pop hidden" id="viewMenu">
-          <label class="vset">Cỡ chữ
+          <label class="vset"><span class="vset-h">Cỡ chữ <b id="fontVal"></b></span>
             <input type="range" id="fontSize" min="14" max="26" step="1">
           </label>
-          <label class="vset">Bề rộng cột đọc
+          <label class="vset"><span class="vset-h">Bề rộng cột đọc <b id="widthVal"></b></span>
             <input type="range" id="colWidth" min="40" max="100" step="5">
           </label>
           <hr>
@@ -710,7 +712,6 @@
     <select id="svPick" class="sv-pick" aria-label="Kho đang mở"></select>
     <span id="svStats" class="sv-stats"></span>
     <span class="grow"></span>
-    <span class="sv-modelnote" title=""></span>
     <span id="svEngine" class="sv-engine"></span>
     <div class="sv-menu">
       <button id="svMore" class="icon-btn" title="Thêm">⋯</button>
@@ -873,6 +874,7 @@
               <button id="svAsk" class="btn btn-primary">Hỏi</button>
             </div>
           </div>
+          <p class="sv-modelnote sv-cost"></p>
 
           <div id="svSteps" class="sv-steps"></div>
           <article id="svAnswer" class="sv-answer"></article>
