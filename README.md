@@ -46,6 +46,12 @@ Docker: see [DOCKER.md](DOCKER.md).
 
 Full guide in Vietnamese: [Hướng dẫn sử dụng](docs/huong-dan.html).
 
+## Support
+
+If Loupe saves you time, you can buy me a coffee.
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/tannguyenbmt47)
+
 ---
 
 [Changelog](CHANGELOG.md) · [Architecture notes](CLAUDE.md) · Tests:
