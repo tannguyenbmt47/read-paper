@@ -17,9 +17,7 @@ from fastapi import Response  # noqa: E402
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from . import db, layout, llm, parser, pipeline, prompts, store, thongtin  # noqa: E402
-from . import slide_theme as theme  # noqa: E402
-from . import slide_fit  # noqa: E402
+from . import db, layout, llm, parser, pipeline, prompts, slide, store, thongtin  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
@@ -82,7 +80,8 @@ def _with_chunks(doc: dict) -> dict:
 # ----------------------------------------------------------------- trang web
 
 
-_ASSETS = ("vendor/fonts.css", "style.css", "survey.css", "app.js", "survey.js", "thuvien.js")
+_ASSETS = ("vendor/fonts.css", "style.css", "slide.css", "survey.css", "app.js", "survey.js",
+           "thuvien.js", "slide-ve.js", "slide.js")
 
 
 def _asset_tag() -> str:
@@ -429,7 +428,6 @@ async def edit_blocks(doc_id: str, body: dict = Body(...)):
         for bid in drop:
             doc["translations"].pop(bid, None)
             doc["notes"].pop(bid, None)
-        pipeline.mark_stale(doc, drop)
     for b in doc["blocks"]:
         if b["id"] in skip:
             b["translate"] = False
@@ -444,7 +442,6 @@ async def edit_blocks(doc_id: str, body: dict = Body(...)):
         if b["id"] in drop_fig or b["id"] in drop:
             if b.get("figure"):
                 store.delete_image(doc_id, b["figure"])
-                pipeline.mark_stale(doc, {b["figure"]})
             b["figure"] = ""
     store.save(doc)
     return _with_chunks(doc)
@@ -466,7 +463,6 @@ def _forget(doc: dict, ids) -> None:
         # trỏ vào chỗ khác — giữ lại còn tệ hơn mất, vì người đọc thấy vàng ở
         # một đoạn chẳng liên quan gì tới ghi chú của chính mình.
         (doc.get("highlights") or {}).pop(bid, None)
-    pipeline.mark_stale(doc, ids)
 
 
 def _fresh_block_id(doc: dict) -> str:
@@ -625,8 +621,6 @@ async def edit_translation(doc_id: str, body: dict = Body(...)):
     if not changed:
         raise HTTPException(400, "Không có gì để sửa")
 
-    # Slide dựa trên khối này thì gắn cờ — nội dung nó trích đã đổi.
-    pipeline.mark_stale(doc, {bid})
     store.save(doc)
 
     db.tm_put([(blk.get("text") or "",
@@ -1152,30 +1146,6 @@ async def crop(doc_id: str, block_id: str, body: dict = Body(...)):
     blk["figure_source"] = "manual"
     store.save(doc)
     return {"ok": True, "block": blk}
-
-
-@app.get("/api/doc/{doc_id}/figsizes")
-async def figure_sizes(doc_id: str):
-    """Tỉ lệ ngang/dọc của mọi ảnh trong bài.
-
-    Màn slide cần biết ảnh ngang hay vuông mới chọn được bố cục. Trước đây nó
-    tải **cả 22 ảnh (589 KB)** về chỉ để đọc `naturalWidth` — trong khi PIL ở
-    server chỉ cần đọc phần header là ra kích thước. Một request nhỏ thay cho
-    hai chục request ảnh.
-    """
-    try:
-        doc = store.load(doc_id)
-    except KeyError:
-        raise HTTPException(404, "Không tìm thấy tài liệu")
-    out: dict[str, float] = {}
-    for b in doc["blocks"]:
-        fid = b.get("figure")
-        if not fid or fid in out:
-            continue
-        _, ratio = pipeline.figure_shape(doc_id, fid)
-        if ratio:
-            out[fid] = round(ratio, 4)
-    return {"ratios": out}
 
 
 @app.get("/api/doc/{doc_id}/img/{block_id}.png")
@@ -1810,305 +1780,120 @@ async def explain_highlight(doc_id: str, hl_id: str):
         raise HTTPException(502, f"{type(e).__name__}: {e}")
 
 
-# -------------------------------------------------------------------- slide
+# -------------------------------------------------------------- slide (v2)
+#
+# Dựng lại từ đầu — xem `server/slide.py`. Server chỉ lo DỮ LIỆU; vẽ slide là
+# việc của một hàm JS duy nhất (`web/slide-ve.js`) dùng chung cho xem trước,
+# trình chiếu và file tải về.
 
 
-@app.post("/api/doc/{doc_id}/outline")
-async def make_outline(doc_id: str):
-    """Bước 1: soạn nội dung buổi nói. Rẻ, và người dùng soát trước khi dựng."""
+def _slides_ra(doc: dict) -> dict:
+    import copy
+    s = slide.lay(doc)
+    return {**s, "bo": slide.kem_anh(doc, copy.deepcopy(s["bo"]))}
+
+
+def _doc_slide(doc_id: str) -> dict:
     try:
-        outline, run, total = await pipeline.make_outline(doc_id)
-        return {"outline": outline, "run": run, "total": total}
-    except KeyError:
-        raise HTTPException(404, "Không tìm thấy tài liệu")
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"{type(e).__name__}: {e}")
-
-
-# Trường người dùng được sửa tay trong dàn ý. `source_block_ids` không có ở đây,
-# cùng lý do với slide: nó là ràng buộc để soát số liệu, sửa được thì vô nghĩa.
-_OUTLINE_EDITABLE = ("kind", "section", "message", "points", "evidence")
-
-
-@app.patch("/api/doc/{doc_id}/outline")
-async def edit_outline(doc_id: str, body: dict = Body(...)):
-    """Sửa dàn ý bằng tay: sửa nội dung, đổi thứ tự, thêm, xoá. Không tốn tiền.
-
-    Đây là màn soát của pass 4 — cùng vai trò với `#review` ở bước 1: model đề
-    xuất, người dùng quyết. Sửa xong mới bấm dựng slide.
-    """
-    try:
-        doc = store.load(doc_id)
+        return store.load(doc_id)
     except KeyError:
         raise HTTPException(404, "Không tìm thấy tài liệu")
 
-    slides = doc.get("slides") or {}
-    outline = slides.get("outline")
-    if not outline:
-        raise HTTPException(404, "Bài này chưa có dàn ý")
-    items = outline.setdefault("items", [])
-    backs = outline.setdefault("backup", [])
-    find = lambda oid: next(  # noqa: E731
-        ((lst, i) for lst in (items, backs)
-         for i, it in enumerate(lst) if it.get("id") == oid), None)
 
-    if isinstance(body.get("item"), dict):
-        oid = str(body["item"].get("id") or "")
-        at = find(oid)
-        if at is None:
-            raise HTTPException(404, "Không tìm thấy mục này")
-        lst, i = at
-        for k in _OUTLINE_EDITABLE:
-            if k in body["item"]:
-                lst[i][k] = body["item"][k]
-        lst[i]["edited"] = True
+@app.get("/api/doc/{doc_id}/slides")
+async def get_slides(doc_id: str):
+    return _slides_ra(_doc_slide(doc_id))
 
-    if isinstance(body.get("sections"), list):
-        outline["sections"] = body["sections"]
-    if body.get("thesis") is not None:
-        outline["thesis"] = str(body["thesis"])
 
-    if body.get("drop"):
-        at = find(str(body["drop"]))
-        if at is not None:
-            at[0].pop(at[1])
+@app.get("/api/doc/{doc_id}/slides/gia")
+async def slides_gia(doc_id: str, phut: int = 15):
+    """Ước giá MỘT lượt sinh bộ slide. Trả dải, không một con số (cùng lối với
+    ước giá dịch): đầu vào là cả prefix toàn văn. Đầu ra ~700 token mỗi slide —
+    đo trên CIRAG: 9.539 token cho 12 slide, vì `loi_noi` 60–110 chữ cộng phần
+    nghĩ thầm mức thấp. Bản đầu ước 260 và báo trần $0,036 cho lượt tốn $0,047."""
+    doc = _doc_slide(doc_id)
+    vao = len(pipeline.cached_prefix(doc)) / 3.6 + 2500
+    ra = slide.SO_SLIDE.get(phut, 11) * 700 + 1500
+    try:
+        gia = next(((float((m.get("pricing") or {}).get("prompt") or 0),
+                     float((m.get("pricing") or {}).get("completion") or 0))
+                    for m in await llm.list_models() if m.get("id") == doc["model"]), None)
+    except Exception:  # noqa: BLE001
+        gia = None
+    if not gia:
+        return {"lo": None, "hi": None, "model": doc["model"]}
+    c = vao * gia[0] + ra * gia[1]
+    return {"lo": round(c * 0.6, 4), "hi": round(c * 1.3, 4), "model": doc["model"]}
 
-    if body.get("add"):                       # thêm mục trắng sau mục này
-        at = find(str(body["add"]))
-        if at is None:
-            raise HTTPException(404, "Không tìm thấy mục này")
-        lst, i = at
-        lst.insert(i + 1, {"kind": "content", "section": lst[i].get("section", ""),
-                           "message": "", "points": [],
-                           "evidence": {"kind": "none", "figure": "", "what": ""},
-                           "source_block_ids": [], "edited": True})
 
-    if isinstance(body.get("move"), dict):    # đổi thứ tự trong cùng ngăn
-        at = find(str(body["move"].get("id") or ""))
-        if at is None:
-            raise HTTPException(404, "Không tìm thấy mục này")
-        lst, i = at
-        j = max(0, min(len(lst) - 1, i + int(body["move"].get("by", 0))))
-        lst.insert(j, lst.pop(i))
+@app.post("/api/doc/{doc_id}/slides/tao")
+async def slides_tao(doc_id: str, body: dict = Body(default={})):
+    """Sinh cả bộ slide bằng MỘT lượt gọi model. Ghi đè bộ cũ."""
+    doc = _doc_slide(doc_id)
+    if not doc.get("brief"):
+        raise HTTPException(400, "Bài chưa có tóm lược — bấm Dịch trước để tool đọc toàn bài.")
+    try:
+        _, run, total = await slide.tao(doc_id, int(body.get("phut") or 15))
+    except pipeline.HetGio as e:
+        raise HTTPException(504, f"Quá giờ khi soạn slide — {e}. Thử lại, hoặc đổi model.")
+    except ValueError as e:
+        raise HTTPException(502, str(e))
+    return {"slides": _slides_ra(store.load(doc_id)), "run": run, "total": total}
 
-    if body.get("to") in ("items", "backup"):  # chuyển giữa chính và dự phòng
-        at = find(str(body.get("id") or ""))
-        if at is not None:
-            dst = items if body["to"] == "items" else backs
-            it = at[0].pop(at[1])
-            dst.append(it)
 
-    pipeline._number_outline(outline)
-    pipeline.check_outline(doc, outline)
-    slides["outline"] = outline
-    doc["slides"] = slides
+@app.patch("/api/doc/{doc_id}/slides/{sid}")
+async def slides_sua(doc_id: str, sid: str, body: dict = Body(...)):
+    """Sửa tay một slide (chữ, hình, lời nói). Miễn phí."""
+    doc = _doc_slide(doc_id)
+    try:
+        slide.sua(doc, sid, body)
+    except KeyError:
+        raise HTTPException(404, "Không có slide này")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     store.save(doc)
-    return {"outline": outline}
+    return _slides_ra(doc)
 
 
-@app.get("/api/doc/{doc_id}/slides/build")
-async def build_slides(doc_id: str):
-    """Bước 2: dựng slide từ dàn ý đã duyệt, từng mẻ một, báo tiến trình qua SSE.
-
-    Từng mẻ chứ không một lượt: mỗi slide được chia phần đầu ra rộng gấp nhiều
-    lần nên viết được chi tiết, và mất kết nối giữa chừng thì phần đã dựng vẫn
-    nằm trong DB.
-    """
-    if not store.exists(doc_id):
-        raise HTTPException(404, "Không tìm thấy tài liệu")
-
-    async def gen():
-        try:
-            async for ev, data in pipeline.render_deck(doc_id):
-                yield _sse(ev, data)
-        except KeyError:
-            yield _sse("error", json.dumps(
-                {"error": "Bài này chưa có dàn ý. Soạn nội dung trước đã."},
-                ensure_ascii=False))
-        except Exception as e:  # noqa: BLE001
-            yield _sse("error", json.dumps({"error": f"{type(e).__name__}: {e}"},
-                                           ensure_ascii=False))
-
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={
-        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
-    })
-
-
-@app.post("/api/doc/{doc_id}/slides")
-async def make_slides(doc_id: str):
-    """Chạy liền cả hai bước. Đường tắt — không có chỗ soát dàn ý ở giữa."""
-    try:
-        slides, run, total = await pipeline.make_slides(doc_id)
-        return {"slides": slides, "run": run, "total": total}
-    except KeyError:
-        raise HTTPException(404, "Không tìm thấy tài liệu")
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"{type(e).__name__}: {e}")
-
-
-# Trường người dùng được sửa tay. Không cho sửa `source_block_ids` — đó là ràng
-# buộc để soát số liệu, sửa được thì chốt chặn thành vô nghĩa.
-_SLIDE_EDITABLE = ("headline", "sub", "eyebrow", "bullets", "cards", "callout",
-                   "stats", "notes", "figure", "figure_note", "diagram",
-                   "equation", "kind",
-                   # Bố cục tự do: `free` bật/tắt, `boxes` là {tên phần: [x,y,w,h]}
-                   # tính theo % khung slide nên đổi cỡ màn hình vẫn đúng.
-                   "free", "boxes")
-
-
-@app.patch("/api/doc/{doc_id}/slides")
-async def edit_slides(doc_id: str, body: dict = Body(...)):
-    """Sửa tay một slide, đổi thứ tự, xoá, hoặc chuyển giữa deck và backup.
-
-    Không tốn tiền. Slide đã sửa tay được đánh dấu `edited` để lần dựng lại sau
-    không xoá mất công sức của người dùng mà không báo.
-    """
-    try:
-        doc = store.load(doc_id)
-    except KeyError:
-        raise HTTPException(404, "Không tìm thấy tài liệu")
-
-    slides = doc.get("slides") or {}
-    if not slides.get("deck") and not slides.get("backup"):
-        raise HTTPException(400, "Bài này chưa có bộ slide nào")
-    slides.setdefault("deck", [])
-    slides.setdefault("backup", [])
-
-    def find(sid: str):
-        for key in ("deck", "backup"):
-            for i, s in enumerate(slides[key]):
-                if s.get("id") == sid:
-                    return key, i
-        return None
-
-    if (order := body.get("order")) is not None:
-        # đổi thứ tự / chuyển ngăn: gửi lên danh sách mã cho từng ngăn
-        by_id = {s["id"]: s for key in ("deck", "backup") for s in slides[key]}
-        for key in ("deck", "backup"):
-            ids = [str(i) for i in (order.get(key) or []) if str(i) in by_id]
-            slides[key] = [by_id[i] for i in ids]
-
-    def fresh_sid() -> str:
-        used = {s.get("id") for k in ("deck", "backup") for s in slides[k]}
-        n = 1
-        while f"s{n}" in used:
-            n += 1
-        return f"s{n}"
-
-    # thêm slide trắng ngay sau slide đang chọn
-    if (after := body.get("add")) is not None:
-        w = find(str(after)) if after else None
-        blank = {"id": fresh_sid(), "kind": "content", "eyebrow": "",
-                 "headline": "Tiêu đề slide mới", "sub": "",
-                 "cards": [], "bullets": [], "notes": "", "source_block_ids": [],
-                 "edited": True}
-        if w is None:
-            slides["deck"].append(blank)
-        else:
-            slides[w[0]].insert(w[1] + 1, blank)
-        doc["slides"] = slides
-        store.save(doc)
-        return {"slides": slides, "new_id": blank["id"]}
-
-    # nhân đôi một slide, đặt ngay sau bản gốc
-    if (dup := body.get("duplicate")) is not None:
-        w = find(str(dup))
-        if w is None:
-            raise HTTPException(404, "Không tìm thấy slide này")
-        import copy
-        cp = copy.deepcopy(slides[w[0]][w[1]])
-        cp["id"] = fresh_sid()
-        cp["edited"] = True
-        cp.pop("figure", None)      # ảnh gắn theo mã slide, đừng dùng chung
-        cp.pop("illus", None)
-        slides[w[0]].insert(w[1] + 1, cp)
-        doc["slides"] = slides
-        store.save(doc)
-        return {"slides": slides, "new_id": cp["id"]}
-
-    for sid in (str(i) for i in (body.get("drop") or [])):
-        if (w := find(sid)) is not None:
-            slides[w[0]].pop(w[1])
-
-    if (patch := body.get("slide")) is not None:
-        w = find(str(patch.get("id", "")))
-        if w is None:
-            raise HTTPException(404, "Không tìm thấy slide này")
-        sl = slides[w[0]][w[1]]
-        for k in _SLIDE_EDITABLE:
-            if k in patch:
-                sl[k] = patch[k]
-        sl["edited"] = True
-        sl.pop("stale", None)          # người dùng đã tự soát lại thì hết cũ
-        pipeline.check_slides(doc, [sl])
-
-    doc["slides"] = slides
+@app.post("/api/doc/{doc_id}/slides/thu-tu")
+async def slides_thu_tu(doc_id: str, body: dict = Body(...)):
+    """Đổi thứ tự slide. Danh sách phải đúng là hoán vị của bộ hiện có."""
+    doc = _doc_slide(doc_id)
+    s = slide.lay(doc)
+    ids = [str(x) for x in body.get("ids") or []]
+    by = {x["id"]: x for x in s["bo"]}
+    if sorted(ids) != sorted(by):
+        raise HTTPException(400, "Danh sách slide không khớp bộ hiện có")
+    s["bo"] = [by[i] for i in ids]
+    doc["slides"] = s
     store.save(doc)
-    return {"slides": slides}
+    return _slides_ra(doc)
 
 
-@app.post("/api/doc/{doc_id}/slides/{slide_id}/image")
-async def upload_slide_image(doc_id: str, slide_id: str, file: UploadFile = File(...)):
-    """Nhận ảnh minh hoạ do người dùng tự làm và gắn vào slide.
-
-    Công cụ cố tình KHÔNG tự sinh ảnh: một hình do AI vẽ cho bài báo khoa học
-    trông rất có thẩm quyền mà không ai đối chiếu lại với bài — nguy hiểm hơn cả
-    số liệu bịa, thứ mà `check_slides` soát từng con một. Người dùng tự làm, tự
-    chịu trách nhiệm; công cụ chỉ đưa sẵn prompt và chỗ để thả ảnh vào.
-    """
-    if not slide_id.isalnum():
-        raise HTTPException(400, "Mã slide không hợp lệ")
-    try:
-        doc = store.load(doc_id)
-    except KeyError:
-        raise HTTPException(404, "Không tìm thấy tài liệu")
-
-    slides = doc.get("slides") or {}
-    where = next(((k, i) for k in ("deck", "backup")
-                  for i, s in enumerate(slides.get(k) or [])
-                  if s.get("id") == slide_id), None)
-    if where is None:
-        raise HTTPException(404, "Không tìm thấy slide này")
-
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(400, "File rỗng")
-    try:
-        from PIL import Image
-        import io as _io
-        im = Image.open(_io.BytesIO(raw)).convert("RGB")
-        if max(im.size) > 1400:
-            r = 1400 / max(im.size)
-            im = im.resize((round(im.width * r), round(im.height * r)), Image.LANCZOS)
-        buf = _io.BytesIO()
-        im.save(buf, "PNG", optimize=True)
-        png = buf.getvalue()
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(400, f"Không đọc được ảnh: {e}")
-
-    fid = f"art{slide_id}"
-    store.save_images(doc_id, {fid: png})
-    key, idx = where
-    sl = slides[key][idx]
-    sl["figure"] = fid
-    sl["illus"] = True          # ảnh minh hoạ, không phải hình của bài báo
-    doc["slides"] = slides
+@app.delete("/api/doc/{doc_id}/slides/{sid}")
+async def slides_xoa(doc_id: str, sid: str):
+    doc = _doc_slide(doc_id)
+    s = slide.lay(doc)
+    if not any(x["id"] == sid for x in s["bo"]):
+        raise HTTPException(404, "Không có slide này")
+    s["bo"] = [x for x in s["bo"] if x["id"] != sid]
+    doc["slides"] = s
     store.save(doc)
-    return {"slide": sl}
+    return _slides_ra(doc)
 
 
-@app.post("/api/doc/{doc_id}/slides/{slide_id}/regen")
-async def regen_slide(doc_id: str, slide_id: str, body: dict = Body(default={})):
-    if not slide_id.isalnum():
-        raise HTTPException(400, "Mã slide không hợp lệ")
+@app.post("/api/doc/{doc_id}/slides/{sid}/viet-lai")
+async def slides_viet_lai(doc_id: str, sid: str, body: dict = Body(default={})):
+    """Viết lại một slide, giữ vai. Rẻ: prefix toàn văn đi qua cache."""
+    _doc_slide(doc_id)
     try:
-        slide, run, total = await pipeline.regen_slide(
-            doc_id, slide_id, (body or {}).get("hint", ""))
-        return {"slide": slide, "run": run, "total": total}
+        _, run, total = await slide.viet_lai(doc_id, sid, str(body.get("goi_y") or "")[:500])
     except KeyError:
-        raise HTTPException(404, "Không tìm thấy slide này")
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"{type(e).__name__}: {e}")
+        raise HTTPException(404, "Không viết lại được slide này")
+    except ValueError as e:
+        raise HTTPException(502, str(e))
+    return {"slides": _slides_ra(store.load(doc_id)), "run": run, "total": total}
+
 
 
 # ------------------------------------------------------------------ hỏi đáp
@@ -2152,26 +1937,14 @@ def _data_uri(doc_id: str, block_id: str) -> str:
 
 
 @app.get("/api/doc/{doc_id}/export")
-async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md", du_phong: int = 0):
-    """`du_phong=1`: file PowerPoint kèm bộ slide dự phòng sau vách "Phụ lục"."""
+async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md"):
     try:
         doc = store.load(doc_id)
     except KeyError:
         raise HTTPException(404, "Không tìm thấy tài liệu")
 
-    if fmt == "pptx":
-        from . import pptx_out
-        slides = doc.get("slides") or {}
-        if not (slides.get("deck") or slides.get("backup")):
-            raise HTTPException(400, "Bài này chưa có bộ slide nào — bấm “Dựng slide” trước")
-        data = pptx_out.build(doc, kem_du_phong=bool(du_phong))
-        return Response(
-            data,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f'attachment; filename="{doc_id}-slide.pptx"'},
-        )
     if fmt in ("slides", "slides-pdf"):
-        return _export_slides_html(doc, for_print=fmt == "slides-pdf")
+        return _xuat_slide(doc, in_ra=fmt == "slides-pdf")
     if fmt in ("html", "pdf"):
         return _export_html(doc, mode, for_print=fmt == "pdf")
 
@@ -2250,79 +2023,148 @@ async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md", du_phong
     )
 
 
+# Bản xuất bài dịch — cùng chất liệu "Sổ tay khoa học" với trang web: giấy ngà kẻ
+# ô ở lề, nét mực, vệt dạ quang, giấy nhớ dán băng keo. Font đóng gói nhúng thẳng
+# (`_font_nhung`) nên mở file ngoài app vẫn đúng chữ.
+#
+# Ba thứ cố ý KHÔNG có, vì là "dấu hiệu đồ AI làm" đã ghi trong CLAUDE.md: vạch
+# màu kẻ dọc cạnh ô chữ (bản cũ có ở bốn chỗ: câu chốt, công thức, ghi chú, giải
+# thích), nhãn viết hoa toàn bộ, nền kem kèm hoa văn serif nghiêng.
+#
+# `.pair.is-cont` / `.pair.in-flow` phải khớp `web/style.css` — bản xem trong app
+# và file xuất ra là hai đoạn code dựng cùng một markup.
 _EXPORT_CSS = """
-:root{--bg:#fbfaf7;--surface:#fff;--surface-2:#f4f2ed;--line:#e2ded4;--ink:#23211d;
---ink-2:#5d5850;--muted:#8b857a;--accent:#b0521f}
-@media(prefers-color-scheme:dark){:root{--bg:#16151a;--surface:#1d1c22;--surface-2:#26252c;
---line:#35333c;--ink:#ece9e3;--ink-2:#b6b1a8;--muted:#857f76;--accent:#e08a52}}
+:root{--giay:#fffcf3;--o-ly:rgba(39,83,192,.06);--muc:#1d1b18;--muc-2:#3b362d;--chi:#cdc2a6;
+--mo:#675e4f;--xanh:#2753c0;--do:#c8322c;--da-quang:#ffd43b;--nho:#fff4c2;--bang-keo:rgba(214,196,150,.7);
+--td:"Baloo 2","Be Vietnam Pro",system-ui,sans-serif;--than:"Be Vietnam Pro",system-ui,sans-serif;
+--tay:"Patrick Hand","Be Vietnam Pro",sans-serif;--doc:"Literata",Georgia,serif;color-scheme:light}
 *{box-sizing:border-box}
-body{margin:0;padding:2rem 1.2rem 6rem;background:var(--bg);color:var(--ink);
-font:16px/1.65 "Iowan Old Style",Palatino,Georgia,serif}
-main{max-width:1100px;margin:0 auto}
-h1{font-size:1.6rem;line-height:1.3;margin:0 0 .3rem}
-h2,h3{font-family:ui-sans-serif,system-ui,sans-serif;margin:2rem 0 .6rem}
-.sub{color:var(--muted);font-size:.9rem;font-family:ui-sans-serif,system-ui,sans-serif}
-.meta{color:var(--muted);font-size:.8rem;font-family:ui-sans-serif,system-ui,sans-serif;
-border-bottom:1px solid var(--line);padding-bottom:1rem;margin-bottom:1.5rem}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
-padding:1rem 1.2rem;margin:1rem 0}
-.card b{display:block;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.72rem;
-text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.card p{margin:.15rem 0 .8rem}
-.pull{font-size:1.05rem;border-left:3px solid var(--accent);padding-left:.8rem;margin:0 0 1rem}
-table{border-collapse:collapse;width:100%;font-size:.9rem}
-th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
-th{background:var(--surface-2);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.8rem}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:0 1.6rem;margin:0 0 1.1rem}
-/* Nửa sau của đoạn bị công thức chen vào giữa — xem `mark_continuations()`.
-   Ba khối vẫn là ba khối để ảnh công thức đứng đúng chỗ, chỉ bỏ khoảng cách
-   để đọc ra liền một đoạn như trang in. Cùng quy ước với `.pair.is-cont`
-   bên `web/style.css` — sửa một bên phải sửa bên kia. */
+html{background:#efe9da}
+body{margin:0;padding:2.4rem 1rem 6rem;color:var(--muc);font:16px/1.7 var(--doc);
+background-color:#efe9da;background-image:linear-gradient(var(--o-ly) 1px,transparent 1px),
+linear-gradient(90deg,var(--o-ly) 1px,transparent 1px);background-size:22px 22px}
+main{max-width:1120px;margin:0 auto;background:var(--giay);border:2px solid var(--muc);
+border-radius:6px;box-shadow:6px 6px 0 var(--muc);padding:3rem 3.2rem 4rem;position:relative}
+main::before{content:"";position:absolute;top:0;bottom:0;left:2rem;border-left:1.5px solid rgba(200,50,44,.35)}
+p{margin:0}
+.tay{font-family:var(--tay);color:var(--xanh);font-size:1.08rem}
+a{color:var(--xanh)}
+/* ---- bìa */
+.bia{margin:0 0 2.6rem}
+.bia h1{font-family:var(--td);font-weight:800;font-size:2.15rem;line-height:1.25;margin:.3rem 0 .6rem;
+text-decoration:underline;text-decoration-color:rgba(255,212,59,.85);text-decoration-thickness:.32em;
+text-underline-offset:-.12em;text-decoration-skip-ink:none}
+.goc{font-family:var(--than);color:var(--mo);font-size:1rem;line-height:1.5}
+.tg{font-family:var(--than);font-weight:600;margin-top:.9rem}
+.nd{font-family:var(--than);color:var(--muc-2);font-size:.95rem}
+.meta{font-family:var(--tay);color:var(--mo);font-size:1rem;margin-top:1rem;padding-top:.7rem;
+border-top:1.5px dashed var(--chi)}
+/* ---- tiêu đề phần */
+h2{font-family:var(--td);font-weight:800;font-size:1.55rem;line-height:1.3;margin:2.8rem 0 1rem}
+h2 .so{display:inline-grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:50%;
+background:var(--da-quang);border:2px solid var(--muc);box-shadow:2px 2px 0 var(--muc);
+font-size:1.05rem;margin-right:.6rem;vertical-align:.12em}
+h3{font-family:var(--td);font-weight:700;font-size:1.15rem;margin:1.8rem 0 .6rem}
+/* ---- tóm lược */
+.chot{font-size:1.2rem;line-height:1.65;font-weight:600;margin:0 0 1.6rem}
+.chot span{background:linear-gradient(transparent 58%,rgba(255,212,59,.75) 58%);
+-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.mach{list-style:none;margin:0;padding:0 0 0 .2rem;display:grid;gap:1rem;position:relative}
+.mach::before{content:"";position:absolute;left:1.05rem;top:.6rem;bottom:.6rem;border-left:2px dashed var(--chi)}
+.mach li{display:grid;grid-template-columns:2.2rem minmax(0,1fr);gap:.9rem;position:relative}
+.mach .n{width:2.2rem;height:2.2rem;display:grid;place-items:center;border-radius:50%;background:var(--giay);
+border:2px solid var(--muc);font-family:var(--td);font-weight:800;position:relative;z-index:1}
+.mach b{font-family:var(--td);font-size:1.05rem;display:block;line-height:1.4;margin-top:.2rem}
+.mach p{color:var(--muc-2)}
+.so-do{margin:1.6rem 0;background:#fff;border:2px solid var(--muc);border-radius:6px;
+box-shadow:4px 4px 0 var(--muc);padding:1.4rem 1rem 1rem;position:relative;text-align:center}
+.so-do .keo,figure .keo{position:absolute;top:-.7rem;left:42%;width:5rem;height:1.3rem;background:var(--bang-keo);transform:rotate(-3deg)}
+.so-do figcaption{font-family:var(--tay);color:var(--mo);margin-top:.6rem}
+table{border-collapse:collapse;width:100%;font-family:var(--than);font-size:.92rem}
+th,td{border-bottom:1.5px dashed var(--chi);padding:.5rem .6rem;text-align:left;vertical-align:top}
+th{font-family:var(--td);font-weight:700;border-bottom:2px solid var(--muc)}
+td:first-child{font-weight:600}
+.giu{font-family:var(--tay);color:var(--mo);white-space:nowrap}
+table.tn th:nth-child(1){width:32%}table.tn th:nth-child(2){width:20%}
+/* ---- mục lục */
+.muc-luc{columns:2 18rem;column-gap:2.4rem;margin:0;padding:0;list-style:none;font-family:var(--than);font-size:.95rem}
+.muc-luc li{break-inside:avoid;padding:.25rem 0;border-bottom:1px dotted var(--chi)}
+.muc-luc li.c2{padding-left:1.2rem;font-size:.9rem}
+.muc-luc li.c3{padding-left:2.4rem;font-size:.88rem;color:var(--muc-2)}
+.muc-luc a{color:inherit;text-decoration:none}
+.muc-luc a:hover{color:var(--xanh)}
+/* ---- thân bài: cột gốc = bản in để đối chiếu, cột dịch = chữ để đọc */
+.cot{display:grid;grid-template-columns:minmax(0,.86fr) minmax(0,1.14fr);gap:0 2.4rem;
+font-family:var(--tay);color:var(--mo);font-size:1rem;margin:0 0 .8rem;padding-bottom:.4rem;
+border-bottom:2px solid var(--muc)}
+.one .cot{display:none}
+.pair{display:grid;grid-template-columns:minmax(0,.86fr) minmax(0,1.14fr);gap:0 2.4rem;margin:0 0 1.15rem;position:relative}
+.pair:has(>.en){background:repeating-linear-gradient(var(--chi) 0 6px,transparent 6px 11px) no-repeat
+calc((100% - 2.4rem)*.43 + 1.2rem) 0/1.5px 100%}
 .pair.is-cont,.pair.in-flow{margin-top:0;margin-bottom:.25rem}
 .pair.is-cont .pending{display:none}
-.one .pair{grid-template-columns:1fr}
-.en{color:var(--muted);font-size:.94em}
-.vi{color:var(--ink)}
-.gl{grid-column:1/-1;background:var(--surface-2);border-radius:8px;padding:.6rem .8rem;
-margin-top:.5rem;font-size:.9em;font-family:ui-sans-serif,system-ui,sans-serif}
-.gl b{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em}
-.hd{grid-column:1/-1;font-family:ui-sans-serif,system-ui,sans-serif;font-weight:700;
-margin:1.6rem 0 .4rem;font-size:1.1rem}
-.eq{font-family:ui-monospace,monospace;font-size:.95em;overflow-x:auto}
-.eqbox{grid-column:1/-1;text-align:center;background:var(--surface);
-border:1px solid var(--line);border-left:3px solid var(--accent);
-border-radius:8px;padding:.6rem .8rem;margin:.6rem 0}
+.one .pair{grid-template-columns:minmax(0,1fr)}
+.en{font-family:var(--than);color:var(--mo);font-size:.88rem;line-height:1.65}
+.vi{font-size:1.02rem}
+.hd{grid-column:1/-1;font-family:var(--td);font-weight:800;font-size:1.3rem;line-height:1.35;margin:2rem 0 .3rem;scroll-margin-top:1rem}
+.hd.c2{font-size:1.12rem;font-weight:700;margin-top:1.4rem}
+.hd.c3{font-size:1.02rem;font-weight:700;margin-top:1.1rem}
+.hd .goc-h{display:block;font-family:var(--than);font-weight:400;font-size:.8rem;color:var(--mo)}
+.eqbox{grid-column:1/-1;text-align:center;background:#fff;border:1.5px solid var(--muc);border-radius:6px;
+padding:.7rem .9rem;margin:.5rem 0}
 .eqbox img{max-width:100%;height:auto}
-figure{grid-column:1/-1;margin:.6rem 0;text-align:center;background:#f7f6f3;
-border:1px solid var(--line);border-radius:8px;padding:.5rem}
+.eq{font-family:var(--than);overflow-x:auto}
+figure{grid-column:1/-1;margin:1rem 0 .9rem;text-align:center;background:#fff;border:2px solid var(--muc);
+border-radius:6px;box-shadow:4px 4px 0 var(--muc);padding:1rem .8rem .7rem;position:relative}
 figure img{max-width:100%;height:auto}
-.note{grid-column:1/-1;border-left:3px solid var(--accent);padding:.5rem 0 .5rem .8rem;
-margin:.6rem 0;font-size:.92em;font-family:ui-sans-serif,system-ui,sans-serif}
-.note dt{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em}
-.note dd{margin:0 0 .6rem}
-.pending{color:var(--muted);font-style:italic}
-.pair.li .en,.pair.li .vi{position:relative;padding-left:1.35rem}
-.li-mk{position:absolute;left:0;color:var(--muted)}
-.mermaid{background:var(--surface);border:1px solid var(--line);border-radius:8px;
-padding:.8rem;margin:.8rem 0;text-align:center}
-@media(max-width:820px){.pair{grid-template-columns:1fr;gap:.35rem}
-.en{padding-bottom:.35rem;border-bottom:1px dashed var(--line);margin-bottom:.4rem}}
-@page{margin:1.5cm}
-@media print{body{background:#fff;color:#000;padding:0;font-size:10.5pt}
-main{max-width:none}.card,.mermaid,figure,.note{break-inside:avoid}
-h1,h2,h3{break-after:avoid}.pair{break-inside:avoid}}
+.imath{font-style:normal}
+.imath sub,.imath sup{font-style:normal}
+/* giải thích: giấy nhớ dán băng keo, chữ sans — khác hẳn cột dịch */
+.gl{grid-column:1/-1;position:relative;background:var(--nho);border:1.5px solid var(--muc);
+border-radius:3px 3px 14px 3px;box-shadow:3px 3px 0 var(--muc);padding:1.1rem 1.1rem .8rem;
+margin:.7rem 0 .3rem;font-family:var(--than);font-size:.94rem;line-height:1.65;color:var(--muc-2)}
+.gl::before{content:"";position:absolute;top:-.6rem;left:1.4rem;width:4.2rem;height:1.1rem;background:var(--bang-keo);transform:rotate(-4deg)}
+.gl .tay{display:block;margin-bottom:.2rem}
+.note{grid-column:1/-1;background:#fff;border:1.5px dashed var(--muc-2);border-radius:8px;
+padding:1rem 1.2rem;margin:.7rem 0 .3rem;font-family:var(--than);font-size:.93rem}
+.note>.tay{display:block;margin-bottom:.4rem}
+.note dl{margin:0;display:grid;grid-template-columns:9.5rem minmax(0,1fr);gap:.35rem 1rem}
+.note dt{font-family:var(--tay);color:var(--mo);font-size:1rem}
+.note dd{margin:0}
+.pending{color:var(--mo);font-style:italic;font-family:var(--than);font-size:.9rem}
+.pair.li .en,.pair.li .vi{position:relative;padding-left:1.4rem}
+.li-mk{position:absolute;left:0;color:var(--mo)}
+.mermaid{text-align:center}
+.cuoi{margin-top:3rem;padding-top:1rem;border-top:1.5px dashed var(--chi);font-family:var(--tay);color:var(--mo);text-align:center}
+@media(max-width:820px){main{padding:2rem 1.2rem 3rem}main::before{display:none}
+.pair,.cot{grid-template-columns:minmax(0,1fr)}.cot{display:none}.pair:has(>.en){background:none}
+.en{padding-bottom:.4rem;border-bottom:1px dashed var(--chi);margin-bottom:.4rem}
+.note dl{grid-template-columns:minmax(0,1fr)}}
+@page{size:A4;margin:1.6cm 1.5cm 1.8cm;@bottom-center{content:counter(page);font:10pt "Be Vietnam Pro",sans-serif;color:#675e4f}}
+@media print{html,body{background:#fff}body{padding:0;font-size:10.5pt}
+main{max-width:none;border:0;box-shadow:none;padding:0;background:#fff}main::before{display:none}
+.muc-luc a{text-decoration:none}
+.so-do,figure,.note,.gl,.eqbox{break-inside:avoid}h2,h3,.hd{break-after:avoid}.pair{break-inside:avoid}
+figure,.so-do{box-shadow:none}}
 """
+
+# Mạch tóm lược theo đúng chuỗi lập luận của skill viết tài liệu kỹ thuật: vấn
+# đề → khoảng trống → ý tưởng cốt lõi → cơ chế → bằng chứng → giới hạn.
+_MACH = (("problem", "Vấn đề"), ("gap", "Khoảng trống"), ("idea", "Ý tưởng cốt lõi"),
+         ("method", "Cách làm"), ("evidence", "Bằng chứng"), ("limits", "Giới hạn"))
+_NHAN_GHI_CHU = (("gist", "Ý chính"), ("role", "Vai trò trong bài"),
+                 ("link_back", "Nối với đoạn trước"), ("unpack", "Giải thích chi tiết"),
+                 ("analogy", "Ví dụ trong bài"), ("caution", "Cần lưu ý"),
+                 ("check", "Tự kiểm tra"))
 
 
 def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
-    """Một file HTML tự chứa: ảnh nhúng base64, sơ đồ vẽ được, mở offline.
+    """Bản dịch thành MỘT file HTML tự chứa, đọc như một báo cáo: bìa, tóm lược
+    theo mạch lập luận, mục lục, rồi thân bài song ngữ căn theo đoạn.
 
-    Markdown giữ được nội dung nhưng mất bố cục song ngữ căn theo đoạn — thứ
-    đáng giá nhất của công cụ này. Bản HTML giữ đúng lưới hai cột đó.
-
-    `for_print=True` mở thẳng hộp in của trình duyệt để lưu ra PDF. Đây là đường
-    duy nhất giữ được cả sơ đồ Mermaid (cần JS để vẽ) lẫn lưới hai cột (cần CSS
-    grid) — thư viện PDF thuần Python không làm được cả hai.
+    Ảnh và font nhúng thẳng nên mở offline được. `for_print=True` mở luôn hộp in
+    để lưu ra PDF — đường duy nhất giữ được cả sơ đồ Mermaid (cần JS để vẽ) lẫn
+    lưới hai cột (cần CSS grid); thư viện PDF thuần Python không làm được cả hai.
     """
     import html as _h
 
@@ -2338,87 +2180,114 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
         return _h.escape(str(s or ""))
 
     def rich(s) -> str:
-        """Như `esc` nhưng dựng `^{…}` / `_{…}` thành chỉ số trên/dưới thật.
+        """Như `esc` nhưng dựng ký hiệu toán thành chữ thật: `\\(…\\)` qua
+        `_math_tex`, `^{…}` / `_{…}` thành chỉ số, `**đậm**` thành chữ đậm.
 
-        Marker là dạng để model đọc, file xuất ra là để người đọc nhìn. Chỉ dùng
-        cho phần thân bài — KHÔNG dùng cho mã Mermaid, thuộc tính `alt` hay thẻ
-        `<title>`, chèn thẻ vào những chỗ đó là hỏng.
+        Phải khớp từng luật và đúng thứ tự với `sci()` bên `web/app.js`. Bản cũ
+        thiếu bước `\\(…\\)` nên file xuất ra hiện nguyên `\\(Suf(a) \\in \\{0, 1\\}\\)`
+        trong khi màn hình đã dựng đúng.
 
-        Dựng cả `**đậm**`, và **chỉ** dạng hai dấu sao. Bài báo dùng chữ đậm làm
-        tiêu đề chạy đầu đoạn (*"**Dataset.** Chúng tôi huấn luyện…"*) nên bỏ nó
-        đi là mất một tầng cấu trúc. Nhưng dấu `*` ĐƠN thì để nguyên: quét dữ
-        liệu thật, cả hai chỗ dùng nó đều không phải chữ nghiêng — một là ký hiệu
-        chú thích bảng (*"Dấu * biểu thị uniform frame sampling"*), một là phép
-        nhân (`2 * 10^{−4}`). Dựng chúng thành `<em>` là hỏng cả hai.
+        Dấu `*` ĐƠN để nguyên: quét dữ liệu thật, cả hai chỗ dùng nó đều không phải
+        chữ nghiêng (ký hiệu chú thích bảng, phép nhân `2 * 10^{−4}`).
 
-        Phải khớp từng luật với `sci()` bên `web/app.js`, nếu không bản xuất ra
-        khác bản đang đọc trên màn hình.
+        Chỉ dùng cho phần thân — KHÔNG dùng cho mã Mermaid, thuộc tính `alt` hay
+        thẻ `<title>`, chèn thẻ vào những chỗ đó là hỏng.
         """
         out = esc(s)
+        out = re.sub(r"\\\((.+?)\\\)", lambda m: f"<span class='imath'>{_math_tex(m.group(1))}</span>",
+                     out, flags=re.S)
         out = re.sub(r"\^\{([^{}]*)\}", r"<sup>\1</sup>", out)
         out = re.sub(r"_\{([^{}]*)\}", r"<sub>\1</sub>", out)
         return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
 
-    def mermaid(code: str, cap: str = "") -> str:
+    def so_do(code: str, cap: str = "") -> str:
         if not (code or "").strip():
             return ""
         diagrams.append(code)
-        figcap = f"<figcaption class='sub'>{esc(cap)}</figcaption>" if cap else ""
-        return f"<div class='mermaid'>{esc(code.strip())}</div>{figcap}"
+        figcap = f"<figcaption>{esc(cap)}</figcaption>" if cap else ""
+        return (f"<div class='so-do'><span class='keo'></span>"
+                f"<div class='mermaid'>{esc(code.strip())}</div>{figcap}</div>")
 
+    # ------------------------------------------------------------- bìa
     title_vi = brief.get("title_vi") or doc.get("title") or "Bài báo"
-    out = [f"<h1>{rich(title_vi)}</h1>"]
-    if doc.get("title") and brief.get("title_vi"):
-        out.append(f"<p class='sub'>{rich(doc['title'])}</p>")
-    out.append(f"<p class='meta'>Nguồn: {esc(doc.get('source',''))} · "
-               f"Dịch bằng {esc(doc.get('model',''))}</p>")
+    meta = db.get_meta(doc_id)["data"]
+    tg = meta.get("authors") or []
+    out = ["<header class='bia'><p class='tay'>Bản dịch đọc hiểu</p>",
+           f"<h1>{rich(title_vi)}</h1>"]
+    goc = meta.get("title_goc") or (doc.get("title") if brief.get("title_vi") else "")
+    if goc and goc != title_vi:
+        out.append(f"<p class='goc'>{rich(goc)}</p>")
+    if tg:
+        out.append(f"<p class='tg'>{esc(', '.join(tg[:6]))}{' và cộng sự' if len(tg) > 6 else ''}</p>")
+    nd = " · ".join(str(x) for x in (meta.get("venue"), meta.get("year")) if x)
+    if nd:
+        out.append(f"<p class='nd'>{esc(nd)}</p>")
+    nguon = doc.get("source") or ""
+    nguon_html = (f"<a href='{esc(nguon)}'>{esc(pipeline.nguon_gon(nguon))}</a>"
+                  if nguon.startswith("http") else esc(pipeline.nguon_gon(nguon)))
+    out.append(f"<p class='meta'>Nguồn {nguon_html} · Dịch bằng {esc(doc.get('model', ''))}"
+               f" · Xuất ngày {time.strftime('%d/%m/%Y')}</p></header>")
+
+    # ------------------------------------------------------------- tóm lược
+    so_phan = 0
+
+    def h2(ten: str) -> str:
+        nonlocal so_phan
+        so_phan += 1
+        return f"<h2><span class='so'>{so_phan}</span>{esc(ten)}</h2>"
 
     if brief:
-        out.append("<h2>Tóm lược</h2>")
+        out.append(h2("Tóm lược"))
         if brief.get("one_line"):
-            out.append(f"<p class='pull'>{rich(brief['one_line'])}</p>")
-        rows = "".join(
-            f"<b>{label}</b><p>{rich(brief[k])}</p>"
-            for k, label in (("problem", "Bài toán"), ("gap", "Khoảng trống"),
-                             ("idea", "Ý tưởng"), ("method", "Cách làm"),
-                             ("evidence", "Bằng chứng"), ("limits", "Giới hạn"))
-            if brief.get(k))
-        if rows:
-            out.append(f"<div class='card'>{rows}</div>")
-        for key, label in (("argument_diagram", "Mạch lập luận của bài"),
-                           ("method_diagram", "Cơ chế bài đề xuất")):
-            out.append(mermaid(brief.get(key, ""), label))
-        if brief.get("argument_chain"):
-            out.append("<h3>Các bước lập luận</h3><ol>")
-            for s in brief["argument_chain"]:
-                out.append(f"<li><i>({esc(s.get('role',''))})</i> {rich(s.get('step',''))}</li>")
-            out.append("</ol>")
+            out.append(f"<p class='chot'><span>{rich(brief['one_line'])}</span></p>")
+        buoc = [(nhan, brief[k]) for k, nhan in _MACH if brief.get(k)]
+        if buoc:
+            out.append("<ol class='mach'>" + "".join(
+                f"<li><span class='n'>{i}</span><div><b>{nhan}</b><p>{rich(nd)}</p></div></li>"
+                for i, (nhan, nd) in enumerate(buoc, 1)) + "</ol>")
+        for key, nhan in (("argument_diagram", "Mạch lập luận của bài"),
+                          ("method_diagram", "Cơ chế bài đề xuất")):
+            out.append(so_do(brief.get(key, ""), nhan))
         if brief.get("glossary"):
-            out.append("<h3>Bảng thuật ngữ</h3><table>"
+            out.append("<h3>Bảng thuật ngữ</h3><table class='tn'>"
                        "<tr><th>Tiếng Anh</th><th>Tiếng Việt</th><th>Nghĩa</th></tr>")
             for g in brief["glossary"]:
-                vi = "<i>giữ nguyên</i>" if g.get("keep_en") else rich(g.get("vi", ""))
-                out.append(f"<tr><td>{rich(g.get('en',''))}</td><td>{vi}</td>"
-                           f"<td>{rich(g.get('gloss',''))}</td></tr>")
+                vi = "<span class='giu'>giữ nguyên</span>" if g.get("keep_en") else rich(g.get("vi", ""))
+                out.append(f"<tr><td>{rich(g.get('en', ''))}</td><td>{vi}</td>"
+                           f"<td>{rich(g.get('gloss', ''))}</td></tr>")
             out.append("</table>")
 
-    out.append("<h2>Nội dung</h2>")
+    # ------------------------------------------------------------- mục lục
     _bl = doc["blocks"]
+    tieu_de = [b for b in _bl if b["type"] == "heading" and not b.get("hidden")]
+    if len(tieu_de) >= 3:
+        out.append(h2("Mục lục"))
+        out.append("<ul class='muc-luc'>" + "".join(
+            f"<li class='c{min(max(b.get('level') or 1, 1), 3)}'>"
+            f"<a href='#m-{esc(b['id'])}'>{rich(tr.get(b['id']) or b['text'])}</a></li>"
+            for b in tieu_de) + "</ul>")
+
+    # ------------------------------------------------------------- thân bài
+    out.append(h2("Nội dung"))
+    if not one_col:
+        out.append("<div class='cot'><span>Bản gốc</span><span>Bản dịch</span></div>")
     for i, b in enumerate(_bl):
-        if b["type"] in ("reference", "meta"):
+        if b["type"] in ("reference", "meta") or b.get("hidden"):
             continue
         vi = tr.get(b["id"], "")
         if b["type"] == "heading":
-            out.append(f"<div class='pair'><div class='hd'>{rich(vi or b['text'])}</div></div>")
+            cap = min(max(b.get("level") or 1, 1), 3)
+            phu = (f"<span class='goc-h'>{rich(b['text'])}</span>"
+                   if vi and not one_col and vi.strip() != b["text"].strip() else "")
+            out.append(f"<div class='pair'><div class='hd c{cap}' id='m-{esc(b['id'])}'>"
+                       f"{rich(vi or b['text'])}{phu}</div></div>")
             continue
         if b["type"] == "equation":
             uri = _data_uri(doc_id, b["figure"]) if b.get("figure") else ""
             body = (f"<img src='{uri}' alt='công thức'>" if uri
                     else f"<div class='eq'>{rich(b['text'])}</div>")
-            # Công thức chen giữa hai nửa một đoạn: siết khoảng cách để ba
-            # khối đọc ra liền như trang in. Cùng quy ước với `pairHTML` bên
-            # `app.js` — sửa một bên phải sửa bên kia, không thì bản xem trong
-            # app và file xuất ra trông khác nhau.
+            # Công thức chen giữa hai nửa một đoạn: siết khoảng cách để ba khối
+            # đọc ra liền như trang in. Cùng quy ước với `pairHTML` bên `app.js`.
             nxt = _bl[i + 1] if i + 1 < len(_bl) else None
             flow = " in-flow" if (nxt or {}).get("cont") else ""
             out.append(f"<div class='pair{flow}'><div class='eqbox'>{body}</div></div>")
@@ -2428,7 +2297,8 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
         if b.get("figure"):
             uri = _data_uri(doc_id, b["figure"])
             if uri:
-                cells.append(f"<figure><img src='{uri}' alt='{esc(b['text'][:90])}'></figure>")
+                cells.append(f"<figure><span class='keo'></span>"
+                             f"<img src='{uri}' alt='{esc(b['text'][:90])}'></figure>")
         mk = f"<span class='li-mk'>{esc(b.get('marker'))}</span>" if b.get("marker") else ""
         if not one_col:
             cells.append(f"<div class='en'>{mk}{rich(b['text'])}</div>")
@@ -2436,39 +2306,33 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
         cells.append(f"<div class='vi'>{mk}{vi_cell}</div>")
         gl = plain.get(b["id"])
         if gl:
-            cells.append(f"<div class='gl'><b>Giải thích</b><br>{rich(gl)}</div>")
+            cells.append(f"<div class='gl'><span class='tay'>Giải thích</span>{rich(gl)}</div>")
         n = notes.get(b["id"])
         if n:
-            dl = "".join(
-                f"<dt>{label}</dt><dd>{rich(n[k])}</dd>"
-                for k, label in (("gist", "Ý chính"), ("role", "Vai trò trong bài"),
-                                 ("link_back", "Nối với đoạn trước"),
-                                 ("unpack", "Giải thích chi tiết"), ("analogy", "Hình dung"),
-                                 ("caution", "Cần lưu ý"), ("check", "Tự kiểm tra"))
-                if n.get(k))
-            cells.append(f"<div class='note'>{mermaid(n.get('diagram',''))}<dl>{dl}</dl></div>")
+            dl = "".join(f"<dt>{nhan}</dt><dd>{rich(n[k])}</dd>"
+                         for k, nhan in _NHAN_GHI_CHU if n.get(k))
+            cells.append(f"<div class='note'><span class='tay'>Ghi chú đọc hiểu</span>"
+                         f"{so_do(n.get('diagram', ''), n.get('diagram_caption', ''))}<dl>{dl}</dl></div>")
         cls = (" li" if b.get("marker") else "") + (" is-cont" if b.get("cont") else "")
         out.append(f"<div class='pair{cls}'>{''.join(cells)}</div>")
+    out.append("<p class='cuoi'>Hết bản dịch · tạo bằng Loupe</p>")
 
     # Mermaid nặng 3.5MB — chỉ nhúng khi bài thật sự có sơ đồ để vẽ
     script = ""
     if diagrams:
         js = (WEB / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")
-        # bản in dùng theme sáng: nền tối in ra vừa xấu vừa tốn mực
-        theme = ("'neutral'" if for_print
-                 else "matchMedia('(prefers-color-scheme:dark)').matches?'dark':'neutral'")
         script = (f"<script>{js}</script><script>"
-                  f"mermaid.initialize({{startOnLoad:false,securityLevel:'strict',theme:{theme},"
-                  "flowchart:{curve:'basis',htmlLabels:false}});"
+                  "mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'neutral',"
+                  "fontFamily:'Be Vietnam Pro, sans-serif',flowchart:{curve:'basis',htmlLabels:false}});"
                   "window.__ready=mermaid.run().catch(()=>{});</script>")
-    if for_print:
-        # phải đợi sơ đồ vẽ xong rồi mới in, không thì PDF ra toàn ô trống
-        script += ("<script>addEventListener('load',()=>"
-                   "Promise.resolve(window.__ready).then(()=>setTimeout(print,300)));</script>")
+    # Đợi font + sơ đồ rồi mới in — in sớm thì PDF ra ô trống và chữ font dự phòng.
+    script += ("<script>addEventListener('load',()=>Promise.all([window.__ready,"
+               "document.fonts&&document.fonts.ready]).then(()=>{window.__xong=true;"
+               + ("setTimeout(print,300);" if for_print else "") + "}));</script>")
 
     page = (f"<!doctype html><html lang='vi'><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            f"<title>{esc(title_vi)}</title><style>{_EXPORT_CSS}</style></head>"
+            f"<title>{esc(title_vi)}</title><style>{_font_nhung()}{_EXPORT_CSS}</style></head>"
             f"<body class='{'one' if one_col else ''}'><main>{''.join(out)}</main>{script}</body></html>")
 
     if for_print:
@@ -2479,258 +2343,97 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
-# --------------------------------------------------------------- xuất slide
+def _font_nhung() -> str:
+    """`vendor/fonts.css` với mọi `url(fonts/…)` thay bằng data URI — file slide tải
+    về phải mở được khi không có mạng và không có server, mà vẫn đúng font sổ tay."""
+    import base64
+    css = (WEB / "vendor" / "fonts.css").read_text(encoding="utf-8")
 
-# Cỡ chữ quy từ bảng của Alley (28pt tiêu đề / 24pt thân / 18pt phụ / 14pt trích
-# dẫn, trên slide cao 540pt) sang tỉ lệ chiều cao, rồi nhân với khung 1280×720.
-# **24px là sàn tuyệt đối** — nhỏ hơn thì người ngồi cuối phòng không đọc được.
-#
-# `line-height` không dưới 1.3 là luật riêng cho tiếng Việt: dấu chồng (ế, ộ, ữ)
-# bị cắt ngọn ở 1.0–1.15, thấy rõ nhất ở tiêu đề. Cũng vì thế mà không viết hoa
-# toàn bộ và không siết letter-spacing.
-# Ba thứ bị chỉ đích danh là dấu hiệu "slide do AI làm": **nền màu kem**, **hoa
-# văn serif nghiêng**, và **thanh màu kẻ dọc cạnh mỗi ô chữ**. Gạch chân màu dưới
-# tiêu đề cũng vậy — nên dùng khoảng trắng thay thế. Bản CSS này cố ý không có
-# thứ nào trong số đó: nền trắng thật, một màu nhấn duy nhất dùng đúng hai chỗ
-# (slide chốt lại và vạch trên slide tiêu đề), còn lại là khoảng trắng.
-_SLIDES_CSS = """
-:root{--page:#e9eaec;--slide:#fff;--ink:#0f172a;--ink-2:#1e293b;--muted:#64748b;
---accent:#2563eb;--frame:#16264a;--rule:#e6e9ee}
-*{box-sizing:border-box}
-body{margin:0;background:var(--page);color:var(--ink);
-font:16px/1.5 "Helvetica Neue",Arial,ui-sans-serif,system-ui,sans-serif}
-/* Thanh công cụ nổi ở góc dưới-trái, KHÔNG dính trên đầu: dính trên đầu thì nó
-   che đúng dòng tiêu đề của slide đang cuộn qua — dòng quan trọng nhất. Góc
-   dưới-trái trống, vì chân slide bám phải. */
-.bar{position:fixed;left:14px;bottom:14px;z-index:5;display:flex;gap:1rem;
-align-items:center;background:var(--slide);border:1px solid var(--rule);
-border-radius:10px;padding:.55rem .9rem;box-shadow:0 3px 14px rgba(0,0,0,.16);
-font-size:.85rem;color:var(--ink-2)}
-@media print{.bar{display:none}}
-.bar label{display:flex;gap:.35rem;align-items:center;cursor:pointer}
-.wrap{padding:1.5rem 0 4rem}
-/* `--s` do `slide_fit.autofit()` ĐO ra cho từng slide — đo, co, đo lại tới khi
-   vừa khung. Thay cho việc chỉnh hằng số cỡ chữ bằng tay. */
-.slide{width:1280px;height:720px;background:var(--slide);color:var(--ink);
-padding:44px 60px 72px;position:relative;overflow:hidden;display:flex;
-flex-direction:column;margin:0 auto 1.5rem;border-radius:2px;
-box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.10);
-transform:scale(var(--fit,1));transform-origin:top center}
+    def thay(m):
+        f = WEB / "vendor" / m.group(1)
+        if not f.exists():
+            return m.group(0)
+        return "url(data:font/woff2;base64," + base64.b64encode(f.read_bytes()).decode() + ")"
+    return re.sub(r"url\((?:/vendor/|\./)?(fonts/[^)\s'\"]+)\)", thay, css)
 
-/* ---- đầu slide: nhãn phần · tiêu đề · dòng phụ ---- */
-/* Sàn tuyệt đối cho chữ nhỏ: tự co bao nhiêu cũng không được xuống dưới mức
-   đọc nổi. Để `max()` cho bộ dựng hình chặn, không tính tay ở Python. */
-.eyebrow{font-size:max(13px,calc(var(--s,1)*15px));font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-color:var(--accent);margin:0 0 10px}
-.slide h2{font-size:calc(var(--s,1)*42px);line-height:1.16;font-weight:800;margin:0;
-letter-spacing:-.02em;max-width:23em}
-.sub{font-size:max(16px,calc(var(--s,1)*20px));line-height:1.45;color:var(--muted);margin:10px 0 0;max-width:46em}
-.head{flex:none;margin-bottom:18px}
 
-/* ---- thẻ nội dung: nền pastel, chip icon, tiêu đề đậm ---- */
-/* `flex:none`: lưới thẻ tự cao theo nội dung. Để `flex:1` thì nó bị chia phần
-   chiều cao còn lại rồi `overflow:hidden` cắt cụt chữ ở đáy thẻ — lỗi này chỉ
-   nhìn ảnh chụp mới thấy, đo chiều cao không ra. */
-.cards{display:grid;gap:16px;flex:none;align-content:start}
-.card{overflow:visible}
-.cards.n2{grid-template-columns:1fr 1fr}
-.cards.n3{grid-template-columns:repeat(3,1fr)}
-.cards.n4{grid-template-columns:repeat(4,1fr)}
-.card{border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;
-min-height:0;overflow:hidden}
-.card-h{display:flex;align-items:center;gap:12px;flex:none}
-.chip{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;
-justify-content:center;flex:none}
-.card-t{font-size:calc(var(--s,1)*21px);font-weight:700;line-height:1.25;color:var(--ink)}
-.card-m{font-size:max(12px,calc(var(--s,1)*14px));color:var(--muted);font-weight:500;margin-left:6px;
-letter-spacing:.04em;text-transform:uppercase}
-.card ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
-.card li{font-size:max(15px,calc(var(--s,1)*18px));line-height:1.5;color:var(--ink-2);padding-left:16px;position:relative}
-.card li::before{content:"";position:absolute;left:0;top:.62em;width:5px;height:5px;
-border-radius:50%;background:var(--accent);opacity:.55}
+def _xuat_slide(doc: dict, *, in_ra: bool = False) -> Response:
+    """Bộ slide thành MỘT file HTML tự chứa: trình chiếu offline, hoặc in ra PDF.
 
-/* ---- gạch đầu dòng trần, khi nội dung không chia được thành thẻ ---- */
-/* `flex:none` cùng lý do với `.cards`: để `flex:1` thì khối chữ tranh chiều cao
-   với hình, và hình bị bóp còn vài chục pixel — bảng số liệu thành không đọc
-   nổi. Chữ lấy đúng chiều cao của nó, phần còn lại dành hết cho hình. */
-.plain{flex:none;display:flex;flex-direction:column;gap:14px}
-.plain li{font-size:max(16px,calc(var(--s,1)*21px));line-height:1.55;color:var(--ink-2);list-style:none;
-padding-left:20px;position:relative}
-.plain li::before{content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;
-border-radius:50%;background:var(--accent);opacity:.6}
-.plain ul{margin:0;padding:0}
-
-/* ---- hình: khung navy dày + chú thích nghiêng ---- */
-figure{margin:0;display:flex;flex-direction:column;gap:10px;flex:1;min-height:200px}
-.frame{border:3px solid var(--frame);border-radius:6px;padding:6px;background:#fff;
-flex:1;min-height:180px;display:flex;align-items:center;justify-content:center;
-overflow:hidden}
-.frame img{max-width:100%;max-height:100%;object-fit:contain}
-figcaption{font-size:max(15px,calc(var(--s,1)*17px));line-height:1.4;font-style:italic;color:var(--muted);
-text-align:center;flex:none}
-/* Mermaid tự đặt width/height và `style="max-width:…"` ngay trên thẻ svg, đè
-   mọi ràng buộc của khung. Phải ép bằng !important, nếu không sơ đồ phình ra
-   tràn khỏi cả slide và đè lên tiêu đề. */
-/* Ô chờ ảnh — chỉ hiện trên bản xem trước, KHÔNG in ra và không vào file xuất
-   cho người khác xem. Nó là lời nhắc cho người dựng slide, không phải nội dung. */
-.artslot{flex:1;min-height:120px;border:2px dashed #cbd5e1;border-radius:12px;
-display:flex;flex-direction:column;align-items:center;justify-content:center;
-gap:6px;color:#94a3b8}
-.artslot span{font-size:19px;font-weight:600}
-.artslot em{font-size:15px;font-style:normal}
-@media print{.artslot{display:none}}
-.mermaid{flex:1;min-height:0;min-width:0;display:flex;align-items:center;
-justify-content:center;overflow:hidden}
-/* `width:auto` để svg vẽ ở CỠ TỰ NHIÊN của nó — mermaid sinh ra sơ đồ chừng
-   vài trăm pixel, nên trên slide 1280px nó thành một vệt bé tí giữa khung dù
-   còn thừa chỗ. Svg của mermaid có `viewBox`, nên đặt 100% cả hai chiều là nó
-   tự co giãn vừa khung mà vẫn giữ đúng tỉ lệ (`preserveAspectRatio` mặc định).
-   Khung cha đã chặn chiều cao nên không sợ phình ra. */
-.mermaid svg{max-width:100%!important;max-height:100%!important;
-width:100%!important;height:100%!important}
-/* Mermaid PHỚT LỜ `themeVariables` (đã thử: vẫn trả #ececff / mediumpurple của
-   theme mặc định), nên ép màu bằng CSS — cách này không phụ thuộc vào API cấu
-   hình của thư viện, và kiểm lại được bằng ảnh chụp. */
-.mermaid .node rect,.mermaid .node polygon,.mermaid .node circle,
-.mermaid .node ellipse,.mermaid .node path{
-fill:#e9eefc!important;stroke:#2563eb!important;stroke-width:1.5px!important}
-.mermaid .cluster rect{fill:#f6f8fd!important;stroke:#c7d2e8!important}
-.mermaid .nodeLabel,.mermaid .label,.mermaid text{fill:#0f172a!important;color:#0f172a!important}
-.mermaid .edgePath .path,.mermaid .flowchart-link,.mermaid path.path{
-stroke:#64748b!important;stroke-width:1.6px!important}
-.mermaid marker path,.mermaid .arrowheadPath,.mermaid marker *{
-fill:#64748b!important;stroke:#64748b!important}
-.mermaid .edgeLabel,.mermaid .edgeLabel rect{fill:#fff!important;background:#fff!important}
-.mermaid .edgeLabel text,.mermaid .edgeLabel span{fill:#334155!important;color:#334155!important}
-
-/* Công thức phải co theo vòng autofit như mọi thứ khác. Để cứng 26px thì slide
-   có công thức không bao giờ vừa được, dù mọi phần khác đã co hết cỡ. */
-.eq{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-font-size:max(18px,calc(var(--s,1)*26px));
-text-align:center;padding:max(12px,calc(var(--s,1)*22px));
-background:#e9eefc;border-radius:12px;flex:none}
-
-/* ---- bố cục ---- */
-.body{flex:1;min-height:0;display:flex;flex-direction:column;gap:18px}
-/* `.vis` bọc hình HOẶC sơ đồ. Không cho nó co lại thì `flex:1` của `figure` và
-   `max-height:100%` của svg đều đo theo một cha cao tự do, tức là không đo gì
-   cả: ảnh hiện ở cỡ gốc, sơ đồ mermaid phình tới 4000px. Đã vấp thật —
-   10/20 slide tràn khung, và bộ đo bằng Python không thấy vì nó không mô phỏng
-   chỗ này.
-   Nhưng `min-height:0` thì thành lỗi ngược lại: thẻ ăn hết chiều cao và sơ đồ
-   co còn một vệt vài chục pixel — chặn được tràn mà bằng chứng thành vô hình,
-   tệ hơn hẳn. Bằng chứng mới là lý do slide tồn tại, nên nó giữ tối thiểu 32%;
-   nhồi thêm chữ thì slide tràn và `check_slides` kêu, đúng thứ cần xảy ra. */
-.vis{flex:1;min-height:38%;min-width:0;display:flex;flex-direction:column}
-.two{flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(0,44fr) minmax(0,56fr);
-gap:36px;align-items:stretch}
-.two>*{min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px;justify-content:center}
-.L-figwide .body{gap:16px}
-
-/* ---- số liệu lớn ---- */
-.stats{display:flex;gap:56px;flex:none;flex-wrap:wrap}
-.stat-v{font-size:calc(var(--s,1)*40px);font-weight:800;color:var(--accent);line-height:1.1;letter-spacing:-.02em}
-.stat-l{font-size:16px;line-height:1.4;color:var(--muted);margin-top:4px;max-width:16em}
-
-/* ---- hộp chốt lại chạy hết bề ngang ---- */
-.callout{border-radius:12px;background:#e0e9fd;padding:15px 22px;display:flex;
-gap:16px;align-items:center;flex:none}
-.callout .chip{width:38px;height:38px;border-radius:9px}
-.callout b{display:block;font-size:calc(var(--s,1)*21px);font-weight:700;line-height:1.3}
-.callout span{display:block;font-size:max(14px,calc(var(--s,1)*17px));line-height:1.4;color:var(--muted);margin-top:3px}
-
-/* ---- chú thích thuật ngữ mới, ghép tự động từ bảng thuật ngữ ---- */
-/* Chú thuật ngữ và chân slide nằm cùng một hàng ngang: chú giải bám trái và
-   chỉ chiếm 62%, chân slide bám phải — không bao giờ đè nhau. */
-.terms{flex:none;display:flex;gap:28px;border-top:1px solid var(--rule);
-padding-top:10px;max-width:62%}
-.terms div{font-size:max(13px,calc(var(--s,1)*15px));line-height:1.4;color:var(--muted);
-max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.terms b{color:var(--accent);font-weight:700}
-
-/* ---- chân slide ---- */
-.foot{position:absolute;right:60px;bottom:22px;text-align:right;
-font-size:13px;color:var(--muted);max-width:34%;overflow:hidden;
-text-overflow:ellipsis;white-space:nowrap}
-
-/* ---- slide tiêu đề và vách ngăn: nền vạch chéo ---- */
-.deco{position:absolute;inset:0;pointer-events:none;background:
-repeating-linear-gradient(48deg,rgba(37,99,235,.10) 0 3px,transparent 3px 15px);
--webkit-mask-image:linear-gradient(105deg,transparent 42%,#000 100%);
-mask-image:linear-gradient(105deg,transparent 42%,#000 100%)}
-.L-title{justify-content:center}
-.L-title h1{font-size:52px;line-height:1.14;font-weight:800;margin:0 0 18px;
-letter-spacing:-.025em;max-width:17em;position:relative}
-.L-title .sub{font-size:22px;margin:0 0 46px;max-width:36em;position:relative}
-.L-title .who{font-size:18px;line-height:1.65;color:var(--ink-2);position:relative}
-.L-title .who .dim{color:var(--muted)}
-.L-section{justify-content:center;align-items:center;text-align:center}
-.L-section .eyebrow{margin-bottom:16px;position:relative}
-.L-section h2{font-size:52px;font-weight:800;margin:0;max-width:16em;position:relative}
-.L-section .sub{margin:16px auto 0;position:relative}
-/* ảnh minh hoạ trên vách ngăn và slide tiêu đề — thuần trang trí, cỡ vừa phải */
-.art{position:relative;margin-top:26px;display:flex;justify-content:center}
-.art img{max-height:210px;max-width:36%;object-fit:contain}
-.L-title .art{position:absolute;right:70px;top:50%;transform:translateY(-50%);margin:0}
-.L-title .art img{max-height:330px;max-width:330px}
-.L-closing{justify-content:center;align-items:center;text-align:center}
-.L-closing h2{font-size:44px;font-weight:800;margin:0 0 14px;max-width:1000px}
-.kl{display:flex;flex-direction:column;gap:14px;width:900px;text-align:left;margin:12px 0}
-.kl-row{display:grid;grid-template-columns:42px 1fr;gap:18px;align-items:start}
-.kl-n{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;font-weight:800}
-.kl-t{font-size:26px;font-weight:700;line-height:1.3}
-.kl-d{font-size:24px;line-height:1.35;color:#475569;margin-top:2px}
-.L-closing .callout{width:900px;text-align:left}
-.cam-on{margin-top:20px;display:flex;flex-direction:column;gap:4px}
-.cam-on b{font-size:28px;color:var(--accent)}
-.cam-on span{font-size:18px;color:#64748b}
-
-/* ---- mục lục: badge số vuông bo góc ---- */
-.L-agenda .ag{display:flex;flex-direction:column;gap:16px;flex:1;
-min-height:0;justify-content:center}
-.ag-row{display:grid;grid-template-columns:54px 1fr;gap:22px;align-items:center;
-border-radius:12px;padding:14px 20px}
-.ag-n{width:54px;height:54px;border-radius:12px;display:flex;align-items:center;
-justify-content:center;color:#fff;font-size:24px;font-weight:800}
-.ag-t{font-size:23px;font-weight:700;line-height:1.3}
-.ag-d{font-size:18px;line-height:1.4;color:var(--muted);margin-top:3px}
-
-/* lời người nói: mặc định ẩn, bật lên thì mỗi slide kèm một trang lời nói */
-.notes{display:none}
-.with-notes .notes{display:block;width:1280px;height:720px;background:var(--slide);
-padding:60px 72px;margin:0 auto 1.5rem;font-size:26px;line-height:1.5;
-border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);
-transform:scale(var(--fit,1));transform-origin:top center}
-.notes b{display:block;font-size:18px;text-transform:uppercase;letter-spacing:.09em;
-color:var(--muted);margin-bottom:22px;font-weight:700}
-.bk{width:1280px;margin:2.5rem auto 1rem;font-size:18px;color:var(--muted);
-text-transform:uppercase;letter-spacing:.1em;transform:scale(var(--fit,1));
-transform-origin:top center}
-
-/* ---- bố cục tự do: từng phần tự định vị bằng % khung slide ---- */
-/* Chỉ bật cho slide người dùng tự chọn. Mặc định vẫn là luồng flexbox tự sắp —
-   đó là thứ giữ cả bộ nhất quán và là chỗ autofit bám vào.
-   `display:contents` cho các khối trung gian là điểm mấu chốt: nếu để `.body`
-   có khung riêng (dù static hay absolute) thì phần trăm của con tính theo NÓ
-   chứ không theo slide, và mọi thứ dồn về góc trên trái. */
-.slide.is-free .body,.slide.is-free .cols,.slide.is-free .cards,
-.slide.is-free .ag{display:contents}
-.slide.is-free .part{position:absolute;margin:0;overflow:hidden}
-.slide.is-free .card,.slide.is-free .ag-row{height:100%}
-.slide.is-free .vis{display:flex;align-items:center;justify-content:center}
-.slide.is-free .vis figure,.slide.is-free .vis .mermaid{height:100%;flex:1}
-.slide.is-free .artslot{height:100%}
-@page{size:338.7mm 190.5mm;margin:0}
-@media print{
-body{background:#fff}
-.bar,.bk{display:none}
-.wrap{padding:0}
-.slide{transform:none;margin:0;border-radius:0;box-shadow:none;
-break-after:page;break-inside:avoid}
-.with-notes .notes{transform:none;margin:0;border-radius:0;box-shadow:none;
-break-after:page;break-inside:avoid}
-}
-"""
+    Nhúng NGUYÊN VĂN `web/slide-ve.js` + `web/slide.css` — đúng bộ vẽ mà app dùng
+    để xem trước và trình chiếu. Bản cũ có bộ dựng riêng cho file xuất (và một bộ
+    nữa cho PowerPoint), lệch nhau mỗi lần sửa; giờ không còn gì để lệch.
+    """
+    import json as _json
+    d = _slides_ra(doc)
+    if not d["bo"]:
+        raise HTTPException(400, "Bài này chưa có bộ slide — bấm “Tạo slide” trước")
+    anh = {}
+    for sl in d["bo"]:
+        if sl.get("anh") and sl["anh"] not in anh:
+            anh[sl["anh"]] = _data_uri(doc["id"], sl["anh"])
+    du_lieu = _json.dumps({"bo": d["bo"], "anh": anh,
+                           "ten_bai": (doc.get("brief") or {}).get("title_vi") or doc.get("title") or ""},
+                          ensure_ascii=False).replace("</", "<\\/")
+    ve = (WEB / "slide-ve.js").read_text(encoding="utf-8")
+    css = (WEB / "slide.css").read_text(encoding="utf-8")
+    import html as _html
+    ten = _html.escape((doc.get("brief") or {}).get("title_vi") or doc.get("title") or "Bộ slide")
+    html = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{ten} — slide</title>
+<style>{_font_nhung()}
+{css}
+html,body{{margin:0;background:#2b2925}}
+#ds{{display:grid;gap:28px;padding:28px;max-width:1280px;margin:0 auto}}
+#ds .sld{{box-shadow:0 6px 24px rgba(0,0,0,.35)}}
+#mo{{position:fixed;right:18px;top:14px;z-index:5;font:600 15px system-ui;padding:.5rem 1rem;border:2px solid #1d1b18;
+  border-radius:10px;background:#ffd43b;cursor:pointer;box-shadow:3px 3px 0 #1d1b18}}
+#chieu{{position:fixed;inset:0;background:#0b0d12;display:none;align-items:center;justify-content:center;z-index:9}}
+#chieu.on{{display:flex}}
+#chieu .khung{{width:min(100vw,calc(100vh*16/9))}}
+#loi{{position:fixed;right:0;top:0;bottom:0;width:22rem;background:#fffcf3;padding:1.2rem;overflow:auto;
+  font:16px/1.6 system-ui;display:none;z-index:10}}
+#loi.on{{display:block}}
+@page{{size:13.333in 7.5in;margin:0}}
+@media print{{html,body{{background:#fff}}#ds{{display:block;padding:0;gap:0;max-width:none}}
+  #ds .sld{{width:13.333in;box-shadow:none}}#mo,#chieu,#loi{{display:none!important}}}}
+</style></head><body>
+<button id="mo" title="Trình chiếu — ← → chuyển, S lời nói, Esc thoát">▶ Trình chiếu</button>
+<div id="ds"></div><div id="chieu"><div class="khung"></div></div><aside id="loi"></aside>
+<script>{ve}</script>
+<script>
+const D = {du_lieu};
+const ctx = {{bo: D.bo, anh: (s) => D.anh[s.anh] || "", ten_bai: D.ten_bai}};
+const ds = document.getElementById("ds");
+ds.innerHTML = D.bo.map((s) => SlideVe.ve(s, ctx)).join("");
+let i = 0;
+const ch = document.getElementById("chieu"), loi = document.getElementById("loi");
+function hien(k) {{
+  i = Math.max(0, Math.min(k, D.bo.length - 1));
+  ch.querySelector(".khung").innerHTML = SlideVe.ve(D.bo[i], ctx);
+  SlideVe.vuaKhung(ch.querySelector(".sld"));
+  loi.textContent = D.bo[i].loi_noi || "";
+}}
+document.getElementById("mo").onclick = () => {{ ch.classList.add("on"); hien(0);
+  document.documentElement.requestFullscreen?.().catch(() => {{}}); }};
+ch.onclick = () => hien(i + 1);
+addEventListener("keydown", (e) => {{
+  if (!ch.classList.contains("on")) return;
+  if (["ArrowRight", "PageDown", " "].includes(e.key)) {{ e.preventDefault(); hien(i + 1); }}
+  else if (["ArrowLeft", "PageUp"].includes(e.key)) hien(i - 1);
+  else if (e.key === "Escape") {{ ch.classList.remove("on"); loi.classList.remove("on"); }}
+  else if (e.key.toLowerCase() === "s") loi.classList.toggle("on");
+}});
+// Co chữ SAU khi font đã nạp — đo bằng font dự phòng thì co sai.
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => {{
+  document.querySelectorAll("#ds .sld").forEach(SlideVe.vuaKhung);
+  window.__ready = true;
+  {"setTimeout(() => window.print(), 300);" if in_ra else ""}
+}});
+</script></body></html>"""
+    return Response(html, media_type="text/html; charset=utf-8",
+                    headers={} if in_ra else
+                    {"Content-Disposition": f'attachment; filename="{doc["id"]}-slide.html"'})
 
 
 def _clip(s: str, n: int) -> str:
@@ -2740,343 +2443,6 @@ def _clip(s: str, n: int) -> str:
         return s
     cut = s[:n].rsplit(" ", 1)[0] or s[:n]
     return cut.rstrip(" ,;:.") + "…"
-
-
-def _export_slides_html(doc: dict, *, for_print: bool = False) -> Response:
-    """Bộ slide thành một file HTML tự chứa, in ra PDF được.
-
-    Đi cùng đường với `_export_html`: ảnh nhúng base64, mermaid chỉ nhúng khi bài
-    thật sự có sơ đồ, và bản in đợi `window.__ready` rồi mới mở hộp in. Khác một
-    chỗ: mỗi `.slide` cao đúng một trang ngang nên `break-after:page` cho ra đúng
-    một slide một trang.
-
-    Không dùng reveal.js hay thư viện slide nào: công thức đã lưu sẵn dạng
-    `^{…}` / `_{…}` nên `rich()` dựng được, tức là không cần KaTeX kèm bộ font.
-    """
-    import html as _h
-
-    doc_id = doc["id"]
-    brief = doc.get("brief") or {}
-    slides = doc.get("slides") or {}
-    deck = list(slides.get("deck") or [])
-    backup = list(slides.get("backup") or [])
-    if not deck and not backup:
-        raise HTTPException(400, "Bài này chưa có bộ slide nào — bấm “Dựng slide” trước")
-
-    diagrams: list[str] = []
-
-    def esc(s) -> str:
-        return _h.escape(str(s or ""))
-
-    def rich(s) -> str:
-        """Như `esc` nhưng dựng `^{…}` / `_{…}` thành chỉ số trên/dưới thật.
-
-        Chỉ dùng cho chữ trên slide — KHÔNG dùng cho mã Mermaid hay `alt`.
-        """
-        out = esc(s)
-        out = re.sub(r"\^\{([^{}]*)\}", r"<sup>\1</sup>", out)
-        return re.sub(r"_\{([^{}]*)\}", r"<sub>\1</sub>", out)
-
-    title_vi = brief.get("title_vi") or doc.get("title") or "Bài báo"
-    foot = esc(_clip(title_vi, 70))
-    ctx_title_en = doc.get("title") or ""
-    # `venue_guess` có khi là cả một câu — trên slide tiêu đề nó chỉ được một dòng
-    venue = _clip(brief.get("venue_guess") or "", 80)
-    # thuật ngữ lần đầu xuất hiện thì gắn chú thích, lấy từ bảng đã chốt ở brief
-    pipeline.attach_terms(doc, deck)
-    pipeline.attach_terms(doc, backup)
-
-    def one(sl: dict, no: str) -> str:
-        lay = pipeline.slide_layout(sl, doc_id)
-        head = sl.get("headline") or ""
-        cards = [c for c in (sl.get("cards") or []) if (c or {}).get("title")]
-        bl = [b for b in (sl.get("bullets") or []) if (b or "").strip()]
-
-        def chip(name: str, i: int, sz: int = 22) -> str:
-            svg = theme.icon_svg(name, sz)
-            if not svg:
-                return ""
-            return f"<span class='chip' style='background:{theme.chip_color(i)}'>{svg}</span>"
-
-        def card_html(c: dict, i: int) -> str:
-            items = "".join(f"<li>{rich(x)}</li>"
-                            for x in (c.get("bullets") or []) if (x or "").strip())
-            meta = f"<span class='card-m'>{esc(c.get('meta'))}</span>" if c.get("meta") else ""
-            return (f"<div class='card part' data-part=\"card{i}\" "
-                    f"style='background:{theme.card_tint(i)}'>"
-                    f"<div class='card-h'>{chip(c.get('icon'), i)}"
-                    f"<div><span class='card-t'>{rich(c.get('title'))}</span>{meta}</div></div>"
-                    f"{f'<ul>{items}</ul>' if items else ''}</div>")
-
-        def cards_html() -> str:
-            if not cards:
-                return ""
-            n = min(len(cards), 4)
-            inner = "".join(card_html(c, i) for i, c in enumerate(cards))
-            return f"<div class='cards n{n}'>{inner}</div>"
-
-        def plain_html() -> str:
-            if not bl:
-                return ""
-            return ("<div class='plain part' data-part=\"bullets\"><ul>"
-                    + "".join(f"<li>{rich(b)}</li>" for b in bl) + "</ul></div>")
-
-        def placeholder_html() -> str:
-            """Ô chờ ảnh — chỉ hiện khi slide CÒN CHỖ thật cho một tấm ảnh.
-
-            Slide đã kín thẻ và hộp chốt thì chỗ trống chỉ còn vài chục pixel;
-            hiện ô chờ ở đó là mời người dùng bỏ ảnh vào một khe không nhìn ra
-            gì. `slide_fit.room_for_art()` đo chỗ trống thật rồi mới quyết.
-            """
-            # S2: file xuất ra là thứ đem đi chiếu — lời nhắn cho người soạn
-            # ("Chỗ dành cho ảnh minh hoạ…") không bao giờ được lọt vào đó.
-            return ""
-            room = int(sl.get("art_room") or 0)
-            if room < slide_fit.MIN_ART_H:
-                return ""
-            return (f"<div class='artslot' style='min-height:{min(room, 300)}px'>"
-                    "<span>Chỗ dành cho ảnh minh hoạ</span>"
-                    "<em>Prompt có sẵn ở ô sửa slide — tự tạo rồi tải lên</em></div>")
-
-        def visual_html() -> str:
-            return f"<div class='vis part' data-part=\"visual\">{_vis_inner()}</div>"
-
-        def _vis_inner() -> str:
-            out = []
-            if (fig := sl.get("figure")) and (uri := _data_uri(doc_id, fig)):
-                note = (sl.get("figure_note") or "").strip()
-                # Ảnh AI vẽ phải nói rõ nó là minh hoạ — người xem không được
-                # nhầm nó với hình thật của tác giả.
-                if sl.get("illus"):
-                    note = ("Hình minh hoạ khái niệm, không phải hình trong bài báo."
-                            + (f" {note}" if note else ""))
-                cap = f"<figcaption>{rich(note)}</figcaption>" if note else ""
-                out.append(f"<figure><div class='frame'><img src='{uri}' "
-                           f"alt='{esc(_clip(head, 90))}'></div>{cap}</figure>")
-            if (dia := (sl.get("diagram") or "").strip()):
-                diagrams.append(dia)
-                out.append(f"<div class='mermaid'>{esc(dia)}</div>")
-            if (eq := (sl.get("equation") or "").strip()):
-                out.append(f"<div class='eq'>{rich(eq)}</div>")
-            return "".join(out)
-
-        def stats_html() -> str:
-            st = [s for s in (sl.get("stats") or []) if (s or {}).get("value")]
-            if not st:
-                return ""
-            inner = "".join(f"<div><div class='stat-v'>{rich(s.get('value'))}</div>"
-                            f"<div class='stat-l'>{rich(s.get('label'))}</div></div>"
-                            for s in st[:2])
-            return f"<div class='stats part' data-part=\"stats\">{inner}</div>"
-
-        def callout_html() -> str:
-            co = sl.get("callout") or {}
-            if not (co.get("title") or co.get("body")):
-                return ""
-            body = f"<span>{rich(co.get('body'))}</span>" if co.get("body") else ""
-            return (f"<div class='callout part' data-part=\"callout\">"
-                    f"{chip(co.get('icon') or 'check', 0, 19)}"
-                    f"<div><b>{rich(co.get('title'))}</b>{body}</div></div>")
-
-        def terms_html() -> str:
-            tm = sl.get("terms") or []
-            if not tm:
-                return ""
-            inner = "".join(f"<div><b>{esc(t['en'])}</b> — {rich(t['gloss'])}</div>"
-                            for t in tm)
-            return f"<div class='terms part' data-part=\"terms\">{inner}</div>"
-
-        def header() -> str:
-            # số phần đứng trước tên phần: đọc giữa chừng vẫn biết mình đang ở
-            # đâu trong lộ trình mà mục lục đã hứa
-            eb_txt = (sl.get("eyebrow") or "").strip()
-            if eb_txt and sl.get("_secno"):
-                eb_txt = f"{sl['_secno']} · {eb_txt}"
-            eb = f"<p class='eyebrow'>{esc(eb_txt)}</p>" if eb_txt else ""
-            sub = (f"<p class='sub'>{rich(sl.get('sub'))}</p>"
-                   if (sl.get("sub") or "").strip() else "")
-            return f"<div class='head part' data-part=\"head\">{eb}<h2>{rich(head)}</h2>{sub}</div>"
-
-        # ------------------------------------------------------------ bố cục
-        if lay == "title":
-            art = ""
-            if (fg := sl.get("figure")) and (u := _data_uri(doc_id, fg)):
-                art = (f"<div class='art part' data-part=\"visual\">"
-                       f"<img src='{u}' alt=''></div>")
-            sub = (f"<p class='sub'>{rich(sl.get('sub') or ctx_title_en)}</p>")
-            who = "<br>".join(x for x in (
-                esc(venue), f"<span class='dim'>{esc(_clip(doc.get('source',''), 90))}</span>"
-            ) if x)
-            inner = ("<div class='deco'></div>"
-                     "<div class='part' data-part=\"head\">"
-                     f"<p class='eyebrow'>{esc(sl.get('eyebrow') or 'BÁO CÁO SEMINAR')}</p>"
-                     f"<h1>{rich(head or title_vi)}</h1>{sub}"
-                     f"<p class='who'>{who}</p></div>{art}")
-        elif lay == "section":
-            sub = (f"<p class='sub'>{rich(sl.get('sub'))}</p>"
-                   if (sl.get("sub") or "").strip() else "")
-            # vách ngăn được phép mang ảnh minh hoạ — đây là chỗ an toàn nhất
-            # cho ảnh AI vẽ, vì nó thuần trang trí, không đóng vai bằng chứng
-            art = ""
-            if (fg := sl.get("figure")) and (u := _data_uri(doc_id, fg)):
-                art = (f"<div class='art part' data-part=\"visual\">"
-                       f"<img src='{u}' alt=''></div>")
-            inner = ("<div class='deco'></div>"
-                     "<div class='part' data-part=\"head\">"
-                     f"<p class='eyebrow'>{esc(sl.get('eyebrow') or 'PHẦN')}</p>"
-                     f"<h2>{rich(head)}</h2>{sub}</div>{art}")
-        elif lay == "agenda":
-            rows = []
-            for i, c in enumerate(cards):
-                desc = next((x for x in (c.get("bullets") or []) if (x or "").strip()), "")
-                rows.append(
-                    f"<div class='ag-row part' data-part=\"ag{i}\" "
-                    f"style='background:{theme.card_tint(i)}'>"
-                    f"<span class='ag-n' style='background:{theme.chip_color(i)}'>{i+1}</span>"
-                    f"<div><div class='ag-t'>{rich(c.get('title'))}</div>"
-                    f"{f'<div class=ag-d>{rich(desc)}</div>' if desc else ''}</div></div>")
-            inner = header() + f"<div class='ag'>{''.join(rows)}</div>"
-        elif lay == "closing":
-            # S4/S17: dựng đủ như `renderSlide()` — câu chốt, tối đa 3 điều mang
-            # về, hộp chốt, cảm ơn + trích dẫn. Trước đây chỉ có một câu.
-            items = []
-            for i, c in enumerate(cards[:3]):
-                d = next((x for x in (c.get("bullets") or []) if (x or "").strip()), "")
-                items.append((c.get("title") or "", d))
-            if not items:
-                items = [(b, "") for b in bl[:3]]
-            rows = "".join(
-                f"<div class='kl-row'><span class='kl-n' "
-                f"style='background:{theme.chip_color(i)}'>{i + 1}</span>"
-                f"<div><div class='kl-t'>{rich(t)}</div>"
-                + (f"<div class='kl-d'>{rich(d)}</div>" if d else "") + "</div></div>"
-                for i, (t, d) in enumerate(items))
-            cite = " · ".join(x for x in (doc.get("title") or "",
-                                          pipeline.nguon_gon(doc.get("source") or "")) if x)
-            inner = (f"<div class='part' data-part=\"head\"><h2>{rich(head)}</h2>"
-                     + (f"<p class='sub'>{rich(sl.get('sub'))}</p>"
-                        if (sl.get("sub") or "").strip() else "") + "</div>"
-                     + (f"<div class='kl part' data-part=\"takeaways\">{rows}</div>" if rows else "")
-                     + callout_html()
-                     + "<div class='cam-on part' data-part=\"thanks\"><b>Cảm ơn · Hỏi đáp</b>"
-                     f"<span>{esc(_clip(cite, 120))}</span></div>")
-        elif lay == "figwide":
-            # ảnh ngang: chữ ở trên, ảnh tràn cả bề ngang ở dưới
-            inner = (header() + "<div class='body'>"
-                     + (cards_html() or plain_html()) + visual_html()
-                     + stats_html() + callout_html() + terms_html() + "</div>")
-        elif lay in ("figside", "split"):
-            left = (cards_html() or plain_html()) + stats_html()
-            inner = (header() + f"<div class='body'>"
-                     f"<div class='two'><div>{left}</div>"
-                     f"<div>{visual_html()}</div></div>"
-                     + callout_html() + terms_html() + "</div>")
-        elif lay == "figfull":
-            inner = (header() + f"<div class='body'>{visual_html()}"
-                     + callout_html() + terms_html() + "</div>")
-        elif lay == "cards":
-            inner = (header() + f"<div class='body'>{cards_html()}{stats_html()}"
-                     f"{placeholder_html()}" + callout_html() + terms_html() + "</div>")
-        else:
-            inner = (header() + f"<div class='body'>{plain_html()}{stats_html()}"
-                     + callout_html() + terms_html() + "</div>")
-
-        foot_html = ("" if lay == "title"
-                     else f"<div class='foot'>{foot} · {esc(no)}</div>")
-        sc = slide_fit.autofit(sl, lay)
-        st = f" style='--s:{sc}'" if sc < 1 else ""
-        # Bố cục tự do: mỗi phần mang toạ độ % của riêng nó. Tính theo % nên
-        # slide co giãn thế nào cũng giữ đúng tỉ lệ người dùng đã kéo.
-        cls = f"slide L-{lay}"
-        if sl.get("free") and isinstance(sl.get("boxes"), dict):
-            cls += " is-free"
-            for key, b in sl["boxes"].items():
-                if not (isinstance(b, (list, tuple)) and len(b) == 4):
-                    continue
-                # bỏ đuôi .0 cho gọn: `left:5%` chứ không phải `left:5.0%`
-                x, y, w, h = (f"{float(v):.3f}".rstrip("0").rstrip(".") for v in b)
-                inner = inner.replace(
-                    f'data-part="{key}"',
-                    f'data-part="{key}" style="left:{x}%;top:{y}%;'
-                    f'width:{w}%;height:{h}%"', 1)
-        out = f"<section class='{cls}'{st}>{inner}{foot_html}</section>"
-        if (nt := (sl.get("notes") or "").strip()):
-            out += f"<div class='notes'><b>Lời nói · slide {esc(no)}</b>{rich(nt)}</div>"
-        return out
-
-    # "PHẦN 2 / 3" trên vách ngăn — tính ở đây chứ không hỏi model, nó không đếm
-    # được số vách ngăn cuối cùng còn lại sau khi người dùng xoá bớt slide
-    pipeline.number_sections(deck)
-    pipeline.number_sections(backup)
-
-    pages = [one(sl, str(i)) for i, sl in enumerate(deck, 1)]
-    if backup:
-        pages.append("<p class='bk'>Slide dự phòng — dùng khi có câu hỏi</p>")
-        pages += [one(sl, f"D{i}") for i, sl in enumerate(backup, 1)]
-
-    bar = ("<div class='bar'><label><input type='checkbox' id='nt'> "
-           "Kèm lời người nói</label>"
-           "<button onclick='print()'>In / lưu PDF</button>"
-           "<span>Mỗi slide in ra đúng một trang ngang.</span></div>"
-           "<script>nt.onchange=()=>document.body.classList.toggle("
-           "'with-notes',nt.checked)</script>")
-
-    autofit = """<script>
-/* Tự co cho vừa khung — đúng thuật toán `normAutofit fontScale` của PowerPoint:
-   ĐO bằng chính bộ dựng hình, giảm cỡ chữ, đo lại. `slide_fit.py` bên server chỉ
-   còn là ước lượng để cảnh báo và để quyết chỗ đặt ảnh; nó là bản mô phỏng
-   flexbox viết tay nên luôn thiếu một thứ gì đó (gap, min-height, margin gộp).
-   Chỗ này thì không đoán: trình duyệt nói tràn là tràn. */
-(function () {
-  var LO = 0.7, STEP = 0.03;
-  function fit(el) {
-    var s = parseFloat(el.style.getPropertyValue('--s')) || 1, n = 0;
-    while (el.scrollHeight > el.clientHeight + 1 && s > LO && n++ < 30) {
-      s = Math.max(LO, s - STEP);
-      el.style.setProperty('--s', s.toFixed(3));
-    }
-  }
-  function all() { document.querySelectorAll('.slide').forEach(fit); }
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(all);
-  addEventListener('load', all);
-  all();
-})();
-</script>"""
-
-    # co slide cho vừa bề ngang cửa sổ; bản in giữ nguyên 1280px của @page
-    fit = ("<script>const fit=()=>document.documentElement.style.setProperty("
-           "'--fit',Math.min(1,(innerWidth-48)/1280));fit();addEventListener("
-           "'resize',fit);</script>")
-
-    # Mermaid nặng 3.5MB — chỉ nhúng khi bộ slide thật sự có sơ đồ
-    script = ""
-    if diagrams:
-        js = (WEB / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")
-        script = (f"<script>{js}</script><script>"
-                  "mermaid.initialize({startOnLoad:false,securityLevel:'strict',"
-                  "theme:'base',themeVariables:{"
-                  "primaryColor:'#e9eefc',primaryBorderColor:'#2563eb',"
-                  "primaryTextColor:'#0f172a',lineColor:'#64748b',"
-                  "secondaryColor:'#ddf3f5',tertiaryColor:'#e4f5ea',"
-                  "fontFamily:'Helvetica Neue,Arial,sans-serif',fontSize:'15px'},"
-                  "flowchart:{curve:'basis',htmlLabels:false}});"
-                  "window.__ready=mermaid.run().catch(()=>{});</script>")
-    if for_print:
-        # phải đợi sơ đồ vẽ xong rồi mới in, không thì slide ra toàn ô trống
-        script += ("<script>addEventListener('load',()=>"
-                   "Promise.resolve(window.__ready).then(()=>setTimeout(print,300)));</script>")
-
-    page = (f"<!doctype html><html lang='vi'><head><meta charset='utf-8'>"
-            f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            f"<title>{esc(title_vi)} — slide</title><style>{_SLIDES_CSS}</style></head>"
-            f"<body>{bar}<div class='wrap'>{''.join(pages)}</div>"
-            f"{fit}{script}{autofit}</body></html>")
-
-    if for_print:
-        # inline chứ không attachment — phải hiện ra trong tab thì mới in được
-        return Response(page, media_type="text/html; charset=utf-8")
-    return Response(page, media_type="text/html; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="{doc_id}-slide.html"'})
 
 
 # Kho survey — cơ chế thứ hai, tách hẳn khỏi luồng đọc-hiểu ở trên. Phải gắn

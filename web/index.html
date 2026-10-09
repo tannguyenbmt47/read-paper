@@ -6,6 +6,7 @@
 <title>Loupe — đọc bài báo khoa học đến mức thật sự hiểu</title>
 <link rel="stylesheet" href="/vendor/fonts.css">
 <link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/slide.css">
 <link rel="stylesheet" href="/survey.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='30' height='30' rx='8' fill='%23ffd43b' stroke='%231d1b18' stroke-width='2'/><circle cx='14' cy='14' r='6.5' fill='%23fffcf3' stroke='%231d1b18' stroke-width='2.6'/><path d='M19 19l6 6' stroke='%231d1b18' stroke-width='3' stroke-linecap='round'/></svg>">
 </head>
@@ -534,124 +535,44 @@
   </aside>
 </section>
 
-<!-- ==================== BƯỚC 3 · BỘ SLIDE TRÌNH BÀY ==================== -->
+<!-- ======================= BỘ SLIDE TRÌNH BÀY (v2) =======================
+     Vẽ bằng web/slide-ve.js — MỘT bộ vẽ dùng chung cho xem trước, trình chiếu
+     và file tải về. Màn sửa ở web/slide.js, dữ liệu ở server/slide.py. -->
 <section id="slides" class="screen hidden">
   <header class="topbar">
-    <button id="slBack" class="icon-btn" title="Về màn hình đọc">←</button>
-    <div class="topbar-title">
-      <strong>Bộ slide</strong>
-      <span id="slDocTitle"></span>
-    </div>
+    <button id="slBack" class="icon-btn" title="Về màn hình đọc"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg></button>
+    <div class="topbar-title"><strong>Bộ slide</strong><span id="slTen"></span></div>
     <div class="topbar-actions">
-      <button id="slPresent" class="icon-btn" title="Trình chiếu toàn màn hình (F5) · ← → chuyển slide · S xem lời nói · Esc thoát">▶</button>
-      <button id="slAdd" class="icon-btn" title="Thêm slide trắng sau slide đang chọn">＋</button>
-      <button id="slDup" class="icon-btn" title="Nhân đôi slide đang chọn">⧉</button>
-      <div class="sl-tabs">
-        <button id="slTabOutline" class="sl-tab is-on" title="Nội dung buổi nói: mỗi mục nói gì, lấy bằng chứng nào. Sửa ở đây trước khi dựng.">① Dàn ý</button>
-        <button id="slTabDeck" class="sl-tab" title="Slide đã dựng từ dàn ý">② Slide</button>
-      </div>
-      <button id="slOutlineBtn" class="btn">Soạn nội dung · tốn ít</button>
-      <button id="slGenBtn" class="btn btn-primary">Dựng slide · tốn tiền</button>
+      <select id="slPhut" class="input input-sm" aria-label="Độ dài buổi nói" title="Độ dài buổi nói — quyết định số slide">
+        <option value="10">10 phút · ~10 slide</option>
+        <option value="15" selected>15 phút · ~13 slide</option>
+        <option value="20">20 phút · ~16 slide</option>
+      </select>
+      <button id="slTao" class="btn" type="button">Tạo lại cả bộ</button>
+      <button id="slChieu" class="btn btn-primary" type="button" title="Trình chiếu toàn màn hình (F5) · ← → chuyển · S lời nói · Esc thoát">▶ Trình chiếu</button>
       <div class="menu">
-        <button id="slExportBtn" class="icon-btn" title="Tải bộ slide về">⤓</button>
-        <div class="menu-pop hidden" id="slExportMenu">
-          <a href="#" data-fmt="pptx">PowerPoint (.pptx) — sửa được, sơ đồ là shape rời</a>
-          <a href="#" data-fmt="pptx" data-du-phong="1">PowerPoint kèm slide dự phòng (sau vách "Phụ lục")</a>
-          <hr>
-          <a href="#" data-fmt="slides-pdf">PDF — mở hộp in, mỗi slide một trang ngang</a>
-          <a href="#" data-fmt="slides">HTML — một file, chiếu offline được</a>
+        <button id="slTai" class="icon-btn" type="button" title="Tải bộ slide về"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg></button>
+        <div class="menu-pop hidden" id="slTaiMenu">
+          <a href="#" data-fmt="slides">HTML — một file, trình chiếu offline được</a>
+          <a href="#" data-fmt="slides-pdf">PDF — mở hộp in, mỗi slide một trang</a>
         </div>
       </div>
     </div>
   </header>
-
-  <p id="slStatus" class="status hidden"></p>
-
-  <!-- ===== bước 1: dàn ý — model đề xuất, người dùng quyết ===== -->
-  <div id="slOutlinePane" class="ol-pane hidden">
-    <div class="ol-head">
-      <p class="muted small" id="slOlEmpty">
-        Chưa có dàn ý. Bấm <b>Soạn nội dung</b> — bước này chỉ nghĩ xem buổi nói
-        kể chuyện gì và mỗi slide chứng minh điều gì, chưa dựng slide nên rẻ.
-        Soát và sửa xong mới bấm <b>Dựng slide</b>.
-      </p>
-      <div id="slOlTop" class="hidden">
-        <label class="sl-f">Điều người nghe phải mang về — một câu
-          <input id="slThesis" class="input">
-        </label>
-        <div id="slOlSecs" class="ol-secs"></div>
-        <p id="slOlWarn" class="ol-warn hidden"></p>
+  <div id="slTrong" class="sl2-trong hidden"></div>
+  <div id="slKhung" class="sl2 hidden">
+    <nav id="slDai" class="sl2-dai" aria-label="Danh sách slide — kéo để đổi thứ tự"></nav>
+    <main class="sl2-giua">
+      <div id="slSan" class="sl2-san"></div>
+      <div class="sl2-cong-cu">
+        <button id="slVietLai" class="btn btn-sm" type="button" title="Nhờ model viết lại riêng slide này, giữ nguyên vai. Rẻ — toàn văn bài đi qua cache.">↻ Viết lại slide này</button>
+        <input id="slGoiY" class="input input-sm" placeholder="Gợi ý khi viết lại (tuỳ chọn) — ví dụ: thêm số liệu trên WebQA">
+        <button id="slXoa" class="btn btn-sm" type="button">Xoá slide</button>
       </div>
-    </div>
-    <ol id="slOlList" class="ol-list"></ol>
-    <details id="slOlBackWrap" class="sl-backup hidden">
-      <summary>Mục dự phòng <span id="slOlBackCount" class="muted"></span></summary>
-      <ol id="slOlBackList" class="ol-list"></ol>
-    </details>
-  </div>
-
-  <div class="body slides-body">
-    <!-- dải slide bên trái -->
-    <aside id="slStrip" class="sl-strip">
-      <p class="muted small" id="slEmpty">
-        Chưa có slide nào. Chọn độ dài buổi nói rồi bấm <b>Dựng slide</b>.
-      </p>
-      <ol id="slList" class="sl-list"></ol>
-      <details id="slBackupWrap" class="sl-backup hidden">
-        <summary>Slide dự phòng <span id="slBackupCount" class="muted"></span></summary>
-        <ol id="slBackupList" class="sl-list"></ol>
-      </details>
-    </aside>
-
-    <!-- slide đang chọn + ô sửa -->
-    <main id="slMain" class="sl-main">
-      <div id="slStage" class="sl-stage"></div>
-      <div id="slWarn" class="sl-warn hidden"></div>
-      <form id="slEdit" class="sl-edit hidden">
-        <label class="sl-f">Tiêu đề — một câu khẳng định, không phải nhãn chủ đề
-          <input id="slHead" class="input" maxlength="140">
-          <span id="slHeadCount" class="hint"></span>
-        </label>
-        <label class="sl-f">Gạch đầu dòng — mỗi dòng một mục, tối đa 4
-          <textarea id="slBullets" class="input textarea" rows="4"></textarea>
-        </label>
-        <div class="sl-f">
-          <label for="slFig">Hình</label>
-          <select id="slFig" class="input"></select>
-        </div>
-        <div class="sl-f" id="slArtWrap">
-          <span>Prompt vẽ ảnh minh hoạ — chép sang công cụ vẽ bạn tin dùng, rồi tải ảnh về đây</span>
-          <textarea id="slArtPrompt" class="input textarea" rows="4" readonly></textarea>
-          <div class="sl-actions">
-            <button type="button" id="slArtCopy" class="btn btn-sm" style="width:auto;margin:0">⧉ Chép prompt</button>
-            <label class="btn btn-sm" style="width:auto;margin:0;cursor:pointer">
-              <svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Tải ảnh lên<input type="file" id="slArtFile" accept="image/*" hidden>
-            </label>
-            <span class="hint" id="slArtMsg"></span>
-          </div>
-        </div>
-        <label class="sl-f">Chú giải hình — hình cắt từ bài có nhãn tiếng Anh, viết 1–3 câu dịch nhãn trục và chỉ rõ nhìn vào đâu
-          <textarea id="slFigNote" class="input textarea" rows="3"></textarea>
-        </label>
-        <label class="sl-f">Lời người nói — cái bạn nói ra miệng, 120–160 chữ
-          <textarea id="slNotes" class="input textarea" rows="5"></textarea>
-          <span id="slNotesCount" class="hint"></span>
-        </label>
-        <div class="sl-actions">
-          <button type="button" id="slCardAdd" class="btn btn-sm" style="width:auto;margin:0">＋ Thêm thẻ</button>
-          <button type="button" id="slCardDel" class="btn btn-sm" style="width:auto;margin:0">− Bớt thẻ cuối</button>
-          <span class="spacer"></span>
-        </div>
-        <div class="sl-actions">
-          <button type="submit" class="btn btn-primary">Lưu</button>
-          <button type="button" id="slFree" class="btn" title="Chuyển slide này sang bố cục tự do: kéo để di chuyển, kéo nút vuông để co giãn, mũi tên để nhích. Các slide khác giữ nguyên bố cục tự sắp.">⤢ Bố cục tự do</button>
-          <button type="button" id="slRegen" class="btn" title="Nhờ model viết lại slide này. Tốn tiền.">Làm lại slide này · tốn tiền</button>
-
-          <span class="spacer"></span>
-          <button type="button" id="slMove" class="btn" title="Chuyển giữa bộ chính và bộ dự phòng">Chuyển sang dự phòng</button>
-          <button type="button" id="slDrop" class="btn">Xoá slide</button>
-        </div>
-      </form>
+      <div id="slCanh" class="sl2-canh hidden"></div>
+      <label for="slLoi" class="sl2-nhan">Lời người nói <span class="hint">— hiện khi bấm S lúc trình chiếu</span></label>
+      <textarea id="slLoi" class="input" rows="4" placeholder="Điều bạn nói ra miệng ở slide này"></textarea>
+      <p id="slTrangThai" class="hint"></p>
     </main>
   </div>
 </section>
@@ -663,6 +584,15 @@
   <div class="present-bar">
     <span id="presentNum"></span>
     <span class="hint">← → chuyển · S lời nói · Esc thoát</span>
+  </div>
+</div>
+
+<!-- Chọn hình cho slide: lưới ảnh thu nhỏ của mọi hình/bảng trong bài -->
+<div id="slHinh" class="sl2-hinh hidden" role="dialog" aria-label="Chọn hình cho slide">
+  <div class="sl2-hinh-hop">
+    <header><b>Chọn hình trong bài</b><button type="button" class="icon-btn" id="slHinhDong" title="Đóng (Esc)">✕</button></header>
+    <div id="slHinhLuoi" class="sl2-hinh-luoi"></div>
+    <footer><button type="button" class="btn btn-sm" id="slHinhBo">Bỏ hình khỏi slide</button></footer>
   </div>
 </div>
 
@@ -1012,5 +942,7 @@
 <script src="/app.js"></script>
 <script src="/survey.js"></script>
 <script src="/thuvien.js"></script>
+<script src="/slide-ve.js"></script>
+<script src="/slide.js"></script>
 </body>
 </html>

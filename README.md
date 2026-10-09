@@ -76,7 +76,7 @@ counter-measure here:
  Pass 2   translate in batches (three in parallel)
  Pass 2b  optional review against the source
  Pass 3   explain any paragraph on demand
- Pass 4   draft a talk outline, then build slides from it
+ Pass 4   write a talk deck in one call, one argument role per slide
  Pass 5   highlight the sentences worth remembering, each with a reason
 ```
 
@@ -111,12 +111,27 @@ free — so you review it before spending anything.
 
 ### Slides
 
-Two steps: first an **outline** you edit at the level of ideas (what each slide
-claims and which evidence proves it), then the **slides** themselves. Slides
-follow the assertion–evidence design (Garner & Alley): every headline is a full
-sentence, every body is evidence. Edit directly on the slide, present in the
-browser, or export to **PDF, HTML or PPTX** — in the PPTX, diagrams are native
-shapes you can still edit.
+One model call writes the whole deck, right after translation while the paper
+is still in the prompt cache (about $0.05 for a 13-slide deck). Each slide plays
+**one role in the paper's argument** — problem, gap, requirements, core idea,
+mechanism, worked example, evidence, key number, limits, takeaways — and each
+role has its own layout, so the deck changes shape with the argument instead of
+repeating one template. Headlines are full claims; every number on a slide must
+appear in the paper's text, and invented examples are labelled as such.
+
+Edit by clicking straight into the text on the slide, drag thumbnails to
+reorder, swap figures, rewrite one slide with a hint, present in the browser
+with speaker notes, or export to **HTML** (one offline file) or **PDF**. The
+editor, the presenter and the export share a single renderer, in the same
+notebook style as the app.
+
+### Report export
+
+Export a translation as a single offline **HTML** file or a **PDF** (A4, page
+numbers). It reads like a report: cover with authors and venue, a summary
+following the argument (problem → gap → idea → method → evidence → limits),
+glossary, table of contents, then the aligned source and translation with
+explanations and notes. Markdown export is still there for plain text.
 
 ### Library
 
@@ -272,21 +287,22 @@ before paying to translate it.
 
 ```
 server/
-  main.py        HTTP API, server-sent events, exports (PDF/HTML/Markdown/PPTX)
+  main.py        HTTP API, server-sent events, exports (PDF/HTML/Markdown, slides)
   parser.py      PDF/text → blocks; reading order; figure and table crops
   layout.py      optional layout models (MinerU, Docling)
   pipeline.py    the reader's passes and the shared, cache-friendly context
   prompts.py     every reader prompt — where translation quality is decided
   llm.py         OpenRouter client: streaming, cache breakpoints, sticky sessions
   depth.py       checks that catch empty, generic or circular explanations
-  pptx_out.py    PowerPoint export with native, editable diagrams
+  slide.py       talk deck: one model call, argument roles, number checks
   db.py, store.py  SQLite storage; images and source PDFs stay on disk
   survey/        the corpus tool — separate pipeline, shared infrastructure
     ingest.py  search.py  agent.py  verify.py  synth.py  lecture.py  …
   survey_api.py  corpus routes, mounted into the same app
-web/             front end, no framework (app.js = reader, survey.js = corpus)
+web/             front end, no framework (app.js = reader, survey.js = corpus,
+                 slide-ve.js = the one slide renderer for editor, presenter and export)
 docs/            landing page + Vietnamese user guide (GitHub Pages; the app serves it at /gioi-thieu/)
-tests/           268 tests; no network, no model calls, never touch ./data
+tests/           245 tests; no network, no model calls, never touch ./data
 ```
 
 To change translation quality, edit `server/prompts.py` (reader) or

@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from server import pipeline, slide_fit, slide_theme
+from server import pipeline
 from server.parser import Block
-from server.pptx_out import parse_mermaid, _levels
 
 
 # --------------------------------------------------------------- chốt số liệu
@@ -25,123 +24,107 @@ def _doc(text: str = "Mô hình đạt 42,5 điểm trên tập 2WikiMQA với 1
     }
 
 
-def _slide(**kw):
-    base = dict(id="s1", kind="content", eyebrow="KẾT QUẢ",
-                headline="Một câu khẳng định có động từ rõ ràng ở đây",
-                bullets=[], cards=[], notes=" ".join(["nói"] * 130),
-                source_block_ids=["b1"])
-    base.update(kw)
-    return base
+# ------------------------------------------------------------ slide v2
 
-
-def test_so_bia_bi_bat():
-    """Số không có trong khối nguồn phải bị cảnh báo — chốt chặn quan trọng nhất."""
+def _doc_hinh():
     d = _doc()
-    sl = _slide(bullets=["Đạt 99,9 điểm"])
-    pipeline.check_slides(d, [sl])
-    assert any("99,9" in w for w in sl["warn"]), sl["warn"]
+    d["blocks"] += [
+        {"id": "b2", "type": "caption", "text": "Table 2: Main results.", "figure": "b2"},
+        {"id": "b3", "type": "equation", "text": "x = y", "figure": "b3"},
+    ]
+    return d
 
 
-def test_so_co_that_khong_bi_bat():
-    d = _doc()
-    sl = _slide(bullets=["Đạt 42,5 điểm trên 2WikiMQA"])
-    pipeline.check_slides(d, [sl])
-    assert not any("không có trong khối nguồn" in w for w in sl["warn"]), sl["warn"]
+def test_slide_vai_la_bi_bo():
+    from server import slide
+    assert slide.chuan_hoa(_doc(), {"vai": "the_pastel", "tieu_de": "x"}) is None
 
 
-@pytest.mark.parametrize("txt", [
-    "Mã nguồn ở github.com/52566rz/CIRAG",     # định danh trong URL
-    "Chạy trên Qwen2.5-7B-Instruct",           # tên model
-    "Đánh giá trên 2WikiMQA",                  # tên tập dữ liệu mở đầu bằng số
-])
-def test_url_va_dinh_danh_khong_bi_coi_la_so_lieu(txt):
-    d = _doc()
-    sl = _slide(bullets=[txt])
-    pipeline.check_slides(d, [sl])
-    assert not any("không có trong khối nguồn" in w for w in sl["warn"]), (txt, sl["warn"])
+def test_slide_bo_dau_cham_phay_va_viet_hoa():
+    """Skill văn phong cấm dấu chấm phẩy — model vẫn hay viết, nên dọn cơ học."""
+    from server import slide
+    s = slide.chuan_hoa(_doc(), {"vai": "y_tuong", "tieu_de": "ý tưởng gọn.",
+                                 "cau": "gom bằng chứng trước; rồi mới trả lời"})
+    assert ";" not in s["cau"] and s["cau"] == "Gom bằng chứng trước. Rồi mới trả lời"
+    assert s["tieu_de"] == "Ý tưởng gọn"
+    # Từ có chữ hoa giữa giữ nguyên
+    assert slide._sach("iRAG lặp lại") == "iRAG lặp lại"
 
 
-def test_slide_tieu_de_khong_bi_kiem_so():
-    """Năm hội nghị và độ dài buổi nói vốn không có trong bài."""
-    d = _doc()
-    sl = _slide(kind="title", headline="CIRAG", bullets=["Báo cáo seminar 20 phút"],
-                source_block_ids=[])
-    pipeline.check_slides(d, [sl])
-    assert not any("không có trong khối nguồn" in w for w in sl["warn"]), sl["warn"]
+def test_slide_hinh_quy_ve_ma_khoi_va_bo_cong_thuc():
+    """Model chọn hình theo mã KHỐI. Công thức có ảnh nhưng không phải bằng chứng."""
+    from server import slide
+    d = _doc_hinh()
+    assert slide.chuan_hoa(d, {"vai": "bang_chung", "tieu_de": "t", "hinh": "b2"})["hinh"] == "b2"
+    s = slide.chuan_hoa(d, {"vai": "bang_chung", "tieu_de": "t", "hinh": "b3"})
+    assert s["hinh"] == "" and any("chọn hình" in c for c in s["canh_bao"])
+    s = slide.chuan_hoa(d, {"vai": "bang_chung", "tieu_de": "t", "hinh": "khongco"})
+    assert s["hinh"] == "" and any("không có trong bài" in c for c in s["canh_bao"])
 
 
-def test_nhan_chu_de_rong_bi_bat():
-    d = _doc()
-    sl = _slide(headline="Kết quả thực nghiệm:")
-    pipeline.check_slides(d, [sl])
-    assert any("nhãn chủ đề" in w or "hai chấm" in w for w in sl["warn"]), sl["warn"]
+def test_slide_so_bia_bi_bat_so_that_khong():
+    from server import slide
+    s = slide.chuan_hoa(_doc(), {"vai": "so_lieu", "tieu_de": "Đạt 42,5 điểm",
+                                 "gia_tri": "42,5", "nhan": "F1", "moc": "so với 39,9",
+                                 "nguon": ["b1"]})
+    assert s["canh_bao"] == ["Số không có ở đâu trong bài: 39,9."]
+    # Nguồn khai bừa thì bị lọc, không làm hỏng phép soát
+    s = slide.chuan_hoa(_doc(), {"vai": "so_lieu", "tieu_de": "Đạt 42,5 điểm",
+                                 "gia_tri": "42,5", "nguon": ["b1", "b99"]})
+    assert s["nguon"] == ["b1"] and not s["canh_bao"]
 
 
-# ------------------------------------------------------------ bố cục & tràn khung
-
-def test_bo_cuc_theo_ti_le_anh(monkeypatch):
-    """Ảnh ngang cho tràn khung, ảnh vuông thì hai cột — quyết định từ tỉ lệ thật."""
-    monkeypatch.setattr(pipeline, "figure_shape",
-                        lambda d, f: ("wide", 3.0) if f == "wide" else ("square", 1.0))
-    assert pipeline.slide_layout(_slide(figure="wide"), "d1") == "figwide"
-    assert pipeline.slide_layout(
-        _slide(figure="sq", bullets=["a"]), "d1") == "figside"
-
-
-def test_the_khong_bao_gio_vao_cot_hep(monkeypatch):
-    """Ba thẻ nhét vào cột 44% thì mỗi thẻ còn ~90px — đã vấp, đừng lặp lại."""
-    monkeypatch.setattr(pipeline, "figure_shape", lambda d, f: ("square", 1.0))
-    sl = _slide(figure="f1", cards=[{"title": f"Thẻ {i}"} for i in range(3)])
-    assert pipeline.slide_layout(sl, "d1") == "figwide"
+def test_slide_bo_o_so_bia_tren_slide_bang_chung():
+    """Model không thấy ảnh bảng nên hay "đọc" số từ bảng. Ô số là thứ to nhất
+    slide — số bịa ở đó thì BỎ ô, không chỉ cảnh báo."""
+    from server import slide
+    s = slide.chuan_hoa(_doc_hinh(), {"vai": "bang_chung", "tieu_de": "t", "hinh": "b2",
+        "so": [{"gia_tri": "42,5", "nhan": "F1", "moc": "trên 2WikiMQA"},
+               {"gia_tri": "10.1", "nhan": "F1 giảm", "moc": "61.4 xuống 51.3"}]})
+    assert [x["gia_tri"] for x in s["so"]] == ["42,5"]
+    assert any("Đã bỏ ô số" in c and "61.4" in c for c in s["canh_bao"])
 
 
-def test_autofit_co_lai_khi_qua_dai():
-    y = "Một ý rất dài dùng để kiểm tra xem bộ đo có phát hiện tràn khung hay không"
-    day = _slide(cards=[{"title": f"Thẻ {i}", "bullets": [y] * 4} for i in range(4)],
-                 callout={"title": "Chốt lại", "body": "Một câu ngắn"})
-    assert slide_fit.fit(day, "cards", 1.0)["over"] > 0      # đúng là quá dài
-    assert slide_fit.autofit(day, "cards") < 1.0             # nên phải co lại
+def test_slide_vi_du_minh_hoa_duoc_giu_co():
+    from server import slide
+    assert slide.chuan_hoa(_doc(), {"vai": "vi_du", "tieu_de": "t", "minh_hoa": True})["minh_hoa"]
+    assert slide.chuan_hoa(_doc(), {"vai": "vi_du", "tieu_de": "t"})["minh_hoa"] is False
 
 
-def test_autofit_khong_co_duoi_san():
-    """Co hết cỡ vẫn không vừa thì dừng ở sàn, không co xuống mức không đọc nổi."""
-    qua = _slide(cards=[{"title": f"T{i}", "bullets": ["chữ " * 40] * 6} for i in range(4)])
-    assert slide_fit.autofit(qua, "cards") == slide_fit.SCALE_MIN
+def test_slide_sap_lai_dong_lai_cuoi_va_khong_lap_vai():
+    from server import slide
+    bo = [{"vai": v} for v in ("dong_lai", "van_de", "co_che", "co_che", "bang_chung",
+                               "bang_chung", "gioi_han")]
+    ra = [s["vai"] for s in slide._sap_lai(bo)]
+    assert ra[-1] == "dong_lai" and ra.count("dong_lai") == 1
+    assert all(a != b or a == "bang_chung" for a, b in zip(ra, ra[1:]))
+    assert sorted(ra) == sorted(s["vai"] for s in bo)
 
 
-def test_autofit_khong_co_khi_ngan():
-    ngan = _slide(bullets=["Một ý ngắn"])
-    assert slide_fit.autofit(ngan, "list") == 1.0
+def test_slide_thieu_co_che_thi_bao_ca_bo():
+    from server import slide
+    bo = [{"vai": "van_de", "canh_bao": []}, {"vai": "bang_chung", "canh_bao": []}]
+    slide._soat_ca_bo(bo)
+    assert any("cơ chế" in c for c in bo[0]["canh_bao"])
+    bo = [{"vai": "van_de", "canh_bao": []}, {"vai": "co_che", "buoc": [{"ten": "a"}], "canh_bao": []}]
+    slide._soat_ca_bo(bo)
+    assert bo[0]["canh_bao"] == []
 
 
-def test_do_chu_dung_font_that():
-    """Chuỗi dài hơn thì phải đo ra rộng hơn — nếu không là font không nạp được."""
-    assert slide_fit.text_w("mmmmmmmmmm", 20) > slide_fit.text_w("ii", 20)
-    assert slide_fit.lines("từ " * 60, 200, 18) > 1
+def test_slide_dinh_dang_cu_coi_nhu_chua_co():
+    """Bộ slide v1 (deck/outline) không vẽ được bằng bộ vẽ mới — coi như chưa có,
+    đừng để giao diện vỡ."""
+    from server import slide
+    assert slide.lay({"slides": {"deck": [{"id": "s1"}]}})["bo"] == []
+    assert slide.lay({"slides": {"v": 2, "bo": [{"id": "s1"}]}})["bo"] == [{"id": "s1"}]
+
+
+def test_slide_ma_isalnum():
+    from server import slide
+    assert all(s["id"].isalnum() for s in slide._danh_ma([{}, {}, {}]))
 
 
 # --------------------------------------------------------------- bóc Mermaid
-
-def test_bocmermaid_khong_sinh_node_rac():
-    """Nhãn cạnh `-->|"x"|` từng bị đọc thành node tên `u`, `ch`."""
-    _, nodes, edges = parse_mermaid(
-        'flowchart LR\n A["Câu hỏi"] --> B["Bằng chứng"]\n'
-        ' B -->|"thiếu"| C["Suy luận hỏng"]')
-    assert set(nodes) == {"A", "B", "C"}
-    assert nodes["C"] == "Suy luận hỏng"
-    assert ("B", "C", "thiếu") in edges
-
-
-def test_bocmermaid_chuoi_nhieu_buoc():
-    _, nodes, edges = parse_mermaid('flowchart LR\n A["x"] --> B["y"] --> C["z"]')
-    assert len(nodes) == 3 and len(edges) == 2
-
-
-def test_xep_tang_so_do():
-    _, nodes, edges = parse_mermaid(
-        'flowchart TD\n A["a"] --> B["b"]\n A --> C["c"]\n B --> D["d"]')
-    lv = _levels(nodes, edges)
-    assert lv[0] == ["A"] and set(lv[1]) == {"B", "C"}
 
 
 def test_nhan_dung_khong_bi_bao_sai():
@@ -151,21 +134,6 @@ def test_nhan_dung_khong_bi_bao_sai():
 
 
 # ------------------------------------------------------- chỉ số trên/dưới
-
-def test_chi_so_tren_duoi_dung_lai_duoc():
-    from server.pptx_out import _SUP, _SUB
-    assert _SUP.search("E = mc^{2}")
-    assert _SUB.search("H_{<t}")
-
-
-def test_icon_la_bao_gio_cung_an_toan():
-    assert slide_theme.icon_svg("khong-co-icon-nay") == ""
-    assert slide_theme.icon_svg("check").startswith("<svg")
-
-
-def test_mau_the_luan_phien():
-    assert slide_theme.card_tint(0) != slide_theme.card_tint(1)
-    assert slide_theme.card_tint(0) == slide_theme.card_tint(4)
 
 
 # ------------------------------------------------------------ khối và mẻ dịch
@@ -177,17 +145,6 @@ def test_khoi_an_khong_vao_me_dich():
     bs[0].hidden = True
     sau = sum(len(c) for c in chunk_blocks(bs))
     assert sau == truoc - 1
-
-
-def test_thuat_ngu_gan_lan_dau_xuat_hien():
-    d = _doc("CIRAG dùng knowledge triple.")
-    d["brief"] = {"glossary": [
-        {"en": "knowledge triple", "keep_en": True, "gloss": "bộ ba tri thức"}]}
-    deck = [_slide(bullets=["Dùng knowledge triple"]),
-            _slide(id="s2", bullets=["knowledge triple lần hai"])]
-    pipeline.attach_terms(d, deck)
-    assert [t["en"] for t in deck[0]["terms"]] == ["knowledge triple"]
-    assert deck[1]["terms"] == []      # lần thứ hai không nhắc lại
 
 
 # ------------------------------------------------------------ phụ lục
@@ -235,74 +192,6 @@ def _outline(**kw):
     return base
 
 
-def test_dan_y_bat_so_bia():
-    """Bắt số bịa từ lúc còn là dàn ý thì sửa một dòng, để lọt thì phải dựng lại slide."""
-    d = _doc()
-    ol = _outline(items=[_item(points=["Đạt 99,9 điểm"])])
-    pipeline.check_outline(d, ol)
-    assert any("99,9" in w for w in ol["items"][0]["warn"]), ol["items"][0]["warn"]
-
-
-def test_dan_y_khong_bat_so_co_that():
-    d = _doc()
-    ol = _outline()
-    pipeline.check_outline(d, ol)
-    assert not any("không có trong khối nguồn" in w for w in ol["items"][0]["warn"])
-
-
-def test_dan_y_bat_nhan_chu_de_rong():
-    d = _doc()
-    ol = _outline(items=[_item(message="Kết quả")])
-    pipeline.check_outline(d, ol)
-    assert any("nhãn chủ đề" in w for w in ol["items"][0]["warn"])
-
-
-def test_dan_y_bat_muc_rong_y():
-    """Bước dựng slide KHÔNG nghĩ hộ nội dung mới — mục rỗng ở đây là slide rỗng."""
-    d = _doc()
-    ol = _outline(items=[_item(points=[])])
-    assert any("không nghĩ hộ" in w or "Không có ý nào" in w
-               for w in pipeline.check_outline(d, ol)["items"][0]["warn"])
-
-
-def test_dan_y_bat_thieu_bang_chung():
-    d = _doc()
-    ol = _outline(items=[_item(evidence={"kind": "none", "figure": "", "what": ""})])
-    assert any("bằng chứng" in w for w in pipeline.check_outline(d, ol)["items"][0]["warn"])
-
-
-def test_dan_y_bat_anh_khong_co_that():
-    d = _doc()
-    ol = _outline(items=[_item(evidence={"kind": "figure", "figure": "khongco",
-                                         "what": ""})])
-    it = pipeline.check_outline(d, ol)["items"][0]
-    assert any("Không có ảnh" in w for w in it["warn"])
-    assert it["evidence"]["figure"] == ""       # gỡ luôn để bước dựng không gắn nhầm
-
-
-def test_dan_y_bat_chia_qua_nhieu_phan():
-    """3–4 phần: nhiều hơn thì người nghe không giữ nổi bản đồ trong đầu."""
-    d = _doc()
-    ol = _outline(sections=[{"name": f"P{i}"} for i in range(6)])
-    assert pipeline.check_outline(d, ol)["warn"]
-
-
-def test_dan_y_danh_ma_lien_tuc_va_isalnum():
-    """Mã mục đi vào URL nên phải `isalnum()` — cùng hàng rào với doc_id/block_id."""
-    ol = pipeline._number_outline(_outline(items=[_item(), _item()],
-                                           backup=[_item()]))
-    ids = [i["id"] for i in ol["items"]] + [i["id"] for i in ol["backup"]]
-    assert ids == ["o1", "o2", "o3"] and all(i.isalnum() for i in ids)
-
-
-def test_sua_khoi_nguon_thi_danh_dau_ca_dan_y():
-    """`mark_stale` bỏ sót dàn ý thì lần dựng sau đẻ lại đúng cái slide đã sai."""
-    d = _doc()
-    d["slides"] = {"deck": [], "backup": [], "outline": _outline()}
-    pipeline.mark_stale(d, ["b1"])
-    assert d["slides"]["outline"]["items"][0]["stale"] is True
-
-
 # ------------------------------------------------- chốt chặn độ sâu
 
 def test_do_sau_bat_cau_dat_ten_thay_vi_giai_thich():
@@ -345,32 +234,6 @@ def test_do_sau_bo_qua_cau_ngan():
     dòng cho đủ hình thức."""
     from server import depth
     assert depth.check_text("Mô hình dùng ViT-B.") == []
-
-
-def test_slide_thieu_slide_co_che_thi_bao_ca_bo():
-    """Bộ slide kể được bài toán và kết quả nhưng bỏ mất phần giữa — kiểu hỏng
-    người trình bày không tự nhận ra."""
-    from server import pipeline
-    deck = [{"kind": "content", "headline": f"Khẳng định số {i} đạt 9{i} điểm",
-             "bullets": ["Kết quả đo trên tập thử nghiệm cho thấy 9%d điểm" % i]}
-            for i in range(6)]
-    pipeline.check_depth(deck)
-    assert any("không có slide nào đi hết cơ chế" in w
-               for s in deck for w in s.get("warn", []))
-
-
-def test_slide_co_slide_co_che_thi_khong_bao():
-    from server import pipeline
-    deck = [{"kind": "content", "headline": f"Khẳng định {i}", "bullets": ["x"]}
-            for i in range(5)]
-    deck.append({"kind": "content", "headline": "Cách CIRAG chạy trên một câu hỏi",
-                 "bullets": [
-                     "Bước 1: câu hỏi vào bộ tìm, trả về 10 đoạn ứng viên",
-                     "Bước 2: mỗi đoạn thành một nút, nên nút rời rạc sẽ yếu dần",
-                     "Cuối cùng đầu ra là 3 đoạn còn sáng, vì chúng đỡ lẫn nhau"]})
-    pipeline.check_depth(deck)
-    assert not any("không có slide nào đi hết cơ chế" in w
-                   for s in deck for w in s.get("warn", []))
 
 
 # --------------------------- nhặt lại chữ mô hình bố cục bỏ sót
@@ -1533,22 +1396,6 @@ def test_nhan_ngoai_me_la_cho_model_chep_lai_prefix():
     # câu NHẮC tới mã khối giữa dòng thì không bị cắt
     ra2 = "<<<b25_g>>>\nĐoạn này nối với <<<b8>>> ở trên.\n"
     assert "nối với" in _parse_labeled(ra2, ["b25_g"])["b25_g"]
-
-
-def test_chuan_hoa_slide_viet_hoa_va_bo_truong_thua():
-    """S5/S17: viết hoa chữ đầu (trừ tên riêng có chữ hoa giữa như iRAG); slide
-    tiêu đề không mang thẻ/hộp chốt, mục lục không mang hộp chốt."""
-    from server.pipeline import chuan_hoa_slide, _viet_hoa_dau
-    assert _viet_hoa_dau("multi-hop question answering cần") == "Multi-hop question answering cần"
-    assert _viet_hoa_dau("iRAG hiện có vẫn tích luỹ nhiễu") == "iRAG hiện có vẫn tích luỹ nhiễu"
-    assert _viet_hoa_dau("open IE dựa trên prompt") == "Open IE dựa trên prompt"
-    t = chuan_hoa_slide({"kind": "title", "headline": "x", "cards": [{"title": "a"}],
-                         "callout": {"title": "c"}})
-    assert t["cards"] == [] and t["callout"] == {}
-    a = chuan_hoa_slide({"kind": "agenda", "cards": [{"title": "phần một", "bullets": ["mô tả"]}],
-                         "callout": {"title": "c"}})
-    assert a["callout"] == {} and a["cards"][0]["title"] == "Phần một"
-    assert a["cards"][0]["bullets"] == ["Mô tả"]
 
 
 def test_so_bia_do_tren_toan_bai():

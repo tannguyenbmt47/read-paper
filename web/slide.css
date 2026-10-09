@@ -1,0 +1,247 @@
+/* Slide v2 — chất liệu "Sổ tay khoa học" của trang web, áp lên khung 16:9.
+
+   File này dùng chung cho màn sửa, trình chiếu VÀ file tải về (server nhúng
+   nguyên văn), cùng lý do với `slide-ve.js`: một nguồn duy nhất.
+
+   Mọi kích thước tính theo bề ngang khung bằng `cqw` (container query): khung
+   1280×720 thì 1px = 0,078125cqw. Nhờ vậy cùng một slide hiện đúng tỉ lệ ở ảnh
+   thu nhỏ 180px, sân khấu sửa, lẫn trình chiếu toàn màn hình.
+
+   Luật chữ tiếng Việt giữ như mọi nơi khác: không viết hoa toàn bộ, không siết
+   chữ, `line-height` ≥ 1,28 để dấu chồng tầng (ế, ộ, ữ) không bị cắt ngọn. Cỡ
+   chữ thân không dưới ~24px trên khung 1280 — người ngồi cuối phòng phải đọc được.
+
+   Slide luôn là giấy SÁNG, kể cả khi app đang ở theme tối: máy chiếu nuốt nền
+   tối, và slide là thứ đem đi chiếu chứ không phải thứ để đọc trong app. */
+
+.sld {
+  --giay: #fffcf3; --o-ly: rgba(39, 83, 192, .06); --muc: #1d1b18; --chi: #cdc2a6;
+  --muc-2: #3b362d; --mo: #675e4f; --xanh: #2753c0; --do: #c8322c; --la: #2a7a46;
+  --da-quang: #ffd43b; --nho: #fff4c2; --bang-keo: rgba(214, 196, 150, .7);
+  --tieu-de: "Baloo 2", "Be Vietnam Pro", system-ui, sans-serif;
+  --than: "Be Vietnam Pro", system-ui, "Segoe UI", sans-serif;
+  --tay: "Patrick Hand", "Be Vietnam Pro", sans-serif;
+  --doc: "Literata", Georgia, serif;
+  container-type: inline-size;
+  position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden;
+  background-color: var(--giay);
+  background-image: linear-gradient(var(--o-ly) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--o-ly) 1px, transparent 1px);
+  background-size: 2.5cqw 2.5cqw;
+  color: var(--muc); font-family: var(--than); line-height: 1.38;
+  color-scheme: light;
+}
+.sld * { box-sizing: border-box; }
+.sld-giay {
+  --s: 1;
+  position: absolute; inset: 0 0 5.2cqw 0; padding: 3.6cqw 5cqw 0;
+  display: flex; flex-direction: column; overflow: hidden;
+  font-size: calc(var(--s) * 1.95cqw);       /* ~25px trên khung 1280 */
+}
+.sld p { margin: 0; }
+.sld b { font-weight: 700; }
+.sld sup, .sld sub { font-size: .7em; }
+
+/* chữ viết tay: nhãn nhỏ, ghi chú bên lề */
+.sld-tay { font-family: var(--tay); font-weight: 400; color: var(--xanh); font-size: 1.05em; }
+
+/* dấu chặng góc trên: "2/4 · Cách làm" + vai của slide */
+.sld-dau { font-family: var(--tay); font-size: .9em; color: var(--mo); margin-bottom: .5cqw; display: flex; gap: .9cqw; align-items: baseline; }
+.sld-dau span { color: var(--xanh); border: .12cqw solid var(--xanh); border-radius: 99px; padding: 0 .7cqw; font-size: .9em; }
+
+/* tiêu đề khẳng định: Baloo đậm, một vệt dạ quang mảnh dưới chân */
+.sld-td {
+  font-family: var(--tieu-de); font-weight: 800; font-size: calc(var(--s) * 3.3cqw); line-height: 1.25;
+  margin: 0 0 2cqw; max-width: 86%;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--da-quang) 85%, transparent);
+  text-decoration-thickness: .55cqw; text-underline-offset: -.15cqw; text-decoration-skip-ink: none;
+}
+
+/* chân slide: tên bài bên trái, số trang trong vòng tròn mực bên phải */
+.sld-chan {
+  position: absolute; left: 5cqw; right: 3.4cqw; bottom: 1.6cqw; height: 2.6cqw;
+  display: flex; align-items: center; justify-content: space-between; gap: 2cqw;
+  font-family: var(--tay); font-size: 1.15cqw; color: var(--mo);
+  border-top: .1cqw dashed var(--chi); padding-top: .6cqw;
+}
+.sld-chan span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sld-chan b { flex: none; display: grid; place-items: center; width: 2.4cqw; height: 2.4cqw; border: .14cqw solid var(--muc); border-radius: 50%; color: var(--muc); font-family: var(--than); font-size: 1.1cqw; }
+
+/* đồ dùng chung: giấy nhớ, băng keo, khung ảnh dán */
+.sld-note {
+  position: relative; background: var(--nho); border: .14cqw solid var(--muc);
+  border-radius: .3cqw .3cqw 1.4cqw .3cqw; box-shadow: .3cqw .3cqw 0 var(--muc);
+  padding: 1.8cqw 1.6cqw 1.4cqw; transform: rotate(-1deg);
+}
+.bang-keo { position: absolute; top: -1cqw; left: 1.8cqw; width: 6cqw; height: 1.8cqw; background: var(--bang-keo); transform: rotate(-4deg); }
+.sld-hinh {
+  position: relative; margin: 0; min-height: 0; display: flex; flex-direction: column;
+  background: #fff; border: .14cqw solid var(--muc); box-shadow: .35cqw .35cqw 0 var(--muc);
+  padding: .8cqw; border-radius: .4cqw;
+}
+.sld-hinh .bang-keo { left: 40%; }
+.sld-hinh img { flex: 1; min-height: 0; width: 100%; object-fit: contain; display: block; }
+.sld-hinh figcaption { font-family: var(--tay); font-size: .8em; color: var(--mo); text-align: right; margin-top: .3cqw; }
+.sld-hinh.nghieng { transform: rotate(1.5deg); }
+.sld-hinh.trong {
+  display: grid; place-items: center; background: transparent; box-shadow: none;
+  border: .2cqw dashed var(--chi); color: var(--mo); font-family: var(--tay); min-height: 12cqw;
+}
+/* nút thêm hình tuỳ chọn — chỉ ở màn sửa, nằm góc, không chiếm chỗ của chữ */
+.sld-them-hinh {
+  position: absolute; top: 3.4cqw; right: 3cqw; z-index: 2; font: inherit; font-family: var(--tay);
+  font-size: 1.2cqw; color: var(--mo); background: var(--giay); border: .14cqw dashed var(--chi);
+  border-radius: 99px; padding: .2cqw 1cqw;
+}
+.sld [data-chon-hinh] { cursor: pointer; }
+.sld [data-chon-hinh]:hover { outline: .25cqw solid var(--xanh); outline-offset: .3cqw; }
+
+/* ------------------------------------------------------- mở đầu */
+.v-mo_dau .sld-giay { inset: 0; padding: 5cqw 5.5cqw; justify-content: center; }
+.sld-mo { display: grid; grid-template-columns: 1fr; gap: 4cqw; align-items: center; }
+.sld-mo.co-hinh { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+.sld-mo-chu { display: flex; flex-direction: column; gap: .9cqw; }
+.sld-ten {
+  font-family: var(--tieu-de); font-weight: 800; font-size: calc(var(--s) * 4.1cqw); line-height: 1.2; margin: .6cqw 0;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--da-quang) 85%, transparent);
+  text-decoration-thickness: .9cqw; text-underline-offset: -.3cqw; text-decoration-skip-ink: none;
+}
+.sld-goc { color: var(--mo); font-size: .82em; }
+.sld-tg { font-weight: 600; margin-top: 1cqw; }
+.sld-nd, .sld-nguoi { color: var(--muc-2); font-size: .9em; }
+.sld-nguon { font-family: var(--tay); color: var(--mo); font-size: .85em; }
+.v-mo_dau .sld-hinh { max-height: 30cqw; }
+
+/* ------------------------------------------------------- lộ trình */
+.sld-lo { list-style: none; margin: auto 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2cqw; position: relative; }
+.sld-lo::before { content: ""; position: absolute; left: 4%; right: 4%; top: 2.2cqw; border-top: .25cqw dashed var(--chi); }
+.sld-tram { position: relative; display: flex; flex-direction: column; gap: .8cqw; }
+.sld-tram-so {
+  width: 4.4cqw; height: 4.4cqw; display: grid; place-items: center; border-radius: 50%;
+  background: var(--da-quang); border: .18cqw solid var(--muc); box-shadow: .25cqw .25cqw 0 var(--muc);
+  font-family: var(--tieu-de); font-weight: 800; font-size: 2.2cqw; position: relative; z-index: 1;
+}
+.sld-tram > b { font-family: var(--tieu-de); font-size: 1.15em; }
+.sld-tram ul { margin: 0; padding-left: 1.2em; color: var(--muc-2); font-size: .78em; display: grid; gap: .4cqw; }
+
+/* ------------------------------------------------------- vấn đề */
+.sld-vd { flex: 1; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 4cqw; align-items: center; }
+.sld-lon { font-family: var(--doc); font-size: 1.22em; line-height: 1.5; }
+.sld-vd .sld-note p { margin-top: .6cqw; }
+
+/* ------------------------------------------------------- khoảng trống */
+.sld-kt { flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 2cqw; align-items: center; }
+.sld-kt > div:not(.sld-mui) { border-radius: .6cqw; padding: 1.8cqw; display: flex; flex-direction: column; gap: .8cqw; }
+.sld-kt-cu { border: .16cqw dashed var(--mo); }
+.sld-kt-hong { border: .2cqw solid var(--do); box-shadow: .3cqw .3cqw 0 var(--do); }
+.sld-kt-hong .sld-tay { color: var(--do); }
+.sld-mui { align-self: center; font-size: 3.4cqw; color: var(--mo); }
+.sld-hq { margin-top: 1.8cqw !important; font-size: .95em; }
+.sld-hq .sld-tay { color: var(--do); margin-right: .5cqw; }
+
+/* ------------------------------------------------------- thuộc tính cần có */
+.sld-tc { list-style: none; margin: auto 0; padding: 0; display: grid; gap: 1.6cqw; }
+.sld-tc li { display: grid; grid-template-columns: 3cqw 1fr; gap: 1.6cqw; align-items: start; }
+.sld-o { width: 2.6cqw; height: 2.6cqw; border: .2cqw solid var(--muc); border-radius: .35cqw; margin-top: .2cqw; box-shadow: .2cqw .2cqw 0 var(--muc); }
+.sld-tc b { font-family: var(--tieu-de); font-size: 1.15em; display: block; }
+.sld-tc p { color: var(--muc-2); }
+
+/* ------------------------------------------------------- ý tưởng cốt lõi */
+.sld-yt { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 1.6cqw; padding: 0 6cqw; }
+.sld-yt-p { margin: 0; font-family: var(--doc); font-weight: 600; font-size: 1.55em; line-height: 1.5; }
+.sld-yt-cau {
+  background: linear-gradient(transparent 55%, color-mix(in srgb, var(--da-quang) 70%, transparent) 55%, color-mix(in srgb, var(--da-quang) 70%, transparent) 92%, transparent 92%);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.sld-yt-vs { color: var(--muc-2); max-width: 80%; }
+.v-y_tuong .sld-td { align-self: center; text-align: center; }
+
+/* ------------------------------------------------------- cơ chế */
+.sld-cc { flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; }
+.sld-buoc { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1.6cqw; }
+.sld-buoc li { position: relative; border: .16cqw solid var(--muc); border-radius: .6cqw; background: #fff; box-shadow: .3cqw .3cqw 0 var(--muc); padding: 2.4cqw 1.4cqw 1.4cqw; }
+.sld-buoc li:not(:last-child)::after { content: "→"; position: absolute; right: -1.55cqw; top: 40%; color: var(--mo); font-size: 1.4em; }
+.sld-buoc-so { position: absolute; top: -1.6cqw; left: 1.2cqw; width: 3cqw; height: 3cqw; display: grid; place-items: center; border-radius: 50%; background: var(--da-quang); border: .16cqw solid var(--muc); font-family: var(--tieu-de); font-weight: 800; font-size: 1.5cqw; }
+.sld-buoc b { font-family: var(--tieu-de); display: block; margin-bottom: .4cqw; }
+.sld-buoc p { font-size: .82em; color: var(--muc-2); }
+/* có hình: các bước thành cột dọc bên trái, hình 55% bên phải */
+/* bậc thang: lần thứ hai vai cơ chế xuất hiện mà không có hình */
+.sld-cc.bac .sld-buoc { grid-auto-flow: row; grid-auto-columns: auto; gap: 1.2cqw; }
+.sld-cc.bac .sld-buoc li { width: 62%; margin-left: calc(var(--i) * 12%); padding: 1cqw 1.4cqw 1cqw 4.6cqw; }
+.sld-cc.bac .sld-buoc li::after { content: "↘"; right: auto; left: 1.4cqw; top: auto; bottom: -1.9cqw; }
+.sld-cc.bac .sld-buoc-so { top: 50%; left: 1cqw; transform: translateY(-50%); }
+.sld-cc.co-hinh { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 3cqw; align-items: stretch; }
+.sld-cc.co-hinh .sld-buoc { grid-auto-flow: row; grid-auto-rows: auto; align-content: center; gap: 1.6cqw; }
+.sld-cc.co-hinh .sld-buoc li { padding: 1cqw 1.2cqw 1cqw 4.4cqw; }
+.sld-cc.co-hinh .sld-buoc li::after { content: none; }
+.sld-cc.co-hinh .sld-buoc-so { top: 50%; left: 1cqw; transform: translateY(-50%); }
+
+/* ------------------------------------------------------- ví dụ chạy tay */
+.sld-vdu { flex: 1; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) minmax(0, .9fr); gap: 2.4cqw; align-items: center; }
+.sld-note.nho { transform: rotate(1.2deg); }
+.sld-vdu.co-hinh { flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: stretch; }
+.sld-vdu-cot { display: flex; flex-direction: column; gap: 1.4cqw; justify-content: center; }
+.sld-tl { list-style: none; margin: 0; padding: 0 0 0 2.4cqw; border-left: .25cqw dashed var(--chi); display: grid; gap: 1.4cqw; counter-reset: b; }
+.sld-tl li { position: relative; counter-increment: b; }
+.sld-tl li::before { content: counter(b); position: absolute; left: -4cqw; top: 0; width: 3cqw; height: 3cqw; display: grid; place-items: center; border-radius: 50%; background: var(--giay); border: .16cqw solid var(--muc); font-weight: 700; font-size: 1.4cqw; }
+.sld-tl b { display: block; font-family: var(--tieu-de); }
+.sld-tl p { font-size: .82em; color: var(--muc-2); }
+.sld-ra { border: .2cqw solid var(--la); border-radius: .6cqw; padding: 1.6cqw; box-shadow: .3cqw .3cqw 0 var(--la); background: #fff; }
+.sld-ra .sld-tay { color: var(--la); display: block; }
+
+/* ------------------------------------------------------- bằng chứng */
+.sld-bc { flex: 1; min-height: 0; display: grid; gap: 3cqw; align-items: stretch; }
+.sld-bc.co-hinh { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }  /* hình ~62% bề ngang */
+.sld-bc.co-hinh.lat { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+.sld-bc.co-hinh.lat .sld-hinh { order: 2; }
+.sld-bc.khong-hinh { grid-template-columns: minmax(0, 1fr); align-content: center; max-width: 80%; }
+.sld-bc-chu { display: flex; flex-direction: column; gap: 1cqw; justify-content: center; }
+.sld-doc { font-size: .85em; color: var(--muc-2); }
+.sld-kl-p { font-weight: 700; font-size: 1.08em; line-height: 1.45; margin-top: .6cqw !important; }
+.sld-kl {
+  background: linear-gradient(transparent 60%, color-mix(in srgb, var(--da-quang) 70%, transparent) 60%);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.sld-cac-so { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 1cqw; margin-top: 1cqw; }
+/* KHÔNG kẻ vạch màu dọc cạnh ô chữ — một trong ba "dấu hiệu đồ AI làm" đã ghi
+   trong CLAUDE.md. Khung bút chì đứt nét là đủ tách khối. */
+.sld-so { border: .14cqw dashed var(--chi); border-radius: .5cqw; padding: .7cqw 1.1cqw; display: grid; background: #fff; }
+.sld-so b { font-family: var(--tieu-de); font-size: 1.7em; line-height: 1.1; color: var(--xanh); }
+.sld-so span { font-size: .8em; }
+.sld-so em { font-style: normal; font-family: var(--tay); color: var(--mo); font-size: .85em; }
+
+/* ------------------------------------------------------- con số chính */
+.sld-sl { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 1cqw; }
+.sld-sl-so { font-family: var(--tieu-de); font-weight: 800; font-size: calc(var(--s) * 10cqw); line-height: 1; color: var(--xanh); }
+.sld-sl-nhan { font-size: 1.2em; font-weight: 600; }
+.sld-sl-moc { font-family: var(--tay); color: var(--mo); font-size: 1.1em; }
+.sld-sl-yn { max-width: 70%; color: var(--muc-2); margin-top: 1cqw !important; }
+
+/* ------------------------------------------------------- giới hạn */
+.sld-gh { list-style: none; margin: auto 0; padding: 0; display: grid; gap: 1.8cqw; }
+.sld-gh li { display: grid; grid-template-columns: 3cqw 1fr; gap: 1.6cqw; align-items: start; }
+.sld-gh-dau { width: 2.8cqw; height: 2.8cqw; display: grid; place-items: center; border-radius: 50%; border: .2cqw solid var(--do); color: var(--do); font-weight: 800; font-size: 1.6cqw; }
+.sld-gh b { display: block; font-family: var(--tieu-de); }
+.sld-gh p { color: var(--muc-2); font-size: .9em; }
+
+/* ------------------------------------------------------- đúc kết */
+.sld-dl { list-style: none; margin: 0 0 2cqw; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.6cqw; flex: 1; align-items: center; }
+.sld-dl li:nth-child(2) { transform: rotate(1.2deg); }
+.sld-dl li:nth-child(3) { transform: rotate(-.6deg); }
+.sld-dl-so { display: inline-grid; place-items: center; width: 3cqw; height: 3cqw; border-radius: 50%; background: var(--da-quang); border: .16cqw solid var(--muc); font-weight: 800; font-size: 1.5cqw; margin-bottom: .8cqw; }
+.sld-hoi { font-size: .95em; }
+.sld-hoi .sld-tay { margin-right: .6cqw; }
+.sld-cam-on { font-family: var(--tieu-de); font-weight: 800; color: var(--xanh); font-size: 1.3em; margin-top: 1.2cqw !important; }
+
+/* ------------------------------------------------------- màn sửa */
+.sld [contenteditable] { outline: none; border-radius: .2cqw; }
+.sld [contenteditable]:hover { box-shadow: 0 0 0 .15cqw color-mix(in srgb, var(--xanh) 45%, transparent); }
+.sld [contenteditable]:focus { box-shadow: 0 0 0 .2cqw var(--xanh); background: rgba(255, 255, 255, .7); }
+.sld [contenteditable]:empty::before { content: attr(data-ph); color: var(--chi); font-style: italic; }
+.sld.tran::after { content: "Chữ hơi nhiều — bớt một ý hoặc chuyển sang lời nói"; position: absolute; right: 1cqw; top: 1cqw; background: var(--do); color: #fff; font-size: 1cqw; padding: .3cqw .8cqw; border-radius: .4cqw; }
+
+/* in ra PDF: mỗi slide một trang ngang */
+@media print {
+  .sld { break-after: page; page-break-after: always; box-shadow: none !important; }
+  .sld.tran::after { content: none; }
+}

@@ -230,24 +230,30 @@
     <!-- ===================================================== 7 -->
     <section id="slide">
       <h2><span class="so-buoc">7</span>Làm slide thuyết trình</h2>
-      <p>Dịch xong cả bài thì nút <strong>Slide</strong> mở khoá. Có hai bước, và bạn duyệt ở giữa:</p>
-      <ol>
-        <li><strong>① Dàn ý</strong> — bấm <strong>Soạn lại nội dung</strong> (tốn ít). Bạn nhận một
-          câu thông điệp chính, các phần, và mỗi slide sẽ khẳng định gì, dựa vào bằng chứng nào. Sửa ở
-          mức ý tưởng tại đây: viết lại khẳng định, đổi hình, sắp lại thứ tự.</li>
-        <li><strong>② Slide</strong> — bấm <strong>Dựng lại từ dàn ý</strong> (tốn tiền hơn). Slide bạn
-          đã sửa tay sẽ không bị dựng đè.</li>
-      </ol>
-      <figure class="anh"><img src="anh/dan-y.webp" loading="lazy" width="1600" height="1000" alt="Tab Dàn ý: thông điệp chính và danh sách mục"><figcaption>Sửa dàn ý trước rẻ hơn nhiều so với sửa slide sau</figcaption></figure>
+      <p>Nút <strong>Slide</strong> trên thanh công cụ mở màn slide. Slide dựng từ mạch lập luận mà lượt
+        dịch đầu tiên chốt lại, nên cần bấm <strong>Dịch</strong> trước. Chọn độ dài buổi nói (10, 15 hay
+        20 phút) rồi bấm <strong>Tạo slide</strong>. Tool gọi model <strong>một lượt</strong>, mất chừng
+        một đến hai phút, và nút ghi sẵn giá ước tính.</p>
+      <p>Mỗi slide mang một vai trong lập luận của bài: vấn đề, khoảng trống, thuộc tính cần có, ý tưởng
+        cốt lõi, cơ chế, ví dụ chạy tay, bằng chứng, con số chính, giới hạn, đúc kết. Mỗi vai có bố cục
+        riêng, nên bộ slide đổi dáng theo mạch bài. Slide mở đầu và slide lộ trình dựng từ thông tin
+        bài, không tốn lượt gọi nào.</p>
+      <figure class="anh"><img src="anh/slide.webp" loading="lazy" width="1600" height="1000" alt="Màn slide: dải ảnh thu nhỏ bên trái, slide cơ chế đang sửa ở giữa với ba bước và hình tổng quan phương pháp"><figcaption>Bấm thẳng vào chữ trên slide để sửa, rời ô là lưu</figcaption></figure>
       <ul>
-        <li>Sửa chữ thẳng trên slide; <strong>⤢ Bố cục tự do</strong> để kéo, đổi cỡ từng phần.</li>
-        <li><strong>Làm lại slide này</strong> — nhờ model viết lại riêng một slide.</li>
+        <li>Sửa chữ thẳng trên slide. <kbd>Enter</kbd> lưu, <kbd>Shift</kbd>+<kbd>Enter</kbd> xuống
+          dòng, <kbd>Esc</kbd> huỷ.</li>
+        <li>Kéo ảnh thu nhỏ ở cột trái để đổi thứ tự. Bấm vào hình trên slide (hoặc nút
+          <strong>＋ hình</strong> ở góc) để chọn hình khác trong bài.</li>
+        <li><strong>↻ Viết lại slide này</strong> nhờ model viết lại riêng một slide, giữ nguyên vai.
+          Ghi thêm gợi ý vào ô bên cạnh nếu muốn, ví dụ "thêm số liệu trên WebQA".</li>
+        <li><strong>Lời người nói</strong> nằm dưới slide, sửa được, và hiện khi bấm <kbd>S</kbd> lúc
+          trình chiếu.</li>
         <li><strong>▶ Trình chiếu</strong> (<kbd>F5</kbd>): <kbd>←</kbd> <kbd>→</kbd> chuyển slide,
-          <kbd>S</kbd> xem lời người nói, <kbd>Esc</kbd> thoát.</li>
-        <li>Cờ đỏ trên slide nghĩa là chốt soát thấy vấn đề — ví dụ một con số không có trong đoạn
-          nguồn. Đọc kỹ trước khi trình bày.</li>
+          <kbd>S</kbd> mở lời người nói, <kbd>Esc</kbd> thoát.</li>
+        <li>Khung <strong>Cần soát</strong> dưới slide liệt kê vấn đề chốt soát tìm thấy, ví dụ một con
+          số không có trong chữ của bài. Ô số bịa trên slide bằng chứng bị bỏ hẳn. Ví dụ do model tự
+          dựng được ghi rõ là minh hoạ, không lấy từ bài.</li>
       </ul>
-      <figure class="anh"><img src="anh/slide.webp" loading="lazy" width="1600" height="1000" alt="Tab Slide: danh sách slide và slide đang sửa"></figure>
     </section>
 
     <!-- ===================================================== 8 -->
@@ -259,8 +265,10 @@
           tiếng Việt. Ảnh được nhúng thẳng vào file, nên mở ở đâu cũng còn hình; file HTML đọc được
           offline, sơ đồ vẫn chạy.</li>
         <li>PDF đi qua hộp in của trình duyệt: chọn <em>Lưu dưới dạng PDF</em>.</li>
-        <li>Bộ slide xuất được <strong>PDF, HTML, PowerPoint</strong>. Trong file PowerPoint, sơ đồ là
-          hình vẽ gốc, vẫn kéo và sửa chữ được.</li>
+        <li>Bản HTML và PDF đọc như một báo cáo: bìa có tác giả và nơi đăng, tóm lược theo mạch lập
+          luận, bảng thuật ngữ, mục lục, rồi tới thân bài. PDF khổ A4, có số trang.</li>
+        <li>Bộ slide xuất được <strong>HTML</strong> (một file, trình chiếu offline được) và
+          <strong>PDF</strong> (mỗi slide một trang), từ nút tải về trên màn slide.</li>
       </ul>
     </section>
 

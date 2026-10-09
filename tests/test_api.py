@@ -141,78 +141,81 @@ def test_boi_vang_khoi_khong_ton_tai(app_client, doc):
 
 @pytest.fixture(scope="module")
 def with_deck(app_client, doc):
-    """Gắn tay một bộ slide vào DB — không gọi model."""
-    from server import store
+    """Gắn tay một bộ slide v2 vào DB — không gọi model."""
+    from server import slide, store
     d = store.load(doc["id"])
     bid = d["blocks"][1]["id"]
-    d["slides"] = {"deck": [
-        {"id": "s1", "kind": "title", "headline": "Bài thử", "notes": ""},
-        {"id": "s2", "kind": "content", "eyebrow": "KẾT QUẢ",
-         "headline": "Mô hình đạt 42,5 điểm F1 trên tập kiểm tra",
-         "cards": [{"icon": "chart", "title": "Chất lượng",
-                    "bullets": ["Cao hơn baseline 3,1 điểm"]}],
-         "callout": {"title": "Chốt lại", "body": "Lặp lại trên cả ba bộ dữ liệu"},
-         "notes": " ".join(["nói"] * 130), "source_block_ids": [bid]},
-    ], "backup": []}
+    bo = [slide._mo_dau(d), slide._lo_trinh(),
+          {"vai": "van_de", "tieu_de": "Truy hồi một lượt bỏ sót bằng chứng bắc cầu",
+           "cau": "Câu hỏi nhiều bước cần hai đoạn văn", "vi_du": "Ai là đạo diễn phim X",
+           "nguon": [bid], "loi_noi": "nói", "canh_bao": []},
+          {"vai": "dong_lai", "tieu_de": "Ba điều mang về", "y": ["Một", "Hai", "Ba"],
+           "cau_hoi": "Còn gì chưa rõ", "nguon": [], "loi_noi": "", "canh_bao": []}]
+    d["slides"] = {"v": 2, "bo": slide._danh_ma(bo), "phut": 10}
     store.save(d)
     return doc["id"]
 
 
-def test_slide_sua_tay(app_client, with_deck):
-    r = app_client.patch(f"/api/doc/{with_deck}/slides",
-                         json={"slide": {"id": "s2", "headline": "Tiêu đề mới đủ dài"}})
-    assert r.status_code == 200, r.text
-    s2 = next(x for x in r.json()["slides"]["deck"] if x["id"] == "s2")
-    assert s2["headline"] == "Tiêu đề mới đủ dài"
-    assert s2["edited"] is True
-
-
-def test_slide_khong_cho_sua_nguon(app_client, with_deck):
-    """`source_block_ids` là ràng buộc soát số liệu — sửa được thì vô nghĩa."""
-    r = app_client.patch(f"/api/doc/{with_deck}/slides",
-                         json={"slide": {"id": "s2", "source_block_ids": ["bia"]}})
-    s2 = next(x for x in r.json()["slides"]["deck"] if x["id"] == "s2")
-    assert s2["source_block_ids"] != ["bia"]
-
-
-def test_slide_them_nhan_doi_xoa(app_client, with_deck):
-    r = app_client.patch(f"/api/doc/{with_deck}/slides", json={"add": "s1"})
-    new_id = r.json()["new_id"]
-    assert [x["id"] for x in r.json()["slides"]["deck"]][1] == new_id
-
-    r = app_client.patch(f"/api/doc/{with_deck}/slides", json={"duplicate": "s2"})
-    dup = r.json()["new_id"]
-    assert dup != "s2"
-
-    r = app_client.patch(f"/api/doc/{with_deck}/slides", json={"drop": [new_id, dup]})
-    ids = [x["id"] for x in r.json()["slides"]["deck"]]
-    assert new_id not in ids and dup not in ids
-
-
-def test_slide_bo_cuc_tu_do(app_client, with_deck):
-    boxes = {"head": [5, 5, 90, 20], "card0": [5, 30, 40, 40]}
-    r = app_client.patch(f"/api/doc/{with_deck}/slides",
-                         json={"slide": {"id": "s2", "free": True, "boxes": boxes}})
-    s2 = next(x for x in r.json()["slides"]["deck"] if x["id"] == "s2")
-    assert s2["free"] is True and s2["boxes"]["head"] == [5, 5, 90, 20]
-    html = app_client.get(f"/api/doc/{with_deck}/export?fmt=slides").text
-    assert "is-free" in html and "left:5%" in html
-    app_client.patch(f"/api/doc/{with_deck}/slides",
-                     json={"slide": {"id": "s2", "free": False}})
-
-
-@pytest.mark.parametrize("fmt", ["md", "html", "slides", "slides-pdf", "pptx"])
-def test_xuat_du_nam_dang(app_client, with_deck, fmt):
+@pytest.mark.parametrize("fmt", ["md", "html", "slides", "slides-pdf"])
+def test_xuat_du_bon_dang(app_client, with_deck, fmt):
     r = app_client.get(f"/api/doc/{with_deck}/export?fmt={fmt}")
     assert r.status_code == 200, (fmt, r.text[:200])
     assert len(r.content) > 500, fmt
 
 
-def test_slide_xuat_ra_co_cot_moc_thiet_ke(app_client, with_deck):
+def test_file_slide_xuat_ra_dung_chung_bo_ve_voi_app(app_client, with_deck):
+    """File tải về nhúng NGUYÊN VĂN `web/slide-ve.js` + `web/slide.css` — một bộ
+    vẽ duy nhất, nên xem trước và file xuất không thể lệch nhau."""
+    from server.main import WEB
     html = app_client.get(f"/api/doc/{with_deck}/export?fmt=slides").text
-    for tag in ("class='eyebrow'", "class='card", "class='callout",
-                "data-part=", "normAutofit" if False else "scrollHeight"):
-        assert tag in html, tag
+    assert (WEB / "slide-ve.js").read_text(encoding="utf-8").strip()[:400] in html
+    assert "SlideVe" in html and "Truy hồi một lượt" in html
+    # Font nhúng thẳng, không trỏ về /vendor của app (mở file ngoài app vẫn đúng chữ)
+    assert "/vendor/fonts/" not in html
+
+
+def test_slide_sua_doi_cho_xoa(app_client, with_deck):
+    did = with_deck
+    bo = app_client.get(f"/api/doc/{did}/slides").json()["bo"]
+    assert [s["vai"] for s in bo][:2] == ["mo_dau", "lo_trinh"]
+    sid = bo[2]["id"]
+    r = app_client.patch(f"/api/doc/{did}/slides/{sid}",
+                         json={"tieu_de": "Tiêu đề sửa tay", "nguon": ["khongcothat"]})
+    assert r.status_code == 200
+    s = next(x for x in r.json()["bo"] if x["id"] == sid)
+    assert s["tieu_de"] == "Tiêu đề sửa tay" and s["sua_tay"]
+    # `nguon` không sửa tay được — sửa được thì phép soát số liệu thành vô nghĩa
+    assert s["nguon"] != ["khongcothat"]
+    # Số bịa sửa tay vào vẫn bị soát
+    r = app_client.patch(f"/api/doc/{did}/slides/{sid}", json={"cau": "Tăng 987,6 điểm"})
+    s = next(x for x in r.json()["bo"] if x["id"] == sid)
+    assert any("987" in c for c in s["canh_bao"])
+    assert app_client.patch(f"/api/doc/{did}/slides/{sid}",
+                            json={"hinh": "khongcothat"}).status_code == 400
+    assert app_client.patch(f"/api/doc/{did}/slides/s99", json={}).status_code == 404
+
+    ids = [x["id"] for x in bo]
+    moi = ids[:2] + ids[2:][::-1]
+    assert [x["id"] for x in app_client.post(f"/api/doc/{did}/slides/thu-tu",
+                                             json={"ids": moi}).json()["bo"]] == moi
+    assert app_client.post(f"/api/doc/{did}/slides/thu-tu",
+                           json={"ids": ids[:2]}).status_code == 400
+    assert app_client.post(f"/api/doc/{did}/slides/thu-tu", json={"ids": ids}).status_code == 200
+
+    r = app_client.delete(f"/api/doc/{did}/slides/{ids[-1]}")
+    assert r.status_code == 200 and len(r.json()["bo"]) == len(ids) - 1
+    assert app_client.delete(f"/api/doc/{did}/slides/{ids[-1]}").status_code == 404
+
+
+def test_slide_chua_co_tom_luoc_thi_khong_tao(app_client):
+    """Sinh slide đi sau `cached_prefix` + mạch lập luận trong brief — chưa có
+    brief thì từ chối, không gọi model."""
+    r = app_client.post("/api/import", data={
+        "text": "Bài nháp\n\nMột đoạn văn đủ dài để thành một khối riêng của bài.",
+        "model": "test/model", "force": "1"})
+    did = r.json()["id"]
+    assert app_client.post(f"/api/doc/{did}/slides/tao", json={"phut": 10}).status_code == 400
+    assert app_client.get(f"/api/doc/{did}/export?fmt=slides").status_code == 400
 
 
 # ------------------------------------------------------------ tiến trình nạp
@@ -238,12 +241,6 @@ def test_ma_bai_co_ky_tu_la(app_client):
     """`doc_id` phải `isalnum()` — hàng rào chống path traversal."""
     r = app_client.get("/api/doc/..%2F..%2Fetc/img/x.png")
     assert r.status_code in (400, 404)
-
-
-def test_figsizes_khong_bai_van_khong_vo(app_client, doc):
-    r = app_client.get(f"/api/doc/{doc['id']}/figsizes")
-    assert r.status_code == 200
-    assert isinstance(r.json()["ratios"], dict)
 
 
 # ------------------------------------------------------- dịch từng phần
@@ -278,103 +275,6 @@ def test_only_khong_khop_thi_bo_qua_me(app_client, doc):
     ) as r:
         body = "".join(r.iter_text())
     assert '"skipped": true' in body.lower().replace(" ", " ")
-
-
-# --------------------------------------------- dàn ý: màn soát của pass slide
-
-@pytest.fixture()
-def with_outline(app_client, doc):
-    """Gắn tay một dàn ý vào DB — không gọi model."""
-    from server import store
-    d = store.load(doc["id"])
-    bid = d["blocks"][1]["id"]
-    sl = d.get("slides") or {}
-    sl["outline"] = {
-        "thesis": "Một câu chốt lại cả bài",
-        "sections": [{"name": "Bài toán"}, {"name": "Cách làm"}, {"name": "Kết quả"}],
-        "items": [
-            {"id": "o1", "kind": "title", "message": "Bài thử", "points": [],
-             "evidence": {"kind": "none", "figure": "", "what": ""},
-             "source_block_ids": []},
-            {"id": "o2", "kind": "content", "section": "Kết quả",
-             "message": "Mô hình đề xuất đạt 42,5 điểm F1 trên tập kiểm tra",
-             "points": ["Cao hơn baseline mạnh nhất 3,1 điểm"],
-             "evidence": {"kind": "diagram", "figure": "", "what": "hai pha nối tiếp"},
-             "source_block_ids": [bid]},
-        ],
-        "backup": [],
-    }
-    d["slides"] = sl
-    store.save(d)
-    return doc["id"]
-
-
-def test_sua_dan_y_bang_tay(app_client, with_outline):
-    r = app_client.patch(f"/api/doc/{with_outline}/outline",
-                         json={"item": {"id": "o2", "message": "Câu khẳng định mới",
-                                        "points": ["ý một", "ý hai", "ý ba"]}})
-    assert r.status_code == 200, r.text
-    it = r.json()["outline"]["items"][1]
-    assert it["message"] == "Câu khẳng định mới"
-    assert it["points"] == ["ý một", "ý hai", "ý ba"]
-    assert it["edited"] is True
-
-
-def test_dan_y_khong_cho_sua_nguon(app_client, with_outline):
-    """Cùng lý do với slide: `source_block_ids` là ràng buộc soát số liệu."""
-    truoc = app_client.get(f"/api/doc/{with_outline}").json()["slides"]["outline"]
-    goc = truoc["items"][1]["source_block_ids"]
-    r = app_client.patch(f"/api/doc/{with_outline}/outline",
-                         json={"item": {"id": "o2", "source_block_ids": ["bia"]}})
-    assert r.json()["outline"]["items"][1]["source_block_ids"] == goc
-
-
-def test_dan_y_them_xoa_doi_cho(app_client, with_outline):
-    r = app_client.patch(f"/api/doc/{with_outline}/outline", json={"add": "o1"})
-    ids = [i["id"] for i in r.json()["outline"]["items"]]
-    assert len(ids) == 3 and ids == ["o1", "o2", "o3"]   # đánh mã lại liên tục
-
-    r = app_client.patch(f"/api/doc/{with_outline}/outline",
-                         json={"move": {"id": "o1", "by": 1}})
-    assert r.json()["outline"]["items"][1]["kind"] == "title"
-
-    r = app_client.patch(f"/api/doc/{with_outline}/outline", json={"drop": "o1"})
-    assert len(r.json()["outline"]["items"]) == 2
-
-
-def test_dan_y_chuyen_sang_du_phong(app_client, with_outline):
-    r = app_client.patch(f"/api/doc/{with_outline}/outline",
-                         json={"id": "o2", "to": "backup"})
-    ol = r.json()["outline"]
-    assert len(ol["items"]) == 1 and len(ol["backup"]) == 1
-
-
-def test_dan_y_soat_lai_sau_moi_lan_sua(app_client, with_outline):
-    """Sửa tay xong vẫn phải qua `check_outline` — không thì chốt chặn bỏ trống."""
-    r = app_client.patch(f"/api/doc/{with_outline}/outline",
-                         json={"item": {"id": "o2", "points": ["Đạt 99,9 điểm"]}})
-    it = r.json()["outline"]["items"][1]
-    assert any("99,9" in w for w in it["warn"]), it["warn"]
-
-
-def test_dung_slide_khi_chua_co_dan_y(app_client, doc):
-    """Không có dàn ý thì KHÔNG gọi model — trả lỗi để người dùng đi soạn trước."""
-    from server import store
-    d = store.load(doc["id"])
-    d["slides"] = {}
-    store.save(d)
-    with app_client.stream("GET", f"/api/doc/{doc['id']}/slides/build") as r:
-        body = "".join(r.iter_text())
-    assert "event: error" in body and "dàn ý" in body
-
-
-def test_sua_dan_y_bai_khong_co(app_client, doc):
-    from server import store
-    d = store.load(doc["id"])
-    d["slides"] = {}
-    store.save(d)
-    r = app_client.patch(f"/api/doc/{doc['id']}/outline", json={"drop": "o1"})
-    assert r.status_code == 404
 
 
 def test_doi_ten_bai(app_client, doc):
@@ -1363,17 +1263,17 @@ def test_giao_dien_khong_pha_luat_chu_tieng_viet():
     chuyển sang, còn 13 nhãn viết hoa trong phần app ("THƯ VIỆN", "BÀI TOÁN",
     "TÀI LIỆU"…) — nhãn mục giờ lấy chất từ font, không từ chữ hoa.
 
-    Bỏ qua luật của SLIDE (`.sl-`, `.ol-`): slide có luật riêng và phải khớp
-    từng chữ với bản xuất ra ở `_SLIDES_CSS`.
+    Slide (`slide.css`) cũng soát chung: một bộ vẽ cho cả app lẫn file xuất,
+    và chữ trên slide là chữ to nhất app — cắt ngọn dấu ở đó là lộ nhất.
     """
     import re
     from pathlib import Path
     web = Path(__file__).resolve().parents[1] / "web"
-    for ten in ("style.css", "survey.css"):
+    for ten in ("style.css", "survey.css", "slide.css"):
         css = re.sub(r"/\*.*?\*/", "", (web / ten).read_text(), flags=re.S)
         for sel, than in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
             sel = " ".join(sel.split())
-            if ".sl-" in sel or ".ol-" in sel or sel.startswith("@"):
+            if sel.startswith("@"):
                 continue
             t = than.replace(" ", "")
             assert "text-transform:uppercase" not in t, f"{ten} · {sel}: viết hoa cắt ngọn dấu"
@@ -1545,3 +1445,65 @@ def test_thu_vien_thong_tin_nhan_va_bibtex(app_client):
 
     app_client.post("/api/docs/delete", json={"ids": [did]})
     assert db.get_meta(did)["data"] == {} and "đọc sau" not in [t["tag"] for t in db.list_tags()]
+
+
+def test_tao_slide_mot_luot_goi_model_va_tu_dung_mo_dau(app_client, monkeypatch):
+    """Sinh slide là MỘT lượt gọi model; slide mở đầu và lộ trình dựng tại chỗ.
+    JSON hỏng thì thử lại đúng một lần."""
+    import json
+    from server import llm, store
+
+    r = app_client.post("/api/import", data={
+        "text": "Bài slide giả\n\nMô hình đạt 42,5 điểm F1, cao hơn baseline 3,1 điểm.",
+        "model": "test/slide", "force": "1"})
+    did = r.json()["id"]
+    d = store.load(did)
+    d["brief"] = {"title_vi": "Bài slide giả", "glossary": [],
+                  "argument_chain": [{"role": "problem", "step": "x"}]}
+    store.save(d)
+    bid = d["blocks"][-1]["id"]
+    goi = []
+
+    async def gia(messages, **kw):
+        goi.append(kw.get("session_id"))
+        if len(goi) == 1:
+            return "{hỏng", llm.Usage()
+        return json.dumps({"slides": [
+            {"vai": "dong_lai", "tieu_de": "Đúc kết", "y": ["a", "b", "c"], "cau_hoi": "?"},
+            {"vai": "so_lieu", "tieu_de": "Đạt 42,5 điểm F1", "gia_tri": "42,5",
+             "nhan": "F1", "moc": "cao hơn baseline 3,1 điểm", "nguon": [bid]},
+            {"vai": "vai_la", "tieu_de": "bỏ"},
+        ]}), llm.Usage()
+
+    monkeypatch.setattr(llm, "complete", gia)
+    r = app_client.post(f"/api/doc/{did}/slides/tao", json={"phut": 10})
+    assert r.status_code == 200, r.text
+    bo = r.json()["slides"]["bo"]
+    assert [s["vai"] for s in bo] == ["mo_dau", "lo_trinh", "so_lieu", "dong_lai"]
+    assert bo[0]["tieu_de"] == "Bài slide giả"
+    # 42,5 và 3,1 có trong bài nên không bị bắt; bộ thiếu slide cơ chế thì bị báo
+    assert not any("Số không có" in c for c in bo[2]["canh_bao"])
+    assert any("cơ chế" in c for c in bo[2]["canh_bao"])
+    assert goi == [did, did]  # session_id cho sticky routing, đúng hai lần
+
+
+def test_ban_xuat_dung_latex_nhu_man_hinh_va_khong_vach_mau_doc(app_client):
+    """Bản xuất từng thiếu bước `\\(…\\)` mà `sci()` của app có — màn hình dựng
+    đúng còn file tải về hiện nguyên `\\in`. Và chất liệu sổ tay không được có
+    vạch màu kẻ dọc cạnh ô chữ (bản cũ có ở bốn chỗ)."""
+    import re
+    from server import store
+    r = app_client.post("/api/import", data={
+        "text": "Bài xuất\n\nMột đoạn văn đủ dài để thành một khối riêng của bài thử.",
+        "model": "test/xuat", "force": "1"})
+    did = r.json()["id"]
+    d = store.load(did)
+    bid = d["blocks"][-1]["id"]
+    d["translations"][bid] = r"Tập \(Suf(a) \in \{0, 1\}\) với x^{2}."
+    store.save(d)
+    html = app_client.get(f"/api/doc/{did}/export?fmt=html&mode=vi").text
+    assert "\\in" not in html.split("<main>")[1] and "∈" in html and "<sup>2</sup>" in html
+    css = html.split("<style>")[1].split("</style>")[0]
+    assert not re.search(r"border-left:\s*[23]px solid", css), "vạch màu dọc cạnh ô chữ"
+    assert "text-transform:uppercase" not in css.replace(" ", "")
+    assert "data:font/woff2" in css  # font nhúng: mở file ngoài app vẫn đúng chữ

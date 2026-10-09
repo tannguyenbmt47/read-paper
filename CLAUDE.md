@@ -11,14 +11,14 @@ PORT=9000 ./run.sh       # đổi cổng
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 276 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 245 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
-node --check web/app.js web/survey.js   # chưa có test cho frontend
+node --check web/app.js web/survey.js web/thuvien.js web/slide.js web/slide-ve.js   # chưa có test cho frontend
 ```
 
-`tests/test_unit.py` — logic thuần, không cần server: chốt soát số liệu trên
-slide, bộ đo tràn khung, bộ bóc Mermaid, chỉ số trên/dưới.
+`tests/test_unit.py` — logic thuần, không cần server: chuẩn hoá slide (vai, hình,
+số bịa, ví dụ minh hoạ), bộ soát nhãn Mermaid, chỉ số trên/dưới.
 
 **`tests/conftest.py` là hàng rào giữ bộ test khỏi `data/` thật, và nó phải nằm
 ở conftest chứ không phải ở fixture.** `server/db.py` đọc `PAPER_DATA_DIR` **ngay
@@ -54,12 +54,12 @@ contenteditable, toàn màn hình phải kiểm bằng trình duyệt.
 Kiểm chứng thật thì phải nạp một PDF qua giao diện — mọi đường dẫn logic đều đi
 qua vòng parse → estimate → confirm → translate.
 
-**Bố cục slide thì phải NHÌN, không đo.** `slide_fit.py` chỉ là bản mô phỏng
-flexbox viết tay nên luôn thiếu một thứ gì đó (đã vấp: `gap` giữa các con của
-`.body`). Chống tràn thật nằm ở vòng autofit chạy trong trình duyệt — đo
-`scrollHeight`, giảm `--s`, đo lại, đúng thuật toán `normAutofit fontScale` của
-PowerPoint. Muốn soát cả deck thì mở file xuất ra bằng Chromium/Brave qua giao
-thức DevTools và hỏi bộ dựng hình, đừng soi từng slide.
+**Bố cục slide thì phải NHÌN, không đo.** Chống tràn nằm ở vòng autofit chạy
+trong trình duyệt (`SlideVe.vuaKhung`) — đo `scrollHeight`, giảm `--s`, đo lại,
+đúng thuật toán `normAutofit fontScale` của PowerPoint. Muốn soát cả deck thì mở
+file xuất ra bằng Chromium/Brave qua giao thức DevTools, hỏi lớp `tran` của từng
+`.sld`, rồi chụp màn hình từng slide mà nhìn — chữ tràn đè lên khối khác không
+làm tăng `scrollHeight`.
 
 `.env` bắt buộc có `OPENROUTER_API_KEY`. `server/main.py` gọi `load_dotenv()`
 **trước** khi import các module khác (dòng 11) vì `llm.DEFAULT_MODEL` và
@@ -524,8 +524,8 @@ lại chúng thì tốn tiền). Luật cấm nằm ở `*_TASK` chứ **không*
 cache của mọi bài đã dịch.
 
 Bảng macro có **ba** bản: `TEX` bên `app.js`, `_TEX` bên `main.py` (file xuất ra),
-và `TEX_ACCENT` / `_TEX_ACCENT` cho dấu phụ. Cùng họ với cặp `renderSlide()` /
-`_export_slides_html` — `test_bang_macro_tex_khop_nhau_giua_app_va_export` giữ
+và `TEX_ACCENT` / `_TEX_ACCENT` cho dấu phụ. Cùng họ với cặp `sci()` /
+`rich()` — `test_bang_macro_tex_khop_nhau_giua_app_va_export` giữ
 chúng khớp từng khoá, vì lệch một khoá thì file tải về khác bản trên màn hình mà
 chỉ lộ ra lúc người dùng mở nó.
 
@@ -698,227 +698,99 @@ Docling (`layout.py`) chỉ thay **khung cắt hình**, không đụng vào cấ
 Docling lấy gốc toạ độ ở góc dưới-trái, PyMuPDF ở góc trên-trái — `_to_top_left`
 lo việc đổi; quên là mọi khung cắt lật ngược.
 
-### Pass 4 chia làm hai bước — và ranh giới đó là chỗ chất lượng đến từ
+### Pass 4: bộ slide (`server/slide.py`, `web/slide-ve.js`) — bản dựng lại từ đầu
 
-Bản đầu gọi model **một lượt** cho cả bộ slide. Nó phải cùng lúc quyết kể chuyện
-gì, chia mấy phần, mỗi slide nói gì — **và** chọn icon, dựng thẻ, vẽ Mermaid,
-khớp JSON, canh ngân sách chữ. Phần lớn chú ý rơi vào khuôn dạng, nên nội dung ra
-nhạt: khẳng định chung chung, thẻ độn cho đủ, sơ đồ ba hộp.
+Bản đầu (dàn ý → duyệt → dựng theo mẻ, bảy kiểu bố cục, xuất `.pptx`) bị người
+test chê "chán" và bị bỏ hẳn. Ba lỗi gốc, và bản này nhắm đúng ba lỗi đó:
 
-Tách ra, đúng như ranh giới tiền-xử-lý / dịch ở bước 1 — **model đề xuất, người
-dùng quyết, rồi mới tới bước tốn tiền**:
+- **Một khuôn lặp lại.** 12/16 slide cùng dáng "tiêu đề + 3 thẻ pastel". Giờ mỗi
+  slide mang một **VAI trong lập luận** (`slide.VAI`): `van_de` · `khoang_trong`
+  · `yeu_cau` · `y_tuong` · `co_che` · `vi_du` · `bang_chung` · `so_lieu` ·
+  `gioi_han` · `dong_lai`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
+  lấy từ skill viết tài liệu kỹ thuật tiếng Việt (Vấn đề → Khoảng trống → Thuộc
+  tính cần có → Ý tưởng cốt lõi → Cơ chế). Mỗi vai một bố cục, nên bộ slide đổi
+  dáng theo mạch bài.
+- **Đắt và rối vì nhiều bước.** Giờ **MỘT lượt gọi model** đi sau
+  `cached_prefix`, ra thẳng nội dung từng slide. Không còn bước dàn ý. Sửa ngay
+  trên slide (`contenteditable="plaintext-only"` + `data-p="buoc.1.mo_ta"`, rời
+  ô là `PATCH`).
+- **Ba bộ dựng lệch nhau.** Server chỉ lo DỮ LIỆU. Vẽ slide là việc của MỘT hàm
+  `SlideVe.ve(s, ctx)` trong `web/slide-ve.js`, file **tự chứa** (không dùng hàm
+  nào của `app.js`). Xem trước, trình chiếu, và file tải về (`main._xuat_slide`
+  nhúng NGUYÊN VĂN `slide-ve.js` + `slide.css` + font) là cùng một đoạn code.
+  `.pptx` bị bỏ vì nó đòi một bộ dựng thứ hai — đúng thứ vừa gỡ.
 
-1. **`make_outline()` — soạn nội dung.** Chỉ nghĩ về mạch trình bày: `thesis`,
-   `sections` (3–4), và mỗi mục có `message` (một câu khẳng định), `evidence`
-   (hình nào / sơ đồ gì / số liệu nào), `points` (nội dung viết sẵn thành câu),
-   `source_block_ids`. Không icon, không thẻ, không Mermaid, không ngân sách chữ.
-   Người dùng soát và sửa ở tab **① Dàn ý** của màn `#slides`, lưu qua
-   `PATCH …/outline` (miễn phí).
-2. **`render_deck()` — dựng slide từ dàn ý ĐÃ DUYỆT**, theo mẻ `RENDER_BATCH = 4`,
-   đẩy tiến trình qua SSE `GET …/slides/build`.
+Mạch và lộ trình **tính từ bộ slide, không hỏi model**: `CHANG` chia vai thành
+bốn chặng, dấu "2/4 · Cách làm" ở góc slide và slide lộ trình đều suy ra từ đó.
+Slide mở đầu dựng từ `brief` + `db.get_meta` (tác giả, nơi đăng, năm).
 
-`RENDER_BATCH` nhỏ chính là chỗ "chi tiết" đến từ: dựng cả hai mươi slide trong
-một lượt thì mỗi slide được chia chưa tới một nghìn token đầu ra và model tự cắt
-cho vừa. Bốn mục một lượt thì mỗi slide rộng gấp năm, mà prefix vẫn ấm nên input
-gần như không tốn thêm (đo thật: 71k token đọc từ cache cho 5 mẻ).
+**Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
+bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai
+slide `bang_chung` liền nhau lật bên hình. Prompt cũng giới hạn mỗi vai tối đa 2
+slide (trừ `bang_chung`) — bản đầu ra ba slide `co_che` cùng dáng liên tiếp.
 
-Mỗi mẻ **lưu ngay vào DB**, nên mất kết nối giữa chừng thì phần đã dựng vẫn còn.
-Slide người dùng đã sửa tay (`edited`) thì **chép lại, không gọi model** — dựng
-đè lên là xoá công sức của họ mà không báo.
+**Hình tuỳ chọn thì không chừa chỗ.** Ở màn sửa, slide chưa có hình chỉ hiện một
+nút "＋ hình" nhỏ ở góc. Ô chờ to ("Bấm để chọn hình") chỉ dành cho
+`bang_chung`, vai mà thiếu hình là vô nghĩa. Bản đầu chừa nửa slide cho ô trống
+ở mọi slide cơ chế. Ô chờ và nút không bao giờ hiện khi chiếu hay trong file tải.
 
-`check_outline()` là bản sao của `check_slides()` cho bước 1, và bắt cùng loại
-lỗi: số bịa, nhãn chủ đề rỗng, mục không có bằng chứng, ảnh không có thật. Bắt ở
-đây rẻ hơn hẳn — sửa một dòng, thay vì dựng lại cả slide.
+**Trung thực về ví dụ và con số — hai lỗi đã vấp trên CIRAG:**
 
-`mark_stale()` phải quét **cả dàn ý**, không chỉ deck: bỏ sót thì lần dựng sau đẻ
-lại đúng cái slide đã sai.
+- **Model không thấy ảnh bảng, chỉ thấy chú thích**, mà vẫn "đọc" số từ bảng.
+  Chip "10.1 (61.4 xuống 51.3)" trong khi bảng ghi 68.1 → 59.7. Prompt nói thẳng
+  điều đó, và `chuan_hoa` **bỏ hẳn ô số** (`so`) nào có số không nằm trong chữ
+  của bài — ô số là thứ to và xanh nhất slide. Phần chữ còn lại vẫn theo luật
+  cảnh báo chứ không chặn.
+- **Ví dụ chạy tay bị bịa** (Messi/Barcelona, ghi "lấy từ 2WikiMQA"), trong khi
+  ví dụ thật của bài nằm trong bảng Case Study dạng ảnh. Giờ model phải khai
+  `minh_hoa: true` nếu tự dựng ví dụ, và slide ghi "minh hoạ, không lấy từ bài".
+  Nhãn ngược lại chỉ là "Ví dụ", **không** "Ví dụ trong bài" — nguồn do model
+  tự khai, máy không kiểm được.
 
-Mục lục thì **tính từ dàn ý, không hỏi model** (`agenda_from_sections()`) — cùng
-lối với `section_icons()`. Hỏi nó thì nó rơi về nhãn rỗng (`Thực nghiệm`,
-`Kết luận`) và mục lục lệch với các vách ngăn phía sau.
+**Trần chữ là trần CỨNG theo từng trường** (`SLIDE_TASK`: `mo_ta` ≤22 chữ, có
+hình thì ≤18…), vì chữ thân không nhỏ hơn 24px. `vuaKhung` co `--s` tới 0,78 rồi
+dừng và gắn cờ `tran` ("Chữ hơi nhiều" — chỉ ở màn sửa); nhỏ hơn nữa là nhồi chữ.
+Bản đầu không có trần: 3/12 slide tràn. Khung chứa (`.sld-kt`, `.sld-cc`,
+`.sld-bc-chu`) **không được `min-height: 0`**: co dưới nội dung thì chữ tràn ĐÈ
+lên khối sau chứ không đẩy `scrollHeight`, và vòng co chữ không thấy gì (đã vấp
+ở slide khoảng trống: hai hộp đè lên dòng "Hệ quả").
 
-### Bằng chứng và thẻ tranh nhau chiều cao — đây là chỗ vỡ bố cục hay gặp nhất
+Vệt dạ quang trên câu dài phải nằm trên phần tử **inline** (`span`) với
+`box-decoration-break: clone`. Đặt gradient lên `<p>` thì nó là MỘT khối chữ
+nhật lệch xuống dưới chứ không bám từng dòng.
 
-Ba lỗi đã vấp thật khi soát bằng trình duyệt, và **bộ đo Python không thấy cái
-nào**:
+Màn sửa: thumbnail và sân khấu nằm trong flex/grid có chiều cao cố định, nên
+`.sld` (`aspect-ratio: 16/9` + `overflow: hidden`) bị **bóp chiều cao** — đo
+được thumbnail 192×43 và sân khấu 1100×529. Cần `flex: none` cho sân khấu và
+`grid-auto-rows: max-content` cho dải thumbnail.
 
-- **`.vis` không có ràng buộc chiều cao** ở luồng thường (chỉ có CSS cho bố cục
-  tự do). `flex:1` của `figure` và `max-height:100%` của svg đều đo theo một cha
-  cao tự do, tức không đo gì cả: ảnh hiện ở cỡ gốc, sơ đồ mermaid phình tới
-  4000px. **10/20 slide tràn khung.** Một dòng CSS sửa cả mười.
-- **Nhưng `min-height:0` là lỗi ngược lại**: thẻ ăn hết chiều cao, sơ đồ co còn
-  ~140px — không tràn nên bộ đo im lặng, mà nhìn thì nó bé bằng con tem. Bằng
-  chứng giữ tối thiểu **38%**; nhồi thêm chữ thì slide tràn và `check_slides`
-  kêu, đúng thứ cần xảy ra.
-- **Ba thẻ cộng một sơ đồ là quá tải.** Slide có `figure`/`diagram` thì tối đa
-  **2 thẻ** và bỏ `callout`; slide cần 3–4 thẻ thì **đừng gắn sơ đồ** — thẻ có
-  nền màu, chip icon, tiêu đề đậm tự nó đã là cấu trúc để mắt bám vào. Vì thế
-  `check_slides` coi **thẻ cũng là "thứ để nhìn"**; đòi thêm hình ở slide bốn thẻ
-  là đẩy model gắn sơ đồ trang trí.
+Trình chiếu: mở lời nói (S) thì slide **co lại nhường chỗ** (`:has()` trên
+`.present`), không bị khung lời nói che nửa phải.
 
-Thêm một luật hình học: **slide có thẻ thì sơ đồ phải `flowchart LR`.** Chỗ còn
-lại cho nó là dải ngang thấp; `flowchart TD` xếp node thành cột dọc nên bị bóp
-còn một vệt hẹp. `check_slides` cảnh báo đúng trường hợp này.
+Giá: đo trên CIRAG **9.539 token ra cho 12 slide** ($0,047 với DeepSeek V4 Pro),
+tức ~700 token/slide vì `loi_noi` 60–110 chữ. Bản đầu ước 260 token/slide và
+hộp thoại ghi "thường dưới 1 xu" — giờ hộp thoại tạo lại hỏi `/slides/gia` và
+nói đúng dải giá.
 
-Và svg của mermaid phải để `width:100%;height:100%` chứ **không** `auto`: mermaid
-sinh sơ đồ chừng vài trăm pixel nên `auto` vẽ ở cỡ tự nhiên, thành vệt bé tí giữa
-khung dù còn thừa chỗ. Svg có `viewBox` nên 100% hai chiều là tự co giãn vừa
-khung mà vẫn giữ tỉ lệ.
+Dữ liệu: `doc["slides"] = {"v": 2, "bo": [...], "phut", "tao_luc", "chi_phi"}`.
+`slide.lay()` coi mọi định dạng cũ (không có `v: 2`) như chưa có. `PATCH` **không
+cho sửa `nguon`** — sửa được thì soát số liệu thành vô nghĩa. Mã slide `s1, s2…`
+phải `isalnum()` vì đi vào URL.
 
-### Pass 4: làm slide
+Soát bằng trình duyệt headless: `blur` **không bắn** khi tab không có tiêu điểm,
+nên thử sửa tại chỗ phải bật `Emulation.setFocusEmulationEnabled`. Và file slide
+tải về mang `Content-Disposition: attachment` — điều hướng thẳng tới URL đó trong
+headless là tải file chứ không hiện trang; lưu ra đĩa rồi mở bằng `file://`.
 
-`pipeline.make_slides()` chạy liền cả hai bước (đường tắt, không có chỗ soát).
-Nó dựng bộ slide từ bài **đã dịch xong** (nút bị khoá tới
-lúc đó — dựng từ bản dịch dở thì model tự viết lấy phần thiếu, đúng thứ cần
-tránh). Đi sau `cached_prefix(doc)` giống pass giải thích nên gần như chỉ trả
-tiền đầu ra; `minutes` là thứ thay đổi theo request nên nằm ở message `user`.
-Kết quả lưu ở cột `slides`, xem/sửa ở màn `#slides`, xuất qua
-`?fmt=slides` (tải file) và `?fmt=slides-pdf` (mở hộp in).
-
-**Bắt buộc có một slide đi hết cơ chế bằng ví dụ chạy tay.** Đây là chỗ mọi bộ
-slide về bài phương pháp thường hỏng, và hỏng theo cách người trình bày không
-nhận ra: kể được bài toán, kể được kết quả, nhưng phần giữa — cách nó thật sự
-chạy — chỉ còn cái tên và một sơ đồ ba hộp. Người nghe gật đầu suốt buổi rồi ra
-về không kể lại được cho ai. `OUTLINE_TASK` đòi ít nhất một slide lấy **một đầu
-vào cụ thể có thật trong bài**, đi từng bước, và ở mỗi bước nói **vì sao** bước
-ấy cần thiết. `pipeline.check_depth()` kiểm ở mức cả bộ (xem mục "Chuẩn độ sâu").
-
-**Luật slide là khẳng-định-và-bằng-chứng, và đó là quyết định có bằng chứng.**
-Garner & Alley 2013 giữ nguyên kịch bản nói 1.000 từ, chỉ đổi thiết kế slide:
-tiêu đề là **một câu khẳng định** + thân là **hình** (21,2 chữ/slide) so với nhãn
-chủ đề + gạch đầu dòng (41,5 chữ/slide) cho d = 0,81 về hiểu bài và **d = 0,89
-khi kiểm tra lại sau 10 ngày**. Hai hệ quả cho code:
-
-- Lợi ích nằm ở hiểu cơ chế và nhớ lâu, **không** ở nhớ số liệu rời.
-- Người xem chấm slide ít chữ là "ít chữ quá" *trong khi học được nhiều hơn* —
-  nên bản ít chữ phải là **mặc định**, thêm chữ là việc người dùng tự làm. Đừng
-  nới ngân sách chỉ vì thấy slide trông trống.
-
-Quy tắc 6×6 / 7×7 không có nguồn nghiên cứu nào, đừng đưa vào prompt: nó ép *cắt
-cho ngắn* chứ không phải *sửa cho rõ*.
-
-**Nhưng con số 21 chữ đó là của tiếng ANH và không có yêu cầu chú giải hình.**
-Áp thẳng vào đây là sai hai lần, và đã sai thật một lần rồi:
-
-1. Cùng nội dung, **tiếng Việt dài hơn tiếng Anh 10–25%**. Trần ≤70 ký tự cho
-   `headline` ép model lược hư từ ("của", "trong", "so với", "khi") — ra thứ
-   tiếng Việt kiểu tít báo, sai ngữ pháp: *"CIRAG thay chốt sớm bằng tích hợp
-   bằng chứng"*, *"Ngữ cảnh theo tầng hướng tới cân bằng đủ thông tin và nhiễu"*.
-   Vì thế `SLIDES_TASK` có hẳn một mục **văn phong học thuật tiếng Việt** với
-   bảng sửa mẫu, và mốc đã quy đổi: `headline` 8–18 chữ / ≤85 ký tự, slide ≤35
-   chữ. Thuật ngữ vẫn giữ tiếng Anh — cái phải chuẩn là **khung câu** quanh nó.
-2. **Hình cắt từ bài là hình tiếng Anh.** Trục, nhãn, chú giải nằm trong PNG,
-   không sửa được. Slide chỉ có một câu tiếng Việt + một biểu đồ tiếng Anh là
-   slide **trống** với người nghe Việt Nam, dù về hình thức nó đúng khẳng-định-
-   và-bằng-chứng. Nên có trường **`figure_note`**: 1–3 câu dịch nhãn trục và chỉ
-   rõ nhìn vào đâu. Bắt buộc khi có `figure`; `check_slides` cảnh báo nếu thiếu.
-
-`figure_note` **đếm riêng, không cộng vào `MAX_WORDS`** — nó là chú thích của
-hình, không phải chữ tranh chỗ với thông điệp (nghiên cứu gốc cũng không tính
-chú thích hình). Cộng gộp thì hai giới hạn tự mâu thuẫn và mọi slide có hình đều
-kêu oan.
-
-Nguyên tắc chung cho mấy hằng ngân sách: **prompt đặt mục tiêu, hằng số trong
-`pipeline.py` đặt chỗ thật sự vỡ bố cục.** Để hai con số bằng nhau thì slide nào
-sát mức cũng kêu; chốt chặn kêu oan vài lần là người dùng thôi đọc nó, lúc đó
-cảnh báo thật cũng trôi theo. Hiện tại: mục tiêu ≤35 chữ / ≤85 ký tự / chú giải
-≤35 chữ, còn cảnh báo ở 55 / 105 / 42.
-
-Một ngoại lệ cố ý: luật "đừng lặp lời nói thành chữ" đảo chiều với người nghe
-không phải bản ngữ của ngôn ngữ thuật ngữ. Nên **thuật ngữ `keep_en` vẫn giữ trên
-slide**, chỉ bỏ các câu tường thuật.
-
-### Mục lục và vách ngăn: hình mới là thứ dẫn đường, không phải chữ
-
-Penn State ([bộ hướng dẫn A-E gốc](https://cpb-us-e1.wpmucdn.com/sites.psu.edu/dist/7/13153/files/2008/10/Assertion-Evidence-Slides-Instruction_Set.pdf))
-coi "mapping slide" là một bước chính thức, và quy định của nó khác hẳn cái mục
-lục gạch đầu dòng thông thường:
-
-> Với mỗi phần, kèm **một hình đại diện cho phần đó**. Nên dùng chính **hình đầu
-> tiên của mỗi phần** — người nghe thấy hình lặp lại sẽ nhận ra đang sang phần mới.
-
-`pipeline.section_icons()` làm đúng việc đó và **tính từ deck, không hỏi model**:
-mỗi slide `section` nhận hình của slide có `figure` đầu tiên đứng sau nó. Hình ấy
-hiện ở cả mục lục lẫn vách ngăn. Model chỉ cần xếp sao cho ngay sau `section` là
-một slide có hình.
-
-Hai con số từ cùng nguồn: **buổi 10–15 phút thì đúng 3 phần** (20 phút trở lên
-mới 4–5), và **call-out tối đa 1–2 mỗi slide** — "ba cái trở lên làm slide rối và
-kém hiệu quả".
-
-Chỗ này có một mâu thuẫn cố ý, đừng "sửa" nhầm: Alley viết **"gạch đầu dòng không
-có chỗ trong kiểu trình bày này"**, nhưng người dùng của công cụ này muốn slide
-có thêm chữ. Cách hoà giải là dùng đúng cơ chế của Alley: trên slide có hình,
-`bullets` phải là **call-out chú vào từng phần của hình** (tối đa 2), không phải
-danh sách ý rời. `check_slides` cảnh báo khi quá 2.
-
-### Bố cục slide: bảy kiểu, suy ra từ nội dung
-
-Deck chuyên nghiệp dùng **3–5 kiểu bố cục**. Bản đầu tiên của tính năng này chỉ
-có **một** — tiêu đề trên, mọi thứ dồn vào một cột giữa — và hai mươi slide giống
-hệt nhau chính là thứ làm nó trông rẻ tiền, chứ không phải màu sắc.
-
-`pipeline.slide_layout()` chọn bố cục **từ nội dung**, không hỏi model: model
-không biết trước slide rốt cuộc có bao nhiêu chữ nên khai bố cục sai.
-
-| Bố cục | Khi nào | Vì sao |
-|---|---|---|
-| `title` | `kind == "title"` | vạch nhấn mảnh — chỗ **duy nhất** màu nhấn xuất hiện ngoài `statement` |
-| `agenda` | `kind == "agenda"` | mỗi phần một dòng: số · hình đầu của phần · tên phần |
-| `section` | `kind == "section"` | tên phần cỡ lớn + đúng hình đã thấy ở mục lục |
-| `statement` | takeaway/thanks không có gì để nhìn | một câu lớn giữa slide, nhiều khoảng trắng |
-| `full` | có `figure` | hình trong bài là biểu đồ/bảng **nằm ngang**; nhét vào nửa slide thì chữ trong hình không đọc được |
-| `split` | có `diagram`/`equation` + gạch đầu dòng | sơ đồ do ta dựng, hẹp hơn, bám sát chữ bên cạnh |
-| `list` | không có gì để nhìn | chỉ chữ |
-
-Chính cặp `full`/`split` tạo ra sự đa dạng: bài nào cũng có cả hình cắt lẫn sơ đồ.
-
-**Ba thứ bị chỉ đích danh là "dấu hiệu slide do AI làm": nền màu kem, hoa văn
-serif nghiêng, thanh màu kẻ dọc cạnh ô chữ.** Gạch chân màu dưới tiêu đề cũng
-vậy — dùng khoảng trắng thay thế. `_SLIDES_CSS` cố ý không có thứ nào; nền trắng
-thật, một màu nhấn duy nhất dùng đúng hai chỗ. Đừng thêm lại.
-
-**`check_slides()` là chốt chặn của pass này** — bản sao của `content_kept()` cho
-slide. Khác một điểm: **cảnh báo chứ không chặn**, vì người dùng có màn hình để
-tự sửa, và cắt mất một slide còn tệ hơn hiện nó kèm cờ đỏ. Phép kiểm đáng giá
-nhất là ràng buộc số liệu: mọi con số trên slide phải có mặt nguyên văn trong các
-khối khai ở `source_block_ids` — một con số bịa trên slide là gán kết quả giả cho
-tác giả thật, và bằng mắt thì không ai bắt được. Vì thế `PATCH …/slides` **không
-cho sửa `source_block_ids`**; sửa được thì chốt chặn thành vô nghĩa.
-
-`mark_stale()` là cặp song sinh của `_forget()`: khối nguồn bị sửa thì slide dựa
-trên nó bị gắn cờ `stale` chứ **không xoá** — công sức sửa tay của người dùng nằm
-trong đó.
-
-Năm chỗ dễ vấp:
-- Cột `slides` là cột thêm sau. `CREATE TABLE IF NOT EXISTS` không đụng vào bảng
-  đã có, nên `db._migrate()` phải `ALTER TABLE` — bỏ là mọi bài cũ vỡ lúc load.
-- Nhãn `A["nhãn"]` là dạng **đúng** mà `DIAGRAM_RULES` yêu cầu. Bộ soát chỉ được
-  bắt nháy **lồng bên trong** nhãn (`_bad_mermaid_labels` đếm số nháy trong một
-  nhãn, phải là 0 hoặc 2), chứ tìm dấu nháy là báo sai sạch.
-- Ràng buộc số liệu phải **bỏ qua URL và định danh** (`_URLISH`, và `_NUM` chặn
-  chữ ở cả hai đầu): `github.com/52566rz`, `2WikiMQA`, `Qwen2.5-7B` không phải số
-  liệu của bài. Slide `title`/`thanks` thì **không kiểm số** — số trên đó là năm
-  hội nghị và độ dài buổi nói, vốn không có trong bài.
-- Cỡ chữ trên slide quy theo bề ngang khung (`cqw` bên `style.css`, px trên khung
-  1280×720 bên `_SLIDES_CSS`) — **24px là sàn tuyệt đối**, `figure_note` cũng
-  phải ở mức đó chứ không nhỏ hơn. `line-height` không dưới 1.28 vì dấu tiếng
-  Việt chồng tầng (ế, ộ, ữ) bị cắt ngọn; cũng vì thế không viết hoa toàn bộ,
-  không siết `letter-spacing`.
-- Bản xem trước trong app và file xuất ra là **hai đoạn code khác nhau dựng cùng
-  một markup** (`renderSlide()` bên `app.js`, `_export_slides_html` bên
-  `main.py`). Sửa một bên phải sửa bên kia, không thì xem trước nói dối. Từ khi
-  có `.pptx` thì thành **ba** chỗ — `pptx_out._render()` là chỗ thứ ba.
-
-### Slide sai hình: hai lỗi chồng lên nhau, cả hai ở tầng BÓC chứ không ở slide
+### Hình gắn nhầm: hai lỗi ở tầng BÓC chứ không ở slide
 
 Báo cáo 9-10 (S1/S2/S16): slide nói Recall mà chiếu bảng ablation, nói độ trễ mà
-chiếu biểu đồ granularity, slide 9 khung rỗng. Hai nguyên nhân độc lập:
+chiếu biểu đồ granularity. Hai nguyên nhân độc lập:
 
 1. **Mã ảnh trôi khỏi mã khối sau khi bóc lại.** `reparse_merge` trả khối về mã
    CŨ, còn ảnh mang tên của bản bóc MỚI — CIRAG 31/31 khối lệch. Model chọn
-   hình theo mã KHỐI (nó thấy `<<<b94>>>`), renderer hiểu là mã ẢNH. Giờ
-   `_ghep_ban_boc` đổi tên ảnh theo mã khối (`figure = id`), y như `recrop`.
+   hình theo mã KHỐI (nó thấy `<<<b94>>>`). Giờ `_ghep_ban_boc` đổi tên ảnh theo
+   mã khối (`figure = id`), y như `recrop`.
 2. **`apply_layout` ghép chú thích ↔ vùng chỉ theo CHIỀU DỌC, tham lam.** Hai
    cột hình cùng độ cao thì tráo nhau (CIRAG Figure 6 ↔ Table 4; World Models
    Table 1 ↔ Figure 13). Giờ `_ghep_theo_vi_tri` dò trọn khối chú thích trên
@@ -928,36 +800,33 @@ chiếu biểu đồ granularity, slide 9 khung rỗng. Hai nguyên nhân độc
    thích**: ACL để chú thích bảng dưới bảng, bài khác để trên — đã thử, đúng bài
    này thì sai bài kia (Theia đúng thì CIRAG Table 7/8 tráo).
 
-Bẫy thứ ba khi soát: **ảnh trên slide phải mang `?v=`** (`imgVer`) — đổi khung
-mà URL giữ nguyên thì trình duyệt chiếu tiếp ảnh cũ, và mọi phép đo phía server
-nói "đã sửa".
+Ảnh trên slide mang `?v=` (`anh_ver`, từ `figure_rect`) — đổi khung mà URL giữ
+nguyên thì trình duyệt chiếu tiếp ảnh cũ, và mọi phép đo phía server nói "đã sửa".
 
-Cùng đợt: màn trình chiếu chép `innerHTML` của slide trong khi Mermaid còn đang
-vẽ bất đồng bộ, nên sơ đồ không bao giờ hiện khi chiếu — `presentAt` xoá cờ
-`data-done` rồi vẽ lại. Slide kết dựng đủ (3 ý mang về + hộp chốt + cảm ơn +
-trích dẫn) ở cả ba bộ dựng; `chuan_hoa_slide` bỏ thẻ/hộp chốt khỏi slide tiêu
-đề và hộp chốt khỏi mục lục (không dựng thì đừng lưu), viết hoa chữ đầu (trừ từ
-có chữ hoa giữa như `iRAG`). Số trên slide/dàn ý soát trên TOÀN BÀI (`so_bia`).
-File .pptx mặc định chỉ bộ chính, bỏ nhãn `screen4x3`.
+### Bản xuất bài dịch (`?fmt=html|pdf`) — đọc như một báo cáo
 
-### Xuất `.pptx`
+`_export_html` dựng bìa (tên Việt, tên gốc, tác giả, nơi đăng từ `db.get_meta`)
+→ **Tóm lược** theo mạch Vấn đề → Khoảng trống → Ý tưởng cốt lõi → Cách làm →
+Bằng chứng → Giới hạn (`_MACH`) → bảng thuật ngữ → **mục lục** (từ ba tiêu đề trở
+lên, neo `#m-<mã khối>`) → thân bài song ngữ. Chất liệu sổ tay giống app: cột
+gốc sans màu chì, cột dịch Literata mực đen, giải thích là giấy nhớ, ghi chú 💡
+là thẻ viền đứt. Font nhúng (`_font_nhung`) nên mở ngoài app vẫn đúng chữ. PDF
+là khổ A4 có số trang (`@page @bottom-center`), in sau khi **cả font lẫn sơ đồ**
+đã sẵn sàng (`window.__xong`).
 
-`server/pptx_out.py`, qua `?fmt=pptx`. Khổ 13,333×7,5 inch = đúng khung 1280×720
-của bản HTML; **1px = 0,75pt**, mọi con số quy từ `_SLIDES_CSS` bằng hằng đó.
-Dùng bố cục trống (`slide_layouts[6]`) và tự đặt từng khung chữ, vì python-pptx
-**không có autofit thật** (`fit_text()` cần đo font ngoài thư viện và hay tràn).
+Bản cũ có **vạch màu kẻ dọc ở bốn chỗ** (câu chốt, công thức, ghi chú, giải
+thích) và nhãn viết hoa toàn bộ — đúng hai "dấu hiệu đồ AI làm".
+`test_ban_xuat_dung_latex_nhu_man_hinh_va_khong_vach_mau_doc` canh cả hai.
 
-Sơ đồ Mermaid **vẽ lại bằng shape gốc PowerPoint**, không nhúng ảnh: `DIAGRAM_RULES`
-đã giới hạn ở `flowchart TD|LR`, ≤9 node, nhãn ≤8 chữ nên `parse_mermaid()` bóc
-được, rồi `_draw_diagram()` xếp theo tầng và nối bằng connector. Người dùng kéo
-và sửa chữ được — đó mới là lý do họ cần `.pptx`.
+`rich()` thiếu bước `\(…\)` mà `sci()` của app có, nên file xuất hiện nguyên
+`\(Suf(a) \in \{0, 1\}\)` trong khi màn hình đã dựng đúng. Giờ nó gọi
+`_math_tex` trước, đúng thứ tự của `sci()`.
 
-Bẫy đã vấp: `_MMD_ELABEL` phải bóc nhãn cạnh (`-->|"ghi chú"|`) ra **trước** khi
-quét khai node, không thì `|"thiếu"|` bị đọc thành node tên `u` và `ch`. Và
-`Pt()` trả về Length tính bằng EMU sẵn — nhân thêm 12700 là văng ValueError.
-
-Công thức dựng bằng `baseline` ở mức run (`_rich_runs`), không cần OMML — vì
-`^{…}` / `_{…}` vốn đã là dạng lưu.
+**Luật văn phong của skill** (không chấm phẩy, không dấu hai chấm cắt câu, không
+"tức là", số kèm baseline/benchmark…) nằm ở `prompts.VAN_PHONG`, nhúng vào
+`_PLAIN_BODY` (cột giải thích) và `EXPLAIN_SYSTEM` (ghi chú 💡). Cả hai ở phần
+thay đổi theo request, không đụng `cached_prefix`. Áp cho phần dịch MỚI — bản
+giải thích đã có trong `doc`/`tm` giữ nguyên.
 
 ### Cắt lại ảnh mà không bóc lại bài
 
@@ -1224,7 +1093,7 @@ thật, bài 162 đoạn ở mức vừa cắt cụt JSON sau 94 giây. Và vì 
 **Bấm lần hai phải THAY chỗ cũ, không cộng dồn.** Soát bằng trình duyệt thấy đúng
 câu đầu bài hiện ra hai lần. Vệt do máy đặt mang cờ `auto`, và `add_many` kèm
 `replace_auto` chỉ dọn đúng những vệt ấy — **vệt người dùng tự tô không bị đụng**,
-cùng lý do `mark_stale` chỉ gắn cờ chứ không xoá slide đã sửa tay.
+cùng lý do công sức sửa tay không bao giờ bị ghi đè im lặng.
 
 **Hai câu trích chồng nhau trong cùng một khối thì bỏ bớt một.** `wrapRange` sẽ
 lồng thẻ `<mark>` vào nhau và vệt hiện ra sai. Ở mức vừa trên bài 149 đoạn đã có
@@ -1321,9 +1190,8 @@ Năm chỗ đã vấp khi soát bằng trình duyệt:
   bằng nội dung nên `flex-wrap` không bao giờ có cớ xuống dòng (672px trong khung
   640px); `100%` thì nó không ngồi chung dòng với ←/☰, thanh cao 111 → 152px.
 
-Slide **không** mang chất sổ tay: nó cố ý là nền trắng sạch và phải khớp từng
-chữ với `_SLIDES_CSS`. `.sl-slide .mmd-slot .diagram` phải dỡ cả `box-shadow`
-của `.diagram`, không thì xem trước có bóng mà file tải về không có.
+Slide **cũng** mang chất sổ tay (`web/slide.css`), nhưng luôn là giấy SÁNG kể
+cả khi app ở theme tối: máy chiếu nuốt nền tối, và slide là thứ đem đi chiếu.
 
 **Luật chữ tiếng Việt giờ soát CẢ HAI file CSS** (trừ luật slide `.sl-`/`.ol-`):
 không viết hoa toàn bộ, không `letter-spacing` âm, không mono cho văn xuôi. Lúc
@@ -1687,7 +1555,7 @@ cả thư mục thật.
 
 ### Chuẩn độ sâu (`server/depth.py`) — dùng chung cho tổng hợp, hỏi đáp và slide
 
-Ba chốt chặn cũ (`content_kept`, `check_answer`, `check_slides`) đều chặn model
+Ba chốt chặn (`content_kept`, `check_answer`, `slide.chuan_hoa`) đều chặn model
 **bịa**. Không cái nào chặn được kiểu hỏng phổ biến nhất và khó thấy nhất: câu
 đúng sự thật, có trích dẫn đàng hoàng, mà **không mang thông tin nào**.
 
@@ -1712,14 +1580,15 @@ Hai chỗ dễ làm hỏng bộ này:
   hiệu chỉnh trên 3 câu nông + 4 câu sâu: bắt 3/3, kêu oan 0/4. Sửa ngưỡng thì
   chạy lại `tests/test_unit.py::test_do_sau_*`.
 - **`DEPTH_RULES` là một nguồn duy nhất** nhúng vào `SYNTH_SYSTEM`,
-  `ANSWER_SYSTEM`, `OUTLINE_TASK`, `SLIDES_TASK`. Sửa luật ở một chỗ, đừng chép
+  `ANSWER_SYSTEM`, bài giảng của kho survey và `slide.SLIDE_TASK`. Sửa luật ở một chỗ, đừng chép
   ra bốn chỗ rồi để chúng trôi mỗi nơi một kiểu.
 
-Ở mức **cả bộ slide**, `check_depth()` thêm một phép kiểm mà từng slide không
-thấy được: deck về bài phương pháp mà **không có slide nào đi hết cơ chế** thì
-người nghe nắm được bài toán và kết quả nhưng không kể lại được cách nó chạy.
-`_walks_mechanism()` đòi **cả** dấu hiệu trình tự (bước / trước hết / đầu vào)
-**lẫn** quan hệ nhân quả — đòi một từ khoá thì model học được cách rắc vào cho qua.
+Ở mức **cả bộ slide**, `slide._soat_ca_bo()` thêm một phép kiểm mà từng slide
+không thấy được: bộ slide về bài phương pháp mà **không có slide `co_che`/`vi_du`
+nào có bước** thì người nghe nắm được bài toán và kết quả nhưng không kể lại được
+cách nó chạy. Bản slide mới có vai riêng cho cơ chế nên kiểm theo vai, không cần
+dò từ khoá; `pipeline._walks_mechanism()` (đòi **cả** dấu hiệu trình tự **lẫn**
+quan hệ nhân quả) vẫn giữ cho kho survey.
 
 ### Nhãn bài ngắn `P1`, `P2` — và vì sao không dùng mã thật
 
@@ -1744,7 +1613,7 @@ bóc rộng hơn chỉ làm giảm báo động giả, **không thể** làm l�
 
 ### Chốt chặn: `verify.check_answer()`
 
-Bản sao của `content_kept()` / `check_slides()` cho pass này, cùng triết lý
+Bản sao của `content_kept()` / `slide.chuan_hoa()` cho pass này, cùng triết lý
 **cảnh báo chứ không chặn**. Phép kiểm đáng giá nhất vẫn là ràng buộc số liệu:
 mọi con số phải có mặt nguyên văn trong đoạn đã trích (dùng lại `pipeline._NUM`,
 `_URLISH`, `_norm_num`). Thêm ba thứ riêng của cơ chế này:
@@ -2205,8 +2074,8 @@ sao.
 
 `renderMd()` bên `web/app.js` dựng câu trả lời của khung *Hỏi về bài này*;
 `svMd()` bên `web/survey.js` dựng câu trả lời của kho survey. **Hai đoạn code
-khác nhau cho cùng một loại nội dung**, cùng họ với cặp `renderSlide()` /
-`_export_slides_html` — sửa một bên phải soát bên kia.
+khác nhau cho cùng một loại nội dung**, cùng họ với cặp `sci()` /
+`rich()` — sửa một bên phải soát bên kia.
 
 Đã lệch thật: `svMd` dựng bảng từ đầu, `renderMd` thì không, nên câu trả lời so
 sánh nhiều bài hiện ra nguyên `| Thí nghiệm | Input |` và hàng `|---|---|` —
@@ -2239,7 +2108,7 @@ câu trả lời trong kho thành ô trắng **không có lỗi nào hiện lên
   bằng `_with_chunks()` ở mỗi lần trả `doc`. Frontend dựa vào `chunk_ids`
   để biết mẻ nào đã xong nên đừng dịch lại. Endpoint nào trả `doc` cũng phải đi
   qua `_with_chunks`, thiếu là frontend dịch lại từ đầu.
-- Export có năm dạng qua `?fmt=md|html|pdf|slides|slides-pdf`. Ảnh luôn nhúng base64 — bản cũ ghi
+- Export có năm dạng qua `?fmt=md|html|pdf|slides|slides-pdf` (`.pptx` đã bỏ, xem mục Pass 4). Ảnh luôn nhúng base64 — bản cũ ghi
   đường dẫn `/api/doc/…` nên mở file ngoài app là hỏng hết hình. `fmt=pdf` chỉ
   là bản HTML tự mở hộp in: đó là đường duy nhất giữ được cả sơ đồ Mermaid (cần
   JS) lẫn lưới hai cột (cần CSS grid), thư viện PDF thuần Python không làm được.
