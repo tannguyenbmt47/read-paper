@@ -46,7 +46,7 @@
   const NHAN_VAI = {
     van_de: "Vấn đề", khoang_trong: "Khoảng trống", yeu_cau: "Thuộc tính cần có",
     y_tuong: "Ý tưởng cốt lõi", co_che: "Cơ chế", cong_thuc: "Công thức", vi_du: "Ví dụ chạy tay",
-    so_sanh: "Khác gì cách cũ", thiet_lap: "Thiết lập thí nghiệm",
+    so_sanh: "Khác gì cách cũ", thiet_lap: "Thiết lập thí nghiệm", doan_dich: "Trích đoạn",
     bang_chung: "Bằng chứng", so_lieu: "Con số chính", gioi_han: "Giới hạn", dong_lai: "Đúc kết",
   };
 
@@ -104,9 +104,14 @@
     // ngược lại — khi model tự nhận là minh hoạ.
     const nhanViDu = s.minh_hoa ? "Ví dụ minh hoạ, không lấy từ bài" : "Ví dụ";
     const cs = changCo(bo);
-    const iChang = cs.findIndex(([, vai]) => vai.includes(s.vai));
+    // Trích đoạn không thuộc chặng nào: lấy chặng của slide gần nhất phía trước.
+    let iChang = cs.findIndex(([, vai]) => vai.includes(s.vai));
+    for (let k = bo.indexOf(s) - 1; iChang < 0 && k >= 0; k--) {
+      iChang = cs.findIndex(([, vai]) => vai.includes(bo[k].vai));
+    }
+    const tiep = s.tiep && s.tiep[1] > 1 ? ` · phần ${s.tiep[0]}/${s.tiep[1]}` : "";
     const dau = iChang >= 0 ? `<div class="sld-dau">${iChang + 1}/${cs.length} · ${esc(cs[iChang][0])}`
-      + `<span>${esc(NHAN_VAI[s.vai] || "")}</span></div>` : "";
+      + `<span>${esc(NHAN_VAI[s.vai] || "")}${tiep}</span></div>` : "";
     const tieuDe = o("tieu_de", s.tieu_de, "h2", "sld-td", "Tiêu đề — một câu khẳng định");
     const so = bo.indexOf(s) + 1;
     const chan = s.vai === "mo_dau" ? ""
@@ -222,6 +227,24 @@
           <section><b class="sld-tay">So với</b><ul class="sld-tl3-chip">${dc}</ul></section>
           <section><b class="sld-tay">Đo bằng</b><ul class="sld-tl3-ds">${dd}</ul></section></div>
           ${s.mo_hinh_nen || sua ? `<p class="sld-tl3-nen"><b class="sld-tay">Mô hình nền</b> ${o("mo_hinh_nen", s.mo_hinh_nen, "span", "", "mô hình nền")}</p>` : ""}`;
+        break;
+      }
+      case "doan_dich": {
+        // Chữ là NGUYÊN VĂN bản dịch (server chép từ bài) — không có tầng tóm tắt
+        // nào làm rơi ý. Cụm tô sáng do model chọn, server đã soát là chuỗi con thật.
+        const toSang = (html) => (s.nhan_manh || []).reduce((h, p) => {
+          const q = chu(p);
+          const i = h.indexOf(q);
+          return i < 0 ? h : h.slice(0, i) + `<mark>${q}</mark>` + h.slice(i + q.length);
+        }, html);
+        // Ở màn sửa vẫn hiện vệt tô sáng: lưu đọc `innerText` nên thẻ <mark> không lọt vào dữ liệu.
+        const doan = (s.trich || []).map((t, i) => sua
+          ? `<p contenteditable="plaintext-only" spellcheck="false" data-p="trich.${i}.chu">${toSang(chu(t.chu))}</p>`
+          : `<p>${toSang(chu(t.chu))}</p>`).join("");
+        const anh = hinh();
+        const yc = s.y_chinh || sua ? `<p class="sld-dd-yc">${o("y_chinh", s.y_chinh, "span", "", "Điều cần nhớ từ đoạn này")}</p>` : "";
+        than = `${dau}${tieuDe}${yc}<div class="sld-dd ${coHinh ? "co-hinh" : ""}">
+          <div class="sld-dd-chu">${doan}${s.muc ? `<p class="sld-dd-muc">Trích bản dịch · ${chu(s.muc)}</p>` : ""}</div>${anh}</div>`;
         break;
       }
       case "vi_du": {

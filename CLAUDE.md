@@ -706,7 +706,7 @@ test chê "chán" và bị bỏ hẳn. Ba lỗi gốc, và bản này nhắm đ�
 - **Một khuôn lặp lại.** 12/16 slide cùng dáng "tiêu đề + 3 thẻ pastel". Giờ mỗi
   slide mang một **VAI trong lập luận** (`slide.VAI`): `van_de` · `khoang_trong`
   · `yeu_cau` · `y_tuong` · `co_che` · `cong_thuc` · `vi_du` · `so_sanh` ·
-  `thiet_lap` · `bang_chung` · `so_lieu` · `gioi_han` · `dong_lai`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
+  `thiet_lap` · `bang_chung` · `so_lieu` · `gioi_han` · `dong_lai` · `doan_dich`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
   lấy từ skill viết tài liệu kỹ thuật tiếng Việt (Vấn đề → Khoảng trống → Thuộc
   tính cần có → Ý tưởng cốt lõi → Cơ chế). Mỗi vai một bố cục, nên bộ slide đổi
   dáng theo mạch bài.
@@ -745,6 +745,27 @@ hạn mỗi vai 2 slide. Giờ:
   lẫn `sua` và ô chọn hình đều chặn gắn nhầm loại.
 - `chu()` của bộ vẽ dựng cả chỉ số KHÔNG ngoặc (`z_t`, `R^32`) theo đúng luật hẹp
   của `_SUBSCRIPTISH` — model vẫn viết kiểu này dù prompt đòi `z_{t}`.
+
+**Bộ chi tiết (30/45 phút) và vai `doan_dich` — model CHỌN đoạn, không tóm tắt.**
+Người dùng chê phần tóm tắt trên slide "đôi khi bị mất ý". Cách chữa là thôi để
+model viết lại: slide trích đoạn chỉ nhận **mã đoạn** từ model, server chép
+**nguyên văn bản dịch** (đã trả tiền) vào `trich`. Model chỉ viết ý chính, cụm tô
+sáng (phải là chuỗi con thật, không thì bị lọc) và lời nói.
+- **Tách ở ranh giới câu** (`_tach_trich`, trần `TRAN_TRICH` 850 / có hình 450 ký
+  tự, đo trên khung thật): "phần 1/3…". Tách chứ không cắt — cắt là bỏ đúng phần
+  ý vai này sinh ra để giữ.
+- **Hai bước bên trong, không bắt người dùng duyệt**: lên khung (`KHUNG_TASK`,
+  chỉ vai/tiêu đề/mã đoạn) → viết chữ theo mẻ `ME_VIET = 8`, song song 3, prefix
+  đã ấm. Một lượt cho 40+ slide vượt trần thời gian (V4 Pro 205 giây/17 slide).
+- **Đếm là việc của máy**: dù được đưa độ dài bản dịch từng đoạn, model vẫn lên
+  khung ra 78–82 slide khi xin ~42. Model chấm `muc_do` 1–3, `_cat_theo_muc_do`
+  bỏ cả nhóm mức 3 rồi mức 2 từ cuối bộ, KHÔNG bao giờ bỏ mức 1. Đo lại: 62 slide,
+  $0,036, 132 giây trên World Models (V4 Flash), 86% token vào đọc từ cache.
+- **Mẻ viết hỏng thì chia đôi thử lại**: một nháy đôi thừa (`"hong": ""Mạng…`, V4
+  Flash) từng làm hỏng trọn mẻ 8 slide, hai mẻ như vậy để lại 16 slide chỉ có
+  khung. `llm.extract_json` giờ vá kiểu nháy thừa này (`_va_nhay`) cho MỌI pass.
+- **`_soat_do_phu`** báo mục thân bài (≥2 đoạn đã dịch) không có slide nào — đúng
+  chỗ "mất ý". Dừng ở phụ lục/tham khảo, bỏ qua tóm tắt và công trình liên quan.
 
 **Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
 bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai

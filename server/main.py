@@ -1812,8 +1812,16 @@ async def slides_gia(doc_id: str, phut: int = 15):
     đo trên CIRAG: 9.539 token cho 12 slide, vì `loi_noi` 60–110 chữ cộng phần
     nghĩ thầm mức thấp. Bản đầu ước 260 và báo trần $0,036 cho lượt tốn $0,047."""
     doc = _doc_slide(doc_id)
+    so = slide.SO_SLIDE.get(phut, 14)
     vao = len(pipeline.cached_prefix(doc)) / 3.6 + 2500
-    ra = slide.SO_SLIDE.get(phut, 11) * 700 + 1500
+    ra = so * 700 + 1500
+    if so > slide.CHI_TIET_TU:
+        # Bộ chi tiết: một lượt lên khung + một lượt viết mỗi 8 slide, mỗi lượt đọc
+        # lại prefix (phần lớn từ cache, tính ~30% giá). Trích đoạn rẻ hơn slide
+        # thường vì chữ chép từ bản dịch, model chỉ viết ý chính + lời nói.
+        me = -(-so // slide.ME_VIET)
+        vao = vao * (1 + 0.3 * me) + 3000 * me
+        ra = so * 700 + 2000   # đo: CIRAG 45 phút ra ~30k token cho 49 slide
     try:
         gia = next(((float((m.get("pricing") or {}).get("prompt") or 0),
                      float((m.get("pricing") or {}).get("completion") or 0))
@@ -1823,7 +1831,9 @@ async def slides_gia(doc_id: str, phut: int = 15):
     if not gia:
         return {"lo": None, "hi": None, "model": doc["model"]}
     c = vao * gia[0] + ra * gia[1]
-    return {"lo": round(c * 0.6, 4), "hi": round(c * 1.3, 4), "model": doc["model"]}
+    # Bộ chi tiết dao động mạnh hơn (số lượt viết tuỳ số slide sau khi tách).
+    hi = 1.5 if so > slide.CHI_TIET_TU else 1.3
+    return {"lo": round(c * 0.6, 4), "hi": round(c * hi, 4), "model": doc["model"]}
 
 
 @app.post("/api/doc/{doc_id}/slides/tao")

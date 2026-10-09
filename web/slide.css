@@ -325,3 +325,14 @@
 .sld-cot li.cua-bai .sld-cot-thanh i { background: var(--xanh); }
 .sld-cot li.cua-bai .sld-cot-nhan, .sld-cot li.cua-bai b { color: var(--xanh); font-weight: 800; }
 .sld-cot b { font-family: var(--tieu-de); white-space: nowrap; }
+
+/* ------------------------------------------------------- trích đoạn nguyên văn bản dịch */
+.sld-dd-yc { font-family: var(--tay); color: var(--xanh); font-size: 1.12em; margin: -1cqw 0 1.2cqw !important; }
+.sld-dd { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 3cqw; align-items: center; }
+.sld-dd.co-hinh { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
+.sld-dd-chu { display: flex; flex-direction: column; gap: 1.2cqw; justify-content: center;
+  padding: 1.6cqw 2cqw; background: #fff; border: .14cqw solid var(--muc-2); border-radius: .5cqw; }
+.sld-dd-chu p { font-family: var(--doc); font-size: .98em; line-height: 1.55; }
+.sld-dd-chu mark { background: linear-gradient(transparent 12%, color-mix(in srgb, var(--da-quang) 80%, transparent) 12%);
+  color: inherit; padding: 0 .1em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.sld-dd-muc { font-family: var(--tay) !important; color: var(--mo); font-size: .8em !important; text-align: right; }

@@ -213,6 +213,17 @@ def _va_escape(text: str) -> str:
     return _BAD_ESC.sub(r"\\\\", text)
 
 
+# Nháy đôi THỪA ở mép chuỗi: `"hong": ""Mạng nhỏ…"` hoặc `…đạt yêu cầu."",`. Đã gặp
+# trên DeepSeek V4 Flash ở lượt viết slide — một ký tự làm hỏng cả mẻ 8 slide.
+# Chuỗi rỗng thật (`"": ""` hay `"a": "",`) không khớp vì đòi chữ ngay sau / trước.
+_NHAY_DAU = re.compile(r'([:\[,]\s*)""(?=[^\s,}\]"])')
+_NHAY_CUOI = re.compile(r'(?<=[^\\\s:\[{,"])""(?=\s*[,}\]])')
+
+
+def _va_nhay(text: str) -> str:
+    return _NHAY_CUOI.sub('"', _NHAY_DAU.sub(r'\1"', text))
+
+
 def extract_json(text: str):
     """Bóc JSON ra khỏi câu trả lời kể cả khi model bọc trong ``` hoặc thêm lời dẫn."""
     text = text.strip()
@@ -228,6 +239,10 @@ def extract_json(text: str):
         pass
     try:
         return json.loads(_va_escape(text), strict=False)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return json.loads(_va_nhay(_va_escape(text)), strict=False)
     except json.JSONDecodeError:
         pass
     start = min((i for i in (text.find("{"), text.find("[")) if i != -1), default=-1)
@@ -259,7 +274,10 @@ def extract_json(text: str):
                 try:
                     return json.loads(cat, strict=False)
                 except json.JSONDecodeError:
-                    return json.loads(_va_escape(cat), strict=False)
+                    try:
+                        return json.loads(_va_escape(cat), strict=False)
+                    except json.JSONDecodeError:
+                        return json.loads(_va_nhay(_va_escape(cat)), strict=False)
     raise ValueError("JSON trong phản hồi bị cắt cụt")
 
 

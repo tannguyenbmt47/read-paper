@@ -162,6 +162,43 @@ def test_slide_mot_hinh_chi_mot_cho_uu_tien_co_che():
     assert [s["hinh"] for s in bo] == ["", "b43", "", "b69"]
 
 
+def test_slide_trich_doan_lay_nguyen_van_ban_dich_va_tach_o_ranh_gioi_cau():
+    """Trích đoạn: model chỉ chọn MÃ đoạn, chữ là bản dịch thật — không tầng tóm
+    tắt nào làm rơi ý. Đoạn dài tách sang slide sau, không cắt bỏ câu nào."""
+    from server import slide
+    d = _doc()
+    cau = [f"Câu thứ {i} nói về cơ chế lọc bằng chứng của hệ thống." for i in range(40)]
+    d["blocks"].append({"id": "b9", "type": "para", "text": "x"})
+    d["translations"]["b9"] = " ".join(cau)
+    s = slide.chuan_hoa(d, {"vai": "doan_dich", "tieu_de": "t", "doan": ["b9", "khongco"],
+                            "nhan_manh": ["Câu thứ 3 nói về", "không có trong đoạn"]})
+    assert s["trich"][0]["chu"] == d["translations"]["b9"] and s["nguon"] == ["b9"]
+    assert s["nhan_manh"] == ["Câu thứ 3 nói về"]
+    phan = slide._tach_trich([s])
+    assert len(phan) > 1 and all(p["tiep"][1] == len(phan) for p in phan)
+    assert " ".join(p["trich"][0]["chu"] for p in phan) == d["translations"]["b9"]
+    assert all(len(p["trich"][0]["chu"]) <= slide.TRAN_TRICH for p in phan)
+    assert slide.chuan_hoa(d, {"vai": "doan_dich", "tieu_de": "t", "doan": ["khongco"]}) is None
+
+
+def test_slide_bo_chi_tiet_cat_muc_3_truoc_khong_bao_gio_cat_muc_1():
+    from server import slide
+    khung = [{"vai": "doan_dich", "_md": md, "_nhom": i} for i, md in enumerate([1, 3, 2, 3, 1, 2])]
+    khung += [{"vai": "doan_dich", "_md": 3, "_nhom": 1}]          # phần tách của nhóm 1
+    ra = slide._cat_theo_muc_do(khung, 4)
+    assert [x["_nhom"] for x in ra if x["_md"] == 1] == [0, 4]
+    assert not any(x["_nhom"] == 1 for x in ra)                      # bỏ cả nhóm, kể cả phần tách
+    assert len(ra) <= round(4 * 1.15) or all(x["_md"] == 1 for x in ra)
+
+
+def test_json_nhay_doi_thua_duoc_va():
+    """V4 Flash viết `"hong": ""Mạng nhỏ…` — một ký tự làm hỏng cả mẻ 8 slide."""
+    from server import llm
+    assert llm.extract_json('{"a": ""đầu thừa", "b": "cuối."", "c": [""x"", "z"]}') == {
+        "a": "đầu thừa", "b": "cuối.", "c": ["x", "z"]}
+    assert llm.extract_json('{"a": "", "": "", "l": ["", "y"]}') == {"a": "", "": "", "l": ["", "y"]}
+
+
 def test_slide_dinh_dang_cu_coi_nhu_chua_co():
     """Bộ slide v1 (deck/outline) không vẽ được bằng bộ vẽ mới — coi như chưa có,
     đừng để giao diện vỡ."""

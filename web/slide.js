@@ -70,6 +70,8 @@ async function sldTrong() {
           <option value="10">10 phút · ~12 slide</option>
           <option value="15" selected>15 phút · ~16 slide</option>
           <option value="20">20 phút · ~20 slide</option>
+          <option value="30">30 phút · chi tiết, ~30 slide</option>
+          <option value="45">45 phút · chi tiết theo từng đoạn, ~45 slide</option>
         </select>
       </div>
       <button id="slTaoTrong" class="btn btn-primary" ${coBrief ? "" : "disabled"}>Tạo slide</button>
@@ -86,7 +88,9 @@ async function sldGia() {
   const el = $("#slGiaTrong");
   try {
     const g = await fetch(`/api/doc/${state.doc.id}/slides/gia?phut=${SLD.phut}`).then((r) => r.json());
-    const txt = g.lo != null ? `~${money(g.lo)}–${money(g.hi)} · một lượt gọi model · khoảng 1 phút` : "một lượt gọi model · khoảng 1 phút";
+    // Bộ chi tiết (≥30 phút) chạy lên khung rồi viết chữ theo mẻ — lâu hơn hẳn.
+    const cach = SLD.phut >= 30 ? "lên khung rồi viết theo mẻ · khoảng 2–5 phút" : "một lượt gọi model · khoảng 1–3 phút";
+    const txt = g.lo != null ? `~${money(g.lo)}–${money(g.hi)} · ${cach}` : cach;
     if (el) el.textContent = txt;
     const b = $("#slTaoTrong");
     if (b && g.lo != null) b.textContent = `Tạo slide · ~${money(g.hi)}`;
@@ -103,7 +107,7 @@ async function sldTao() {
       if (g.lo != null) gia = ` Ước ${money(g.lo)}–${money(g.hi)}.`;
     } catch { /* không ước được giá thì vẫn hỏi */ }
     if (!(await xacNhan("Tạo lại cả bộ slide?",
-      `Bộ hiện tại sẽ được thay bằng bộ mới, kể cả chữ bạn đã sửa tay.\nTốn một lượt gọi model.${gia}`,
+      `Bộ hiện tại sẽ được thay bằng bộ mới, kể cả chữ bạn đã sửa tay.\nTốn ${SLD.phut >= 30 ? "vài" : "một"} lượt gọi model.${gia}`,
       { ok: "Tạo lại", cancel: "Thôi" }))) return;
   }
   SLD.dangTao = true;

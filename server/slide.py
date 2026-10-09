@@ -49,6 +49,7 @@ VAI = {
     "so_lieu": "Con số chính — một kết quả kèm mốc so sánh",
     "gioi_han": "Giới hạn — tác giả tự nhận và điểm đáng ngờ",
     "dong_lai": "Đúc kết — ba điều mang về và một câu hỏi thảo luận",
+    "doan_dich": "Trích đoạn — nguyên văn bản dịch của 1–3 đoạn trong bài, kèm ý chính",
 }
 
 # Bốn chặng của lộ trình — slide lộ trình và dấu "2/4 · Cơ chế" ở góc slide đều
@@ -64,7 +65,14 @@ CHANG = [
 # Bản đầu (8/11/14) bị chê sơ sài: cả phần phương pháp của CIRAG gói trong MỘT
 # slide ba bước. Giờ mỗi thành phần có slide riêng, cộng công thức, thiết lập
 # thí nghiệm và bảng đối chiếu — chừng một slide mỗi phút.
-SO_SLIDE = {10: 10, 15: 14, 20: 18}
+SO_SLIDE = {10: 10, 15: 14, 20: 18, 30: 28, 45: 42}
+
+# Từ mức này trở lên là bộ CHI TIẾT: đi lần lượt từng mục của bài, phần lớn slide
+# là trích đoạn nguyên văn bản dịch. Một lượt gọi cho 40+ slide vượt trần thời
+# gian (V4 Pro: 205 giây cho 17 slide), nên chia hai bước BÊN TRONG — lên khung
+# (chỉ mã đoạn, đầu ra ngắn) rồi viết chữ theo mẻ song song. Người dùng không
+# phải duyệt gì ở giữa.
+CHI_TIET_TU = 20
 
 # Trường chữ của từng vai — để soát số liệu, gom chữ, và để PATCH biết trường
 # nào người dùng được sửa.
@@ -82,6 +90,7 @@ _CHU = {
     "so_lieu": ("gia_tri", "nhan", "moc", "y_nghia"),
     "gioi_han": (),
     "dong_lai": ("cau_hoi",),
+    "doan_dich": ("y_chinh",),
 }
 
 SLIDE_TASK = """\
@@ -134,6 +143,12 @@ dài hơn thì đưa vào `loi_noi`, không nhồi lên mặt slide.
   biểu đồ cột (mục của bài có `"cua_bai": true`). Chỉ dùng số có trong CHỮ của bài,
   cùng một thước đo, cùng một tập dữ liệu.
 - `gioi_han` — `muc`: 2–4 mục `{"ten": "3–8 chữ", "he_qua": "≤25 chữ"}`.
+- `doan_dich` — trích NGUYÊN VĂN bản dịch lên slide, dùng khi câu chữ của bài quan
+  trọng (định nghĩa, bước của phương pháp, kết quả chính, giới hạn tác giả tự nêu).
+  `doan`: 1–3 mã khối LIỀN NHAU trong cùng một mục (công cụ tự chép bản dịch của
+  chúng vào slide, bạn KHÔNG chép lại chữ), `y_chinh` (điều cần nhớ từ đoạn này,
+  ≤20 chữ, không lặp lại câu trong đoạn, không nhắc lại tiêu đề), `nhan_manh`: 1–3 cụm ≤12 chữ CHÉP
+  NGUYÊN VĂN từ bản dịch của đoạn để tô sáng, `hinh` nếu đoạn nói về một hình.
 - `dong_lai` — `y`: đúng 3 điều mang về (mỗi điều ≤25 chữ), `cau_hoi`: một câu hỏi
   thảo luận mở cho người nghe (≤30 chữ).
 
@@ -258,6 +273,9 @@ def _sach(t) -> str:
     # chèn U+0301 sau dấu cách, hiện thành dấu sắc lạc giữa con số.
     t = re.sub(r"(?<![^\W\d_])[\u0300-\u036f]+", "", t)
     t = re.sub(r"\s*;\s*(\S)", lambda m: ". " + m.group(1).upper(), t)
+    # Dấu câu thừa ở đầu: model viết `"y_chinh": ": Trong môi trường ảo…"` (12/62
+    # slide trích đoạn trên World Models), hiện ra dấu hai chấm lơ lửng đầu dòng.
+    t = re.sub(r"^[\s:;,.\-–—]+", "", t)
     return _viet_hoa_dau(t)
 
 
@@ -271,6 +289,36 @@ def _chu_slide(s: dict) -> str:
         parts += [it.get("tieu_chi", "")] + list(it.get("o") or [])
     parts += list(s.get("y") or []) + list(s.get("cot") or []) + list(s.get("doi_chung") or [])
     return " ".join(str(p) for p in parts if p)
+
+
+def _chu_khoi(doc: dict, bid: str) -> tuple[str, bool]:
+    """Bản dịch của một khối; chưa dịch thì bản gốc (cờ thứ hai = là bản gốc)."""
+    vi = ((doc.get("translations") or {}).get(bid) or "").strip()
+    if vi:
+        return vi, False
+    b = next((x for x in doc["blocks"] if x["id"] == bid), None)
+    return ((b or {}).get("text") or "").strip(), True
+
+
+def _trich(doc: dict, s: dict) -> tuple[list[dict], list[str]]:
+    """Dựng phần trích nguyên văn cho slide `doan_dich` từ mã khối model chọn.
+
+    Đây là toàn bộ lý do của vai này: chữ trên slide là BẢN DỊCH đã trả tiền, nên
+    không có tầng tóm tắt nào làm rơi ý. Model chỉ chọn đoạn nào.
+    """
+    by_id = {b["id"]: b for b in doc["blocks"]}
+    ids = [str(x) for x in (s.get("doan") or []) if str(x) in by_id
+           and by_id[str(x)].get("type") in ("para", "caption", "list", "table", "heading")
+           and not by_id[str(x)].get("hidden")][:4]
+    ids.sort(key=lambda i: doc["blocks"].index(by_id[i]))
+    trich, canh = [], []
+    for i in ids:
+        chu, goc = _chu_khoi(doc, i)
+        if chu:
+            trich.append({"id": i, "chu": chu})
+            if goc:
+                canh.append("Đoạn này chưa dịch nên slide hiện bản gốc — dịch đoạn đó rồi sửa lại.")
+    return trich, canh
 
 
 def chuan_hoa(doc: dict, s: dict) -> dict | None:
@@ -313,6 +361,22 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
         out["y"] = [_sach(x) for x in (s.get("y") or []) if str(x).strip()][:3]
     if vai in ("van_de", "vi_du"):
         out["minh_hoa"] = bool(s.get("minh_hoa"))
+    if vai == "doan_dich":
+        # Trích đoạn đã dựng sẵn (viết lại một slide, lượt viết chữ của bộ chi tiết)
+        # thì giữ nguyên; chưa có thì dựng từ mã đoạn model chọn.
+        if isinstance(s.get("trich"), list) and s["trich"]:
+            out["trich"] = [{"id": str(t.get("id", "")), "chu": str(t.get("chu", ""))}
+                            for t in s["trich"] if isinstance(t, dict) and t.get("chu")]
+            canh_trich = []
+        else:
+            out["trich"], canh_trich = _trich(doc, s)
+        if not out["trich"]:
+            return None
+        if s.get("tiep"):
+            out["tiep"] = list(s["tiep"])[:2]
+        toan = unicodedata.normalize("NFC", " ".join(t["chu"] for t in out["trich"]))
+        out["nhan_manh"] = [p for p in (" ".join(str(x).split()) for x in (s.get("nhan_manh") or []))
+                            if 2 < len(p) <= 140 and unicodedata.normalize("NFC", p) in toan][:3]
     out["loi_noi"] = " ".join(str(s.get("loi_noi") or "").split())
 
     by_id = {b["id"]: b for b in doc["blocks"]}
@@ -331,6 +395,9 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
     if vai == "bang_chung" and not h:
         canh.append("Slide bằng chứng chưa có hình — bấm vào khung để chọn hình trong bài.")
     out["nguon"] = [str(x) for x in (s.get("nguon") or []) if str(x) in by_id][:8]
+    if vai == "doan_dich":
+        out["nguon"] = list(dict.fromkeys([t["id"] for t in out["trich"]] + out["nguon"]))[:8]
+        canh += canh_trich
 
     # Chip số trên slide bằng chứng: số không có ở đâu trong bài thì BỎ chip, không
     # chỉ cảnh báo. Model không thấy ảnh bảng nên hay "đọc" số từ bảng — đo trên
@@ -360,17 +427,24 @@ def _sap_lai(bo: list[dict]) -> list[dict]:
     # con số đứng sau slide giới hạn (đã gặp trên bài World Models) làm lộ trình
     # nói một đằng mà thứ tự chiếu một nẻo. Trong cùng chặng giữ thứ tự của model.
     chang = {v: i for i, (_, vs) in enumerate(CHANG) for v in vs}
+    # Trích đoạn không thuộc chặng nào: nó đi theo slide đứng TRƯỚC nó trong thứ
+    # tự model viết (đoạn trích minh hoạ cho slide ấy), không bị đẩy xuống cuối.
+    khoa, cu = {}, 0
+    for s in bo:
+        cu = chang.get(s["vai"], cu)
+        khoa[id(s)] = cu
     # `thiet_lap` luôn đứng đầu chặng Bằng chứng: chưa biết dữ liệu và thước đo
     # thì không đọc được bảng kết quả.
     con = sorted((s for s in bo if s["vai"] != "dong_lai"),
-                 key=lambda s: (chang.get(s["vai"], 9), s["vai"] != "thiet_lap"))
+                 key=lambda s: (khoa[id(s)], s["vai"] != "thiet_lap"))
     for i in range(1, len(con)):
         # Cơ chế liền nhau là chủ ý (mỗi thành phần một slide, công thức bám ngay
-        # sau thành phần của nó) — tráo là tách thành phần khỏi công thức của nó.
-        if con[i]["vai"] == con[i - 1]["vai"] and con[i]["vai"] not in ("bang_chung", "co_che"):
+        # sau thành phần của nó), trích đoạn liền nhau cũng vậy (đoạn văn liền
+        # nhau trong bài) — tráo là phá đúng thứ tự ấy.
+        if con[i]["vai"] == con[i - 1]["vai"] and con[i]["vai"] not in ("bang_chung", "co_che", "doan_dich"):
             # Chỉ tráo TRONG cùng chặng — tráo qua chặng là phá thứ tự vừa sắp.
             for j in range(i + 1, len(con)):
-                if chang.get(con[j]["vai"], 9) != chang.get(con[i]["vai"], 9):
+                if khoa[id(con[j])] != khoa[id(con[i])]:
                     break
                 if con[j]["vai"] != con[i - 1]["vai"]:
                     con[i], con[j] = con[j], con[i]
@@ -410,6 +484,92 @@ def _soat_ca_bo(bo: list[dict]) -> None:
         bo[0].setdefault("canh_bao", []).append(
             "Bộ slide chưa có slide nào đi qua từng bước của cơ chế. Bấm “Viết lại” "
             "ở một slide cách làm, hoặc tạo lại cả bộ.")
+
+
+# Trần chữ của MỘT slide trích đoạn — chữ thân ~24px trên khung 1280, vượt là tràn.
+# Đo trên World Models: 620 ký tự chỉ lấp nửa khung, 650 ký tự kèm ý chính hai
+# dòng thì vừa đầy — 850 là sát mép mà chưa tràn.
+TRAN_TRICH = 850
+TRAN_TRICH_HINH = 450
+_CAU = re.compile(r"(?<=[.!?…])(?<!\bal\.)(?<!\bet\.)\s+(?=\S)")
+
+
+def _tach_trich(bo: list[dict]) -> list[dict]:
+    """Trích đoạn quá dài thì tách sang slide kế tiếp ở RANH GIỚI CÂU ("phần 1/2").
+
+    Tách chứ không cắt: cắt là bỏ mất đúng phần ý mà vai này sinh ra để giữ.
+    Hình, ý chính và lời nói ở lại phần đầu; cụm tô sáng đi theo phần chứa nó.
+    """
+    out = []
+    for s in bo:
+        tran = TRAN_TRICH_HINH if s.get("hinh") else TRAN_TRICH
+        if s["vai"] != "doan_dich" or sum(len(t["chu"]) for t in s["trich"]) <= tran:
+            out.append(s)
+            continue
+        cau = [(t["id"], c) for t in s["trich"] for c in _CAU.split(t["chu"]) if c.strip()]
+        phan, cur, n = [], [], 0
+        for bid, c in cau:
+            if cur and n + len(c) > (tran if not phan else TRAN_TRICH):
+                phan.append(cur)
+                cur, n = [], 0
+            cur.append((bid, c))
+            n += len(c) + 1
+        if cur:
+            phan.append(cur)
+        for k, p in enumerate(phan):
+            trich = []
+            for bid, c in p:
+                if trich and trich[-1]["id"] == bid:
+                    trich[-1]["chu"] += " " + c
+                else:
+                    trich.append({"id": bid, "chu": c})
+            moi = {**s, "trich": trich, "tiep": [k + 1, len(phan)],
+                   "canh_bao": list(s.get("canh_bao") or []) if k == 0 else []}
+            if k:
+                moi.update(hinh="", y_chinh="", loi_noi="")
+            toan = " ".join(t["chu"] for t in trich)
+            moi["nhan_manh"] = [x for x in s.get("nhan_manh") or [] if x in toan]
+            out.append(moi)
+    return out
+
+
+def _cac_muc(doc: dict) -> list[tuple[str, list[str]]]:
+    """(tên mục, mã các khối văn bản đã dịch thuộc mục) — theo tiêu đề của bài.
+    Dừng ở phụ lục / tham khảo: mọi mục con sau đó (A.1, A.2…) cũng là phụ lục."""
+    tr = doc.get("translations") or {}
+    muc, cur = [], None
+    for b in doc["blocks"]:
+        if b.get("hidden") or b.get("type") in ("reference", "meta"):
+            continue
+        if b["type"] == "heading":
+            ten = (tr.get(b["id"]) or b["text"]).strip()
+            if _HET_THAN_BAI.search(ten):
+                break
+            cur = (ten, [])
+            muc.append(cur)
+        elif cur is not None and b.get("type") in ("para", "list") and tr.get(b["id"]):
+            cur[1].append(b["id"])
+    return [(ten, ids) for ten, ids in muc if ids]
+
+
+_HET_THAN_BAI = re.compile(r"tham khảo|reference|lời cảm ơn|acknowledg|phụ lục|appendix", re.I)
+# Tóm tắt đã nằm ở các slide mở; công trình liên quan được dặn gói trong 1–2 slide
+# nên để trống là chủ ý — báo hai mục này là kêu oan.
+_BO_QUA_MUC = re.compile(r"^\s*(tóm tắt|abstract)\b|công trình liên quan|related work", re.I)
+
+
+def _soat_do_phu(doc: dict, bo: list[dict]) -> None:
+    """Bộ CHI TIẾT phải đi qua mọi mục chính của bài — mục nào không có slide nào
+    (không trích, không làm nguồn) thì báo, vì đó đúng là chỗ "mất ý"."""
+    dung = {i for s in bo for i in (s.get("nguon") or []) + [t["id"] for t in s.get("trich") or []]}
+    # Mục chỉ có một đoạn (thường là đoạn dẫn của mục cha) thì không đòi: các
+    # mục con của nó mới là chỗ chứa nội dung.
+    sot = [ten for ten, ids in _cac_muc(doc)
+           if len(ids) >= 2 and not _BO_QUA_MUC.search(ten) and not dung.intersection(ids)]
+    if sot and bo:
+        bo[0].setdefault("canh_bao", []).append(
+            "Chưa có slide nào cho mục: " + "; ".join(t[:60] for t in sot[:8])
+            + (f" và {len(sot) - 8} mục khác" if len(sot) > 8 else "") + ".")
 
 
 def _mo_dau(doc: dict) -> dict:
@@ -459,54 +619,235 @@ def tran_slide(n_chars: int) -> float:
     return min(240.0, 90.0 + n_chars / 1000)
 
 
-async def tao(doc_id: str, phut: int = 15) -> tuple[dict, dict, dict]:
-    """Sinh cả bộ slide: MỘT lượt gọi model. Trả (bộ slide, chi phí lượt này, cộng dồn)."""
-    from .pipeline import NO_REASONING, HetGio, cached_prefix, full_source_text
+async def _goi(doc: dict, task: str, user: str, *, max_tokens: int, tran: float,
+               usage) -> tuple[dict | None, str]:
+    """Một lượt gọi model trả JSON, thử lại MỘT lần. Trả (dữ liệu | None, lý do hỏng).
 
-    doc = store.load(doc_id)
-    phut = phut if phut in SO_SLIDE else 15
-    sysmsg = llm.system_message(cached_prefix(doc), SLIDE_TASK, model=doc["model"])
-    user = _user(doc, SO_SLIDE[phut])
-    tran = tran_slide(len(full_source_text(doc["blocks"])))
-    # Tắt hẳn nghĩ thầm. Đo trên bài World Models với DeepSeek V4 Flash: mức
-    # "low" vẫn tiêu 12.812 token nghĩ thầm, chạm trần 16.000 rồi trả về CHUỖI
-    # RỖNG (finish_reason=length) — người dùng chờ 360 giây, trả tiền hai lượt,
-    # nhận "không đọc được". Cùng bẫy đã ghi cho bài giảng của kho survey. Độ sâu
-    # ở đây đến từ khuôn vai + trần chữ của `SLIDE_TASK`, không từ token nghĩ thầm.
-    usage = llm.Usage()
-    data, loi = None, ""
-    for lan in range(2):
+    Tắt hẳn nghĩ thầm. Đo trên bài World Models với DeepSeek V4 Flash: mức "low"
+    vẫn tiêu 12.812 token nghĩ thầm, chạm trần 16.000 rồi trả về CHUỖI RỖNG — người
+    dùng chờ 360 giây, trả tiền hai lượt, nhận "không đọc được". Cùng bẫy đã ghi cho
+    bài giảng của kho survey. Độ sâu ở đây đến từ khuôn vai + trần chữ, không từ
+    token nghĩ thầm. Lượt hỏng vẫn cộng vào `usage` — nó vẫn bị tính tiền.
+    """
+    from .pipeline import NO_REASONING, cached_prefix
+
+    sysmsg = llm.system_message(cached_prefix(doc), task, model=doc["model"])
+    loi = ""
+    for _ in range(2):
         try:
             raw, u = await asyncio.wait_for(llm.complete(
                 [sysmsg, {"role": "user", "content": user}],
-                model=doc["model"], session_id=doc_id, max_tokens=20000,
+                model=doc["model"], session_id=doc["id"], max_tokens=max_tokens,
                 temperature=0.4, reasoning=NO_REASONING), timeout=tran)
             usage.add(u)
             if not raw.strip():
                 loi = "model trả về rỗng (hết trần token trước khi viết xong)"
                 continue
-            data = llm.extract_json(raw)
-            break
+            return llm.extract_json(raw), ""
         except asyncio.TimeoutError:
             loi = f"model không trả lời sau {int(tran)} giây"
         except ValueError:
-            # JSON hỏng: thử lại MỘT lần (S11 của báo cáo test — lỗi thô cho người dùng)
             loi = "model trả về nội dung không đọc được"
+    return None, loi
+
+
+def _bao_hong(doc_id: str, usage, loi: str):
+    from .pipeline import HetGio
+
+    _cong_chi_phi(doc_id, usage)
+    if loi.startswith("model không trả lời"):
+        raise HetGio(loi + ", đã thử hai lần")
+    raise ValueError(f"Chưa soạn được: {loi}, đã thử hai lần. "
+                     "Thử lại, hoặc đổi model ở nút ▾ cạnh nút Dịch.")
+
+
+async def _tao_mot_luot(doc: dict, so: int, usage) -> list[dict]:
+    """Bộ ngắn (≤ `CHI_TIET_TU` slide): MỘT lượt viết cả bộ."""
+    from .pipeline import full_source_text
+
+    data, loi = await _goi(doc, SLIDE_TASK, _user(doc, so), max_tokens=20000,
+                           tran=tran_slide(len(full_source_text(doc["blocks"]))), usage=usage)
     if data is None:
-        # Lượt hỏng vẫn bị tính tiền — ghi vào chi phí của bài, không giấu.
-        _cong_chi_phi(doc_id, usage)
-        if loi.startswith("model không trả lời"):
-            raise HetGio(loi + ", đã thử hai lần")
-        raise ValueError(f"Chưa soạn được: {loi}, đã thử hai lần. "
-                         "Thử lại, hoặc đổi model ở nút ▾ cạnh nút Dịch.")
-    doc = store.load(doc_id)
+        _bao_hong(doc["id"], usage, loi)
+    doc = store.load(doc["id"])
     bo = [x for x in (chuan_hoa(doc, s) for s in (data or {}).get("slides") or []
                       if isinstance(s, dict)) if x]
+    return _tach_trich(_sap_lai(bo)) if bo else []
+
+
+KHUNG_TASK = SLIDE_TASK + """
+### Lần này chỉ LÊN KHUNG cho một bộ slide CHI TIẾT
+
+Bộ này đi lần lượt TỪNG MỤC của bài theo đúng thứ tự trong bài, để người nghe
+không bị rơi ý nào. Lượt này chỉ quyết định cấu trúc, chữ trên slide sẽ viết ở
+lượt sau. Mỗi slide chỉ cần `vai`, `tieu_de`, `hinh`, `nguon`, và với
+`doan_dich` thì thêm `doan`.
+
+- Mở đầu bằng `van_de`, `khoang_trong`, `yeu_cau`, `y_tuong` (bức tranh chung),
+  rồi đi qua từng mục của bài theo thứ tự.
+- Phần phương pháp và thí nghiệm: MỖI đoạn quan trọng là một slide `doan_dich`
+  (1–3 đoạn liền nhau trong cùng một mục). Chen `co_che` trước nhóm đoạn của mỗi
+  thành phần, `cong_thuc` cho công thức chính, `thiet_lap` trước kết quả,
+  `bang_chung` cho MỌI bảng/hình kết quả chính.
+- Ít nhất MỘT NỬA số slide là `doan_dich`. Không bỏ trống mục nào của thân bài.
+  Phần công trình liên quan gói gọn trong 1–2 slide. Không dùng thư mục tham khảo.
+- Kết bằng `gioi_han` rồi `dong_lai`.
+- Mỗi slide `doan_dich` có `muc_do`: 1 = thiếu nó người nghe hiểu sai hoặc thiếu
+  ý chính của bài, 2 = nên có, 3 = chi tiết thêm. Bộ dài quá thì công cụ bỏ bớt
+  mức 3 rồi mức 2, KHÔNG bao giờ bỏ mức 1 — nên chấm thật, đừng chấm hết là 1.
+
+Chỉ trả về JSON:
+{"slides": [{"vai": "doan_dich", "tieu_de": "…", "doan": ["b31", "b32"], "muc_do": 1, "hinh": ""},
+            {"vai": "co_che", "tieu_de": "…", "nguon": ["b40"], "hinh": "b43"}, …]}
+"""
+
+VIET_TASK = SLIDE_TASK + """
+### Lần này VIẾT CHỮ cho các slide đã lên khung
+
+Giữ đúng `vai` và `hinh` đã cho. Tiêu đề chỉ được sửa câu chữ cho đúng văn phong,
+không đổi ý. Slide `doan_dich` đã có sẵn phần trích nguyên văn (`trich`). KHÔNG
+chép lại nó, chỉ viết `y_chinh`, `nhan_manh` (chép nguyên văn cụm trong `trich`)
+và `loi_noi` (40–80 chữ, giải thích thêm và nối với slide trước).
+
+Trả về JSON {"slides": [{"id": "t5", …các trường của vai…}, …]}, đủ MỌI slide
+được giao, giữ nguyên `id`.
+"""
+
+ME_VIET = 8           # số slide mỗi lượt viết chữ
+SONG_SONG_VIET = 3    # cùng trần với dịch song song: prefix đã ấm sau lượt lên khung
+
+
+def _do_dai_doan(doc: dict, so: int) -> str:
+    """Độ dài BẢN DỊCH của từng đoạn — để model tự tính số slide SAU KHI TÁCH.
+
+    Không có nó, model nhìn bản gốc tiếng Anh (ngắn hơn bản dịch) rồi gom ba đoạn
+    dài vào một slide; tách theo câu ra tới năm phần cùng một tiêu đề. Đo trên
+    World Models: xin ~42 slide, nhận 82, riêng công trình liên quan 14 slide.
+    """
+    dong = [f"- {ten[:50]}: " + ", ".join(f"{i}={len((doc.get('translations') or {}).get(i, ''))}" for i in ids)
+            for ten, ids in _cac_muc(doc)]
+    return ("\n## Độ dài bản dịch của từng đoạn (mã=số ký tự), theo mục\n" + "\n".join(dong)
+            + f"\n\nMột slide trích đoạn chứa tối đa ~{TRAN_TRICH} ký tự (có hình: ~{TRAN_TRICH_HINH}); "
+            f"dài hơn thì công cụ tự tách sang slide sau. Tổng số slide SAU KHI TÁCH phải "
+            f"khoảng {so}, nên chỉ trích những đoạn đáng trích, không trích mọi đoạn.\n")
+
+
+def _cat_theo_muc_do(khung: list[dict], so: int) -> list[dict]:
+    """Giữ bộ chi tiết quanh `so` slide: bỏ cả nhóm trích đoạn (mọi phần tách từ
+    cùng một slide khung) mức 3 trước, rồi mức 2, xét từ CUỐI bộ ngược lên.
+
+    Model quyết đoạn nào quan trọng (`muc_do`), máy giữ tổng số. Đo trên World
+    Models: dù được đưa độ dài từng đoạn, model vẫn lên khung ra 78 slide khi xin
+    ~42 — đếm là việc máy làm chắc hơn. Mức 1 không bao giờ bị bỏ.
+    """
+    tran = round(so * 1.15)
+    for md in (3, 2):
+        if len(khung) <= tran:
+            break
+        nhom = list(dict.fromkeys(x["_nhom"] for x in reversed(khung) if x.get("_md") == md))
+        for n in nhom:
+            if len(khung) <= tran:
+                break
+            khung = [x for x in khung if x["_nhom"] != n]
+    return khung
+
+
+async def _tao_chi_tiet(doc: dict, so: int, usage) -> list[dict]:
+    """Bộ chi tiết: lên khung (chỉ mã đoạn) → tách trích đoạn dài → viết chữ theo
+    mẻ song song. Mẻ viết hỏng thì slide vẫn còn khung, kèm cờ để viết lại."""
+    import json
+
+    from .pipeline import full_source_text
+
+    tran = tran_slide(len(full_source_text(doc["blocks"])))
+    data, loi = await _goi(doc, KHUNG_TASK, _user(doc, so) + _do_dai_doan(doc, so),
+                           max_tokens=12000, tran=tran, usage=usage)
+    if data is None:
+        _bao_hong(doc["id"], usage, loi)
+    doc = store.load(doc["id"])
+    khung = []
+    for x in (data or {}).get("slides") or []:
+        if not isinstance(x, dict) or x.get("vai") not in VAI:
+            continue
+        c = chuan_hoa(doc, {"vai": x["vai"], "tieu_de": x.get("tieu_de"), "hinh": x.get("hinh"),
+                            "nguon": x.get("nguon"), "doan": x.get("doan")})
+        if c:
+            try:
+                md = min(3, max(1, int(x.get("muc_do") or 2)))
+            except (TypeError, ValueError):
+                md = 2
+            c["_md"], c["_nhom"] = (md if c["vai"] == "doan_dich" else 0), len(khung)
+            khung.append(c)
+    if not khung:
+        raise ValueError("Model không lên được khung slide nào dùng được. Thử lại.")
+    # Thứ tự của bài, KHÔNG sắp theo chặng: bộ chi tiết đi theo mục của bài.
+    khung = ([x for x in khung if x["vai"] != "dong_lai"]
+             + [x for x in khung if x["vai"] == "dong_lai"][-1:])
+    khung = _cat_theo_muc_do(_tach_trich(khung), so)
+    for i, x in enumerate(khung, 1):
+        x["_tam"] = f"t{i}"
+
+    tieu = "\n".join(f"{x['_tam']}. [{x['vai']}] {x['tieu_de']}" for x in khung)
+    gate = asyncio.Semaphore(SONG_SONG_VIET)
+
+    async def viet(me: list[dict], lan: int = 0) -> dict:
+        giao = [{"id": x["_tam"], "vai": x["vai"], "tieu_de": x["tieu_de"], "hinh": x.get("hinh", ""),
+                 "nguon": x.get("nguon", []),
+                 **({"trich": " ".join(t["chu"] for t in x["trich"])} if x["vai"] == "doan_dich" else {})}
+                for x in me]
+        user = (_user(doc, len(khung)) + "\n## Khung cả bộ (để biết slide trước/sau)\n" + tieu
+                + "\n\n## Các slide cần viết chữ lượt này\n" + json.dumps(giao, ensure_ascii=False))
+        async with gate:
+            d, loi = await _goi(doc, VIET_TASK, user, max_tokens=8000, tran=min(240.0, tran), usage=usage)
+        xong = {str(y.get("id")): y for y in (d or {}).get("slides") or [] if isinstance(y, dict)}
+        thieu = [x for x in me if x["_tam"] not in xong]
+        if thieu:
+            print(f"[slide] {doc['id']}: mẻ viết thiếu {len(thieu)}/{len(me)} slide"
+                  f"{' — ' + loi if loi else ''}", flush=True)
+        # Hỏng thì CHIA ĐÔI thử lại một lần: một slide làm hỏng JSON không được kéo
+        # theo cả bảy slide cùng mẻ (đã gặp: hai mẻ hỏng trọn, 16 slide chỉ còn khung).
+        if thieu and lan == 0:
+            nua = max(1, len(thieu) // 2)
+            for d2 in await asyncio.gather(viet(thieu[:nua], 1), viet(thieu[nua:], 1) if thieu[nua:] else asyncio.sleep(0, {})):
+                xong.update(d2 or {})
+        return xong
+
+    kq = await asyncio.gather(*(viet(khung[i:i + ME_VIET]) for i in range(0, len(khung), ME_VIET)))
+    viet_xong = {k: v for d in kq for k, v in d.items()}
+    doc = store.load(doc["id"])
+    bo = []
+    for x in khung:
+        x.pop("_md", None)
+        x.pop("_nhom", None)
+        y = viet_xong.get(x.pop("_tam"))
+        if not y:
+            x.setdefault("canh_bao", []).append("Chưa viết xong chữ cho slide này. Bấm “Viết lại slide này”.")
+            bo.append(x)
+            continue
+        giu = {"vai": x["vai"], "hinh": x.get("hinh", ""), "nguon": x.get("nguon", [])}
+        if x["vai"] == "doan_dich":
+            giu.update(trich=x["trich"], tiep=x.get("tiep"))
+        c = chuan_hoa(doc, {**y, **giu, "tieu_de": y.get("tieu_de") or x["tieu_de"]})
+        bo.append(c or x)
+    return bo
+
+
+async def tao(doc_id: str, phut: int = 15) -> tuple[dict, dict, dict]:
+    """Sinh cả bộ slide. Trả (bộ slide, chi phí lượt này, cộng dồn)."""
+    doc = store.load(doc_id)
+    phut = phut if phut in SO_SLIDE else 15
+    so = SO_SLIDE[phut]
+    usage = llm.Usage()
+    chi_tiet = so > CHI_TIET_TU
+    bo = await (_tao_chi_tiet(doc, so, usage) if chi_tiet else _tao_mot_luot(doc, so, usage))
     if not bo:
+        _cong_chi_phi(doc_id, usage)
         raise ValueError("Model không trả về slide nào dùng được. Thử lại.")
-    bo = _sap_lai(bo)
+    doc = store.load(doc_id)
     _mot_hinh_mot_cho(bo)
     _soat_ca_bo(bo)
+    if chi_tiet:
+        _soat_do_phu(doc, bo)
     bo = _danh_ma([_mo_dau(doc), _lo_trinh()] + bo)
     tong = llm.Usage(**doc.get("usage", {}))
     tong.add(usage)
@@ -543,7 +884,12 @@ async def viet_lai(doc_id: str, sid: str, goi_y: str = "") -> tuple[dict, dict, 
         temperature=0.6, reasoning=NO_REASONING)
     moi = (llm.extract_json(raw) or {}).get("slides") or []
     doc = store.load(doc_id)
-    s = chuan_hoa(doc, {**(moi[0] if moi else {}), "vai": cu["vai"]}) if moi else None
+    giu = {"vai": cu["vai"]}
+    if cu["vai"] == "doan_dich":
+        # Trích đoạn là nguyên văn bản dịch — viết lại chỉ đổi ý chính, tô sáng, lời nói.
+        giu.update(trich=cu.get("trich") or [], tiep=cu.get("tiep"), hinh=cu.get("hinh", ""),
+                   nguon=cu.get("nguon") or [])
+    s = chuan_hoa(doc, {**(moi[0] if moi else {}), **giu}) if moi else None
     if not s:
         raise ValueError("Model không trả về slide dùng được. Thử lại.")
     bo = lay(doc)["bo"]
@@ -569,6 +915,7 @@ def lay(doc: dict) -> dict:
 # Trường người dùng được sửa tay. KHÔNG có `nguon`: sửa được nguồn thì phép soát
 # số liệu thành vô nghĩa (cùng lý do bản cũ cấm sửa `source_block_ids`).
 _SUA_DUOC = {"tieu_de", "loi_noi", "hinh", "minh_hoa", "du_lieu", "do_do", "thanh_phan",
+             "trich", "nhan_manh",
              "so_sanh", "doi_chung", "cot", "hang", "ten_goc", "tac_gia", "noi_dang", "nguoi_noi",
              "y", "tieu_chi", "buoc", "muc", "so"} | {k for ks in _CHU.values() for k in ks}
 
@@ -609,4 +956,18 @@ def kem_anh(doc: dict, bo: list[dict]) -> list[dict]:
         s["anh_ver"] = "_".join(str(round(v)) for v in (b.get("figure_rect") or [])) if b else ""
         m = re.match(r"\s*((?:Figure|Fig\.?|Table|Hình|Bảng)\s*\d+)", (b or {}).get("text") or "", re.I)
         s["nhan_hinh"] = m.group(1) if m else ""
+        if s.get("vai") == "doan_dich" and s.get("trich"):
+            s["muc"] = _muc_cua(doc, s["trich"][0]["id"])
     return bo
+
+
+def _muc_cua(doc: dict, bid: str) -> str:
+    """Tên mục (bản dịch của tiêu đề gần nhất phía trên) chứa một khối."""
+    tr = doc.get("translations") or {}
+    ten = ""
+    for b in doc["blocks"]:
+        if b["type"] == "heading" and not b.get("hidden"):
+            ten = (tr.get(b["id"]) or b["text"]).strip()
+        if b["id"] == bid:
+            return ten
+    return ""
