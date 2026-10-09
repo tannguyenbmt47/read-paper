@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.0.0
+
+**Slides, rebuilt from scratch.** Each slide now plays one role in the paper's
+argument (problem, gap, requirements, core idea, mechanism, worked example,
+evidence, key number, limits, takeaways), and each role has its own layout, so a
+deck follows the argument instead of repeating one card template. One model call
+writes the whole deck (about $0.005–0.05), with no separate outline step. Text is
+edited directly on the slide. One renderer drives the editor, the presenter and
+the exported HTML/PDF, so they cannot drift apart. The PowerPoint export is gone
+for that reason. Numbers that do not appear in the paper's text are removed from
+evidence slides, and examples the model invents are labelled as illustrations.
+
+**Translation export reads like a report.** Cover with authors and venue, a
+summary that follows the argument, glossary, table of contents, then the aligned
+text. A4 PDF with page numbers, fonts embedded. Inline LaTeX now renders the same
+way as on screen.
+
+**A "science notebook" interface.** Grid paper, ink lines, highlighter, sticky
+notes, hand-drawn icons, with a blueprint dark theme. Fonts are bundled, so the
+app works offline.
+
+**A Zotero-style library.** Folders, tags, multi-select move and delete, authors,
+year and venue looked up from arXiv, Crossref and Semantic Scholar, BibTeX
+export. Importing a paper you already have offers to open it, re-parse it,
+overwrite it, or keep the new file as a new version (v2, v3 …).
+
+**Faster, cheaper translation.** Batches run three at a time; the first batch
+runs alone to warm the prompt cache. Translating an already finished paper no
+longer triggers a paid highlight pass.
+
+**PDF parsing fixes.** Reading order on first pages with full-width headers,
+footnotes kept out of body paragraphs, borderless tables, figure crops that
+missed thin labels, hyphenated words split across lines, captions swapped
+between side-by-side figures, and numeric fragments that were billed as text.
+
+**Writing style.** Explanations follow Vietnamese technical-writing rules: no
+semicolons, no colons splitting sentences, numbers given with their baseline.
+Native `confirm`/`alert` dialogs are replaced by the app's own, which state what
+an action costs.
+
 ## 1.18.0
 
 **A newsprint-and-ink skin, as a fourth theme.** The warm cream default stays;
