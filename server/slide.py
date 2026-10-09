@@ -30,21 +30,25 @@ import unicodedata
 
 from . import db, llm, store
 from .depth import DEPTH_RULES
+from .pipeline import chu_vung_hinh
 
 # ---------------------------------------------------------------- vai & khuôn
 
 # Vai → trường nội dung model phải viết. Thứ tự liệt kê cũng là thứ tự mạch
 # trình bày chuẩn của một bài phương pháp.
 VAI = {
-    "van_de": "Vấn đề — tình huống thực tế và vì sao nó khó",
+    "van_de": "Bối cảnh — tình huống thực tế, nhận định và nhận xét về nó",
+    "huong_nc": "Hướng nghiên cứu — một hướng làm trước: cách làm, giải quyết khía cạnh nào, vấn đề gì",
+    "khai_niem": "Khái niệm — giải nghĩa một thuật ngữ/hành vi trước khi nó được dùng",
     "khoang_trong": "Khoảng trống — cách đang làm hỏng ở đâu, trong kịch bản nào",
-    "yeu_cau": "Thuộc tính cần có — lời giải phải đạt những tiêu chí gì",
+    "yeu_cau": "Mong muốn — lời giải phải đạt những tiêu chí gì",
     "y_tuong": "Ý tưởng cốt lõi — trực giác giúp đạt các tiêu chí đó",
     "co_che": "Cơ chế — các bước chạy từ đầu vào tới đầu ra",
     "cong_thuc": "Công thức — biểu thức chính và vai trò từng thành phần",
     "vi_du": "Ví dụ chạy tay — một đầu vào cụ thể có thật trong bài, đi qua từng bước",
     "so_sanh": "Khác gì cách cũ — bảng đối chiếu các cách làm theo từng tiêu chí",
     "thiet_lap": "Thiết lập thí nghiệm — dữ liệu, đối chứng, thước đo",
+    "cach_lam_tn": "Cách làm thí nghiệm — thí nghiệm kiểm câu hỏi gì và tiến hành từng bước ra sao",
     "bang_chung": "Bằng chứng — một hình/bảng trong bài và điều nó cho thấy",
     "so_lieu": "Con số chính — một kết quả kèm mốc so sánh",
     "gioi_han": "Giới hạn — tác giả tự nhận và điểm đáng ngờ",
@@ -52,13 +56,19 @@ VAI = {
     "doan_dich": "Trích đoạn — nguyên văn bản dịch của 1–3 đoạn trong bài, kèm ý chính",
 }
 
-# Bốn chặng của lộ trình — slide lộ trình và dấu "2/4 · Cơ chế" ở góc slide đều
-# tính từ đây, không hỏi model.
+# Sáu chặng của lộ trình, theo trình tự một buổi seminar nghiên cứu mà người
+# dùng chốt: bài toán → hướng tiếp cận (related work) → phương pháp → thí nghiệm
+# → kết quả & ablation → bổ sung. Slide lộ trình và dấu "3/6 · Phương pháp" ở
+# góc slide đều tính từ đây, không hỏi model. `khai_niem` và `doan_dich` không
+# thuộc chặng nào: chúng đi theo slide đứng trước (khái niệm được chèn ngay trước
+# chỗ dùng nó, ở bất kỳ chặng nào).
 CHANG = [
-    ("Bài toán", ("van_de", "khoang_trong", "yeu_cau")),
-    ("Cách làm", ("y_tuong", "co_che", "cong_thuc", "vi_du", "so_sanh")),
-    ("Bằng chứng", ("thiet_lap", "bang_chung", "so_lieu")),
-    ("Giới hạn & đúc kết", ("gioi_han", "dong_lai")),
+    ("Bài toán", ("van_de", "yeu_cau")),
+    ("Hướng tiếp cận", ("huong_nc", "khoang_trong", "so_sanh")),
+    ("Phương pháp", ("y_tuong", "co_che", "cong_thuc", "vi_du")),
+    ("Thí nghiệm", ("thiet_lap", "cach_lam_tn")),
+    ("Kết quả & ablation", ("bang_chung", "so_lieu")),
+    ("Bổ sung", ("gioi_han", "dong_lai")),
 ]
 
 # Số slide nội dung (không tính mở đầu và lộ trình) theo độ dài buổi nói.
@@ -77,11 +87,14 @@ CHI_TIET_TU = 20
 # Trường chữ của từng vai — để soát số liệu, gom chữ, và để PATCH biết trường
 # nào người dùng được sửa.
 _CHU = {
-    "van_de": ("cau", "vi_du"),
+    "van_de": ("cau", "nhan_dinh", "vi_du"),
+    "huong_nc": ("cach_lam", "khia_canh", "han_che"),
+    "khai_niem": ("thuat_ngu", "dinh_nghia", "vi_du", "vi_sao"),
+    "cach_lam_tn": ("muc_dich",),
     "khoang_trong": ("cach_cu", "hong", "he_qua"),
     "yeu_cau": (),
     "y_tuong": ("cau", "vi_sao"),
-    "co_che": ("dan",),
+    "co_che": ("dan", "co_so"),
     "cong_thuc": ("truc_giac", "bieu_thuc", "danh_doi"),
     "vi_du": ("dau_vao", "dau_ra"),
     "so_sanh": ("ket_luan",),
@@ -106,17 +119,28 @@ Trần số chữ ghi trong ngoặc là trần CỨNG: slide là thứ chiếu l
 đọc, chữ thân không nhỏ hơn 24px, nên vượt trần là tràn khung. Phần giải thích
 dài hơn thì đưa vào `loi_noi`, không nhồi lên mặt slide.
 
-- `van_de` — `cau` (vấn đề và vì sao nó quan trọng, ≤45 chữ), `vi_du` (MỘT ví dụ
-  cụ thể, ≤35 chữ).
+- `van_de` — BỐI CẢNH. `cau` (tình huống thực tế và vì sao nó quan trọng, ≤40
+  chữ), `nhan_dinh` (nhận định / nhận xét của bài về tình huống ấy, ≤30 chữ),
+  `vi_du` (MỘT ví dụ cụ thể, ≤30 chữ).
+- `huong_nc` — MỘT hướng nghiên cứu trước bài này. `dai_dien`: 1–4 tên phương
+  pháp tiêu biểu, `cach_lam` (hướng này làm thế nào, ≤35 chữ), `khia_canh` (nó
+  tập trung giải quyết khía cạnh nào của bài toán, ≤20 chữ), `han_che` (vấn đề
+  của nó, MÔ TẢ CHI TIẾT trong kịch bản nào thì hỏng và hỏng ra sao, ≤40 chữ).
+- `khai_niem` — giải nghĩa MỘT thuật ngữ / hành vi / tên mô-đun TRƯỚC khi nó được
+  dùng. `thuat_ngu` (tên, kèm tên đầy đủ nếu là viết tắt), `dinh_nghia` (nó là gì,
+  ≤35 chữ), `vi_du` (một ví dụ cụ thể, ≤25 chữ), `vi_sao` (vì sao bài cần nó /
+  thiếu nó thì hỏng ở đâu, ≤25 chữ).
 - `khoang_trong` — `cach_cu` (cách đang làm, ≤30 chữ), `hong` (nó hỏng ở đâu,
   trong kịch bản nào, ≤35 chữ), `he_qua` (hệ quả đo được hoặc quan sát được, ≤25 chữ).
-- `yeu_cau` — `tieu_chi`: 2–4 mục `{"ten": "3–7 chữ", "vi_sao": "≤22 chữ"}` — lời
-  giải phải đạt gì để lấp khoảng trống. Đây là bước hay bị bỏ sót nhất.
+- `yeu_cau` — MONG MUỐN. `tieu_chi`: 2–4 mục `{"ten": "3–7 chữ", "vi_sao": "≤22
+  chữ"}`, lời giải phải đạt gì. Đây là bước hay bị bỏ sót nhất.
 - `y_tuong` — `cau` (trực giác cốt lõi trong MỘT câu, ≤30 chữ), `vi_sao` (vì sao
   trực giác ấy đáp ứng được các tiêu chí, ≤35 chữ).
 - `co_che` — MỘT thành phần của phương pháp. `dan` (thành phần này nhận gì, trả
   ra gì, ≤25 chữ), `buoc`: 3–4 mục `{"ten": "2–5 chữ", "mo_ta": "≤25 chữ, nói
-  bước này làm gì VÀ vì sao cần"}`. Gắn `hinh` nếu có hình vẽ thành phần ấy
+  bước này làm gì VÀ vì sao cần"}`, `co_so` (cơ sở lý luận của thiết kế này: dựa
+  trên quan sát / lý thuyết / kết quả nào, ≤30 chữ). Đưa ra cái gì cũng phải kèm
+  lý do. Gắn `hinh` nếu có hình vẽ thành phần ấy
   (khi đó tối đa 3 bước, mỗi `mo_ta` ≤20 chữ).
 - `cong_thuc` — `hinh` (mã khối CÔNG THỨC trong danh mục công thức dưới; không có
   thì để rỗng và viết `bieu_thuc` bằng `x_{t}`, `x^{2}`), `truc_giac` (công thức
@@ -133,13 +157,16 @@ dài hơn thì đưa vào `loi_noi`, không nhồi lên mặt slide.
 - `thiet_lap` — `du_lieu`: 2–4 mục `{"ten": "tên tập", "mo_ta": "≤15 chữ, loại câu
   hỏi/quy mô"}`, `doi_chung`: 2–6 tên baseline, `do_do`: 1–3 mục `{"ten": "EM",
   "y_nghia": "≤15 chữ, đo cái gì"}`, `mo_hinh_nen` (mô hình nền dùng, ≤15 chữ).
+- `cach_lam_tn` — `muc_dich` (thí nghiệm này kiểm câu hỏi gì, ≤25 chữ), `buoc`:
+  2–4 mục `{"ten": "2–5 chữ", "mo_ta": "≤22 chữ"}` (tiến hành ra sao: chia dữ
+  liệu, chạy gì, đo gì, so với gì).
 - `bang_chung` — `hinh` (BẮT BUỘC, mã khối của hình/bảng trong danh mục dưới),
   `doc_hinh` (cách đọc hình: trục/cột là gì, nhìn vào đâu, ≤28 chữ),
-  `ket_luan` (điều hình cho thấy, ≤25 chữ), `so`: 0–2 mục
-  `{"gia_tri": "61,4", "nhan": "F1 trên 2WikiMQA", "moc": "so với 57,1 của KiRAG"}`.
+  `ket_luan` (kết quả này KHẲNG ĐỊNH điều gì cho luận điểm của bài, ≤25 chữ), `so`: 0–2 mục
+  `{"gia_tri": "<số trong bài>", "nhan": "<thước đo> trên <tập dữ liệu>", "moc": "so với <số> của <baseline>"}`.
 - `so_lieu` — `gia_tri` (một con số), `nhan` (đo cái gì), `moc` (so với gì: baseline,
   benchmark, mô hình nền), `y_nghia` (mức chênh ấy nói lên điều gì, ≤30 chữ),
-  `so_sanh`: 2–5 mục `{"nhan": "KiRAG", "gia_tri": "57,1", "cua_bai": false}` để vẽ
+  `so_sanh`: 2–5 mục `{"nhan": "<tên phương pháp>", "gia_tri": "<số trong bài>", "cua_bai": false}` để vẽ
   biểu đồ cột (mục của bài có `"cua_bai": true`). Chỉ dùng số có trong CHỮ của bài,
   cùng một thước đo, cùng một tập dữ liệu.
 - `gioi_han` — `muc`: 2–4 mục `{"ten": "3–8 chữ", "he_qua": "≤25 chữ"}`.
@@ -159,9 +186,12 @@ tự nhiên — chỉ nói điều mặt slide CHƯA nói, đừng đọc lại 
 
 ### Trung thực về ví dụ và con số (bắt buộc)
 
-- Bạn KHÔNG nhìn thấy nội dung ảnh của hình/bảng, chỉ thấy chú thích của nó. Vì
-  vậy MỌI con số phải lấy từ CHỮ của bài. Không đọc số "từ bảng", không tự tính
-  hiệu hai số rồi ghi như số của bài.
+- Bạn không thấy ẢNH của hình/bảng, nhưng danh mục có kèm CHỮ VÀ SỐ bóc từ bên
+  trong hình/bảng (theo dòng; bảng là hàng phương pháp kèm các cột số). Số trong
+  đó được dùng. Kết luận về một hình/bảng PHẢI khớp với các số ấy — đọc kỹ từng
+  cột trước khi viết "vượt mọi", "luôn", "đều". Hình không có chữ bóc được thì chỉ
+  nói điều chú thích và đoạn văn của bài nói. Không tự tính hiệu hai số rồi ghi
+  như số của bài; nếu ghi mức chênh thì nói rõ so với cột/hàng nào.
 - Ví dụ (`van_de.vi_du`, slide `vi_du`) phải là ví dụ CÓ TRONG CHỮ của bài. Bài
   có ví dụ dạng bảng "Case Study" thì gắn bảng đó vào `hinh` và mô tả các bước ở
   mức cơ chế, không bịa tên, số, thực thể cụ thể của bảng.
@@ -172,17 +202,29 @@ tự nhiên — chỉ nói điều mặt slide CHƯA nói, đừng đọc lại 
 
 ### Mạch và nhịp
 
-- Đi theo thứ tự: vấn đề → khoảng trống → thuộc tính cần có → ý tưởng cốt lõi →
-  cơ chế → (ví dụ chạy tay) → bằng chứng → giới hạn → đúc kết. Slide `dong_lai`
-  luôn là slide cuối.
+- Sáu chặng, đúng thứ tự:
+  1. **Bài toán**: `van_de` (bối cảnh, nhận định, nhận xét) → `yeu_cau` (mong muốn).
+  2. **Hướng tiếp cận**: các `huong_nc` (mỗi hướng một slide: làm gì, giải quyết
+     khía cạnh nào, vấn đề chi tiết ra sao) → `khoang_trong` (điều mọi hướng ấy
+     còn bỏ ngỏ) → `so_sanh` nếu bài đối chiếu.
+  3. **Phương pháp**: `y_tuong` → mỗi thành phần một `co_che` (kèm cơ sở lý luận)
+     → `cong_thuc` cho mô hình toán của nó → `vi_du` đi qua cả hệ thống.
+  4. **Thí nghiệm**: `thiet_lap` (dữ liệu, đối chứng, thước đo) → `cach_lam_tn`
+     (cách bố trí và tiến hành). BẮT BUỘC có cả hai.
+  5. **Kết quả & ablation**: `bang_chung` cho kết quả chính rồi từng ablation,
+     mỗi slide nói rõ nó KHẲNG ĐỊNH điều gì; `so_lieu` cho con số đinh.
+  6. **Bổ sung**: `gioi_han` → `dong_lai` (luôn là slide cuối).
+- KHÔNG dùng một thuật ngữ, viết tắt, tên mô-đun hay hành vi nào trước khi nó
+  được giới thiệu. Gặp khái niệm mới mà người nghe chưa biết (tên mô-đun, chỉ
+  số đo, hành vi như "từ chối trả lời", "cache"…) thì chèn một slide `khai_niem`
+  NGAY TRƯỚC slide đầu tiên dùng nó.
 - Hai slide liền nhau KHÔNG cùng vai, trừ `bang_chung` (tối đa 3 liền nhau).
-- Phần phương pháp là phần chính của buổi nói, đừng nén nó. Phương pháp có nhiều
+- Phương pháp là phần chính của buổi nói, đừng nén nó. Phương pháp có nhiều
   thành phần thì MỖI thành phần một slide `co_che` (tối đa 4), mỗi thành phần
   có công thức quan trọng thì thêm một slide `cong_thuc` ngay sau nó. Rồi một
   slide `vi_du` đi qua cả hệ thống.
 - Bộ nào cũng có `thiet_lap` đứng trước slide bằng chứng đầu tiên — không biết
   dữ liệu, đối chứng và thước đo thì người nghe không đọc được bảng kết quả.
-  Có `so_sanh` khi bài đối chiếu với các hướng làm trước.
 - Dùng hình nhiều: ít nhất MỘT NỬA số slide gắn `hinh` khi danh mục đủ hình.
   Mỗi hình chỉ gắn MỘT slide trong cả bộ.
   `van_de` gắn hình minh hoạ bài toán (thường là Figure 1), `y_tuong` gắn hình
@@ -236,8 +278,14 @@ def _danh_muc_hinh(doc: dict) -> list[dict]:
         if store.image_path(doc["id"], b["figure"]) is None:
             continue
         out.append({"id": b["id"], "trang": (b.get("page") or 0) + 1,
-                    "chu_thich": (tr.get(b["id"]) or b.get("text") or "")[:220]})
+                    "chu_thich": (tr.get(b["id"]) or b.get("text") or "")[:220],
+                    "trong_hinh": _rut_gon(chu_vung_hinh(doc, b["id"]), 700)})
     return out
+
+
+def _rut_gon(t: str, n: int) -> str:
+    t = t.strip()
+    return t if len(t) <= n else t[:n].rsplit(" ", 1)[0] + " …"
 
 
 def _danh_muc_cong_thuc(doc: dict) -> list[dict]:
@@ -259,7 +307,10 @@ def _user(doc: dict, so: int) -> str:
     ct = _danh_muc_cong_thuc(doc)
     chuoi = "\n".join(f"- [{x.get('role', '')}] {x.get('step', '')}"
                       for x in br.get("argument_chain") or [])
-    dm = "\n".join(f"- {h['id']} (trang {h['trang']}): {h['chu_thich']}" for h in hinh) \
+    dm = "\n".join(f"- {h['id']} (trang {h['trang']}): {h['chu_thich']}"
+                   + ("\n  Chữ và số bóc từ trong hình/bảng (theo dòng):\n  "
+                      + h["trong_hinh"].replace("\n", "\n  ") if h["trong_hinh"] else "")
+                   for h in hinh) \
         or "(bài không có hình/bảng nào cắt được — dùng vai không cần hình)"
     return (f"Viết khoảng {so} slide nội dung (chưa tính slide mở đầu và lộ trình — "
             "hai slide đó công cụ tự dựng).\n\n"
@@ -288,6 +339,19 @@ def _sach(t) -> str:
     return _viet_hoa_dau(t)
 
 
+def _ds_dict(v) -> list[dict]:
+    return [x for x in (v if isinstance(v, list) else []) if isinstance(x, dict)]
+
+
+def _ds_chuoi(v) -> list[str]:
+    """Trường danh sách chuỗi. Model hay trả MỘT chuỗi thay cho danh sách
+    (`"dai_dien": "IRCoT"`), và lặp qua chuỗi là lặp từng KÝ TỰ — slide hiện
+    "I• R• C• o". Chuỗi thì tách theo dấu phẩy."""
+    if isinstance(v, str):
+        v = re.split(r"\s*[,;]\s*", v)
+    return [" ".join(str(x).split()) for x in (v or []) if str(x).strip()]
+
+
 def _chu_slide(s: dict) -> str:
     """Toàn bộ chữ hiện trên mặt slide — để soát số liệu."""
     parts = [s.get("tieu_de", "")] + [s.get(k, "") for k in _CHU.get(s.get("vai"), ())]
@@ -296,7 +360,8 @@ def _chu_slide(s: dict) -> str:
             parts += [str(v) for v in it.values() if isinstance(v, str)]
     for it in s.get("hang") or []:
         parts += [it.get("tieu_chi", "")] + list(it.get("o") or [])
-    parts += list(s.get("y") or []) + list(s.get("cot") or []) + list(s.get("doi_chung") or [])
+    parts += (list(s.get("y") or []) + list(s.get("cot") or []) + list(s.get("doi_chung") or [])
+              + list(s.get("dai_dien") or []))
     return " ".join(str(p) for p in parts if p)
 
 
@@ -383,11 +448,15 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
     if vai == "so_lieu" and isinstance(s.get("so_sanh"), list):
         out["so_sanh"] = [{"nhan": _sach(it.get("nhan")), "gia_tri": _sach(it.get("gia_tri")),
                            "cua_bai": bool(it.get("cua_bai"))}
-                          for it in s["so_sanh"][:5] if isinstance(it, dict) and it.get("gia_tri")]
+                          for it in _ds_dict(s["so_sanh"])[:5] if it.get("gia_tri")]
     if vai == "thiet_lap":
-        out["doi_chung"] = [_sach(x) for x in (s.get("doi_chung") or []) if str(x).strip()][:6]
+        out["doi_chung"] = _ds_chuoi(s.get("doi_chung"))[:6]
+    if vai == "huong_nc":
+        out["dai_dien"] = _ds_chuoi(s.get("dai_dien"))[:4]
+    if vai == "khai_niem":
+        out["thuat_ngu"] = " ".join(str(s.get("thuat_ngu") or "").split())   # tên riêng: không viết hoa lại
     if vai == "so_sanh":
-        cot = [_sach(x) for x in (s.get("cot") or []) if str(x).strip()][:4]
+        cot = [_sach(x) for x in _ds_chuoi(s.get("cot"))][:4]
         hang = []
         for it in (s.get("hang") or [])[:5]:
             if isinstance(it, dict) and it.get("tieu_chi"):
@@ -401,7 +470,8 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
         # hết trần token, hỏng trọn mẻ. Đổi tên trường model phải viết là hết.
         out["y_chinh"] = _sach(s.get("diem_chinh"))
     if vai == "dong_lai":
-        out["y"] = [_sach(x) for x in (s.get("y") or []) if str(x).strip()][:3]
+        out["y"] = [_sach(x) for x in _ds_chuoi(s.get("y"))][:3] if not isinstance(s.get("y"), str) \
+            else [_sach(s["y"])]
     if vai in ("van_de", "vi_du"):
         out["minh_hoa"] = bool(s.get("minh_hoa"))
     if vai == "doan_dich":
@@ -450,8 +520,19 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
     # Ô số không có chữ số ("Giảm mạnh") là ô rỗng nghĩa: to và xanh nhất slide mà
     # không cho biết gì — subagent chỉ đọc slide bắt đúng hai ô như vậy.
     if out.get("so"):
-        out["so"] = [it for it in out["so"] if re.search(r"\d", it.get("gia_tri", ""))]
+        # Ô số phải MỞ ĐẦU bằng một con số. Lọc theo "có chữ số" thì "F1 cao nhất"
+        # lọt (chữ số nằm trong F1), "Trung bình thấp hơn 4,3 F1" cũng lọt — đó là
+        # câu, không phải ô số.
+        out["so"] = [it for it in out["so"] if re.match(r"\s*[~≈+\-−×]?\s*\d", it.get("gia_tri", ""))]
     bo_chip = []
+    # Cột biểu đồ của slide con số cũng vậy: một thanh dựng từ số bịa là hình ảnh
+    # giả gán cho tác giả thật. Đã gặp: model chép nguyên số VÍ DỤ trong prompt
+    # (61,4 / 57,1) thành số liệu của bài — ví dụ trong prompt giờ không còn số thật.
+    for it in list(out.get("so_sanh") or []):
+        bia = so_bia(doc, out["nguon"], it["gia_tri"])
+        if bia:
+            out["so_sanh"].remove(it)
+            bo_chip += bia
     for it in list(out.get("so") or []):
         bia = so_bia(doc, out["nguon"], " ".join(it.values()))
         if bia:
@@ -481,7 +562,7 @@ def _sap_lai(bo: list[dict]) -> list[dict]:
     for s in bo:
         cu = chang.get(s["vai"], cu)
         khoa[id(s)] = cu
-    # `thiet_lap` luôn đứng đầu chặng Bằng chứng: chưa biết dữ liệu và thước đo
+    # `thiet_lap` luôn đứng đầu chặng Thí nghiệm: chưa biết dữ liệu và thước đo
     # thì không đọc được bảng kết quả.
     con = sorted((s for s in bo if s["vai"] != "dong_lai"),
                  key=lambda s: (khoa[id(s)], s["vai"] != "thiet_lap"))
@@ -489,7 +570,8 @@ def _sap_lai(bo: list[dict]) -> list[dict]:
         # Cơ chế liền nhau là chủ ý (mỗi thành phần một slide, công thức bám ngay
         # sau thành phần của nó), trích đoạn liền nhau cũng vậy (đoạn văn liền
         # nhau trong bài) — tráo là phá đúng thứ tự ấy.
-        if con[i]["vai"] == con[i - 1]["vai"] and con[i]["vai"] not in ("bang_chung", "co_che", "doan_dich"):
+        if con[i]["vai"] == con[i - 1]["vai"] and con[i]["vai"] not in (
+                "bang_chung", "co_che", "doan_dich", "huong_nc", "khai_niem"):
             # Chỉ tráo TRONG cùng chặng — tráo qua chặng là phá thứ tự vừa sắp.
             for j in range(i + 1, len(con)):
                 if khoa[id(con[j])] != khoa[id(con[i])]:
@@ -503,7 +585,8 @@ def _sap_lai(bo: list[dict]) -> list[dict]:
 # Một hình gắn nhiều slide thì giữ ở slide cần nó nhất. Đã gặp trên CIRAG: sơ đồ
 # tổng quan gắn cả slide ý tưởng lẫn hai slide cơ chế — ba slide liền cùng một
 # hình. Slide ý tưởng đứng TRƯỚC nên "giữ chỗ đầu" là giữ nhầm chỗ.
-_UU_TIEN_HINH = {"bang_chung": 0, "co_che": 1, "vi_du": 2, "cong_thuc": 3, "van_de": 4, "y_tuong": 5}
+_UU_TIEN_HINH = {"bang_chung": 0, "co_che": 1, "vi_du": 2, "cong_thuc": 3, "van_de": 4,
+                 "huong_nc": 5, "khai_niem": 6, "cach_lam_tn": 6, "y_tuong": 7}
 
 
 def _mot_hinh_mot_cho(bo: list[dict]) -> None:
@@ -521,6 +604,135 @@ def _mot_hinh_mot_cho(bo: list[dict]) -> None:
             if s["vai"] == "bang_chung":
                 s.setdefault("canh_bao", []).append(
                     "Hình này đã dùng ở slide khác — bấm vào khung để chọn hình khác.")
+
+
+# Viết tắt người nghe AI ai cũng biết — đòi giải nghĩa là kêu oan.
+_VIET_TAT_PHO_THONG = {"II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII",   # số La Mã ("Lothair II")
+                       "LLM", "LLMs", "AI", "NLP", "GPU", "CPU", "API", "RAG", "QA", "ML", "RL",
+                       "CNN", "RNN", "LSTM", "MLP", "URL", "PDF", "ID", "SOTA"}
+_VIET_TAT = re.compile(r"(?<![\w-])([A-Z][A-Za-z]?[A-Z]{1,4}\d?)(?![\w-])")
+
+
+def _giai_nghia_viet_tat(doc: dict) -> dict[str, str]:
+    """Viết tắt → tên đầy đủ. Tra VĂN BẢN GỐC trước ("Knowledge Discriminator (KD)"),
+    rồi mới tới bảng thuật ngữ — và chỉ những mục ghi rõ "viết tắt của".
+
+    Bản đầu lấy cột tiếng Việt của bảng thuật ngữ làm tên đầy đủ, mà cột ấy là
+    bản dịch NGHĨA: KD thành "mô hình tích hợp đã chưng cất", khiến subagent đọc
+    slide hiểu KD là Knowledge Distillation trong khi bài viết Knowledge Discriminator.
+    """
+    out = {}
+    goc = " ".join(b.get("text") or "" for b in doc["blocks"] if b.get("type") in ("para", "list", "caption"))
+    for m in re.finditer(r"((?:[A-Z][\w-]*\s+){1,6}?)\(\s*([A-Z][A-Za-z]{1,6})\s*\)", goc):
+        vt, tu = m.group(2), m.group(1).split()
+        hoa = [c for c in vt if c.isupper()]
+        # cắt từ bên trái tới khi các chữ đầu (viết hoa) ghép đúng viết tắt
+        for i in range(len(tu)):
+            dau = [w[0] for w in tu[i:] if w[0].isupper()]
+            if dau == hoa:
+                out.setdefault(vt, " ".join(tu[i:]))
+                break
+    for g in (doc.get("brief") or {}).get("glossary") or []:
+        en, vi = str(g.get("en") or "").strip(), str(g.get("vi") or "").strip()
+        m = re.match(r"^viết tắt của\s+(.+)$", vi, flags=re.I)
+        if not m:
+            continue
+        for vt in _VIET_TAT.findall(en):
+            out.setdefault(vt, m.group(1))
+    return out
+
+
+# Trường KHÔNG được chèn vào: trích đoạn là nguyên văn bản dịch, còn mã/ảnh là dữ liệu.
+_KHONG_CHEN = {"id", "vai", "hinh", "nguon", "trich", "anh", "anh_ver", "canh_bao", "tieu_de",
+               "loi_noi", "tiep", "nhan_manh", "minh_hoa", "sua_tay"}
+
+
+def _chen_ten_day_du(s: dict, vt: str, day_du: str) -> bool:
+    """Chèn "VT (tên đầy đủ)" vào lần xuất hiện ĐẦU TIÊN của viết tắt trên mặt slide —
+    ưu tiên thân slide, tiêu đề là chỗ cuối cùng (chèn vào tiêu đề làm nó dài ra)."""
+    mau = re.compile(rf"(?<![\w-]){re.escape(vt)}(?![\w-])")
+
+    def thu(gt):
+        if isinstance(gt, str) and mau.search(gt):
+            return mau.sub(f"{vt} ({day_du})", gt, count=1), True
+        if isinstance(gt, list):
+            for i, x in enumerate(gt):
+                moi, ok = thu(x)
+                if ok:
+                    gt[i] = moi
+                    return gt, True
+        if isinstance(gt, dict):
+            for k in list(gt):
+                moi, ok = thu(gt[k])
+                if ok:
+                    gt[k] = moi
+                    return gt, True
+        return gt, False
+
+    for k in [k for k in s if k not in _KHONG_CHEN] + ["tieu_de"]:
+        moi, ok = thu(s.get(k))
+        if ok:
+            s[k] = moi
+            return True
+    return False
+
+
+def _cum_viet_hoa(chu: str, vt: str) -> str:
+    """Cụm từ Latinh viết hoa chữ đầu mà các chữ cái đầu ghép thành `vt`."""
+    chu_cai = [c for c in vt if c.isupper()]
+    if len(chu_cai) < 2:
+        return ""
+    mau = r"\b" + r"[\s-]+".join(rf"{c}[a-z]+" for c in chu_cai) + r"\b"
+    m = re.search(mau, chu)
+    return m.group(0) if m else ""
+
+
+def _soat_viet_tat(doc: dict, bo: list[dict]) -> None:
+    """Viết tắt dùng LẦN ĐẦU mà chưa được giải nghĩa thì gắn cờ vào đúng slide đó.
+
+    Prompt đã cấm, model vẫn làm (đo trên CIRAG: "KD" xuất hiện ở bước cơ chế mà
+    chưa slide nào nói nó là Knowledge Discriminator — subagent chỉ đọc slide vấp
+    đúng chỗ này). Coi là đã giải nghĩa khi: có slide `khai_niem` cho nó, hoặc
+    câu có "KD (" / "(KD)" ở lần đầu, hoặc nó là thước đo đã khai ở `thiet_lap`.
+    Tên bài (CIRAG) và từ trong tên bài thì không đòi.
+    """
+    ten = " ".join([(doc.get("brief") or {}).get("title_vi") or "", doc.get("title") or ""])
+    da = set(_VIET_TAT.findall(ten)) | _VIET_TAT_PHO_THONG
+    giai = _giai_nghia_viet_tat(doc)
+    # KHÔNG tra chữ trong hình: chú giải biểu đồ ghép ra "Kirag Dualrag" cho KD.
+    # Bài CIRAG chỉ viết "Knowledge Discriminator" trong Hình 2 (ảnh raster, không
+    # có lớp chữ) — không tra được thì để cảnh báo, còn hơn chèn một tên sai.
+    da_doc = ""
+    for s in bo:
+        if s["vai"] == "khai_niem":
+            da.update(_VIET_TAT.findall(s.get("thuat_ngu") or ""))
+        if s["vai"] in ("huong_nc", "so_sanh"):   # tên phương pháp đã giới thiệu ở đây
+            da.update(_VIET_TAT.findall(" ".join(s.get("dai_dien") or []) + " " + " ".join(s.get("cot") or [])))
+        if s["vai"] == "thiet_lap":
+            da.update(_VIET_TAT.findall(" ".join(d.get("ten", "") for d in s.get("do_do") or [])))
+            da.update(_VIET_TAT.findall(" ".join(d.get("ten", "") for d in s.get("du_lieu") or [])))
+            da.update(_VIET_TAT.findall(" ".join(s.get("doi_chung") or [])))
+        chu = _chu_slide(s) + " " + " ".join(t.get("chu", "") for t in s.get("trich") or [])
+        moi = []
+        for vt in dict.fromkeys(_VIET_TAT.findall(chu)):
+            if vt in da:
+                continue
+            da.add(vt)
+            if re.search(rf"\b{re.escape(vt)}\s*\(|\(\s*{re.escape(vt)}\s*\)", chu):
+                continue
+            # Bảng thuật ngữ đã có tên đầy đủ thì CHÈN luôn vào lần dùng đầu — rẻ hơn
+            # và chắc hơn nhờ model viết lại.
+            # Chưa có trong bảng thuật ngữ: tên đầy đủ đã xuất hiện ở slide TRƯỚC
+            # dưới dạng cụm viết hoa ghép đúng chữ cái đầu ("Trajectory Distillation"
+            # → TD) thì dùng chính cụm đó.
+            day_du = giai.get(vt) or _cum_viet_hoa(da_doc, vt)
+            if not (day_du and _chen_ten_day_du(s, vt, day_du)):
+                moi.append(vt)
+        da_doc += " " + chu
+        if moi:
+            s.setdefault("canh_bao", []).append(
+                "Viết tắt dùng lần đầu mà chưa giải nghĩa: " + ", ".join(moi[:5])
+                + ". Thêm tên đầy đủ, hoặc một slide khái niệm phía trước.")
 
 
 def _soat_ca_bo(bo: list[dict]) -> None:
@@ -708,6 +920,10 @@ def _nguon_chu(doc: dict, x: dict) -> list[dict]:
     out, tong = [], 0
     for i in dict.fromkeys(ids):
         chu = _chu_khoi(doc, i)[0][:1500]
+        if i == x.get("hinh"):
+            trong = _rut_gon(chu_vung_hinh(doc, i), 900)
+            if trong:
+                chu += "\nChữ và số trong hình/bảng (theo dòng):\n" + trong
         if chu and tong < 4000:
             out.append({"id": i, "chu": chu})
             tong += len(chu)
@@ -829,9 +1045,8 @@ không bị rơi ý nào. Lượt này chỉ quyết định cấu trúc, chữ 
 lượt sau. Mỗi slide chỉ cần `vai`, `tieu_de`, `hinh`, `nguon`, và với
 `doan_dich` thì thêm `doan`.
 
-- Mở đầu bằng `van_de`, `khoang_trong`, `yeu_cau`, `y_tuong` (bức tranh chung),
-  rồi đi qua từng mục của bài theo thứ tự. Công trình liên quan (nếu trình bày)
-  đứng NGAY SAU `khoang_trong`, không để sau phần phương pháp.
+- Theo đúng SÁU chặng ở trên. Đoạn trích đi cùng chặng của nội dung nó: đoạn
+  công trình liên quan nằm trong chặng Hướng tiếp cận dù bài đặt mục ấy ở đâu.
 - Phần phương pháp và thí nghiệm: MỖI đoạn quan trọng là một slide `doan_dich`
   (1–3 đoạn liền nhau trong cùng một mục). Chen `co_che` trước nhóm đoạn của mỗi
   thành phần, `cong_thuc` cho công thức chính, `thiet_lap` trước kết quả,
@@ -843,14 +1058,16 @@ lượt sau. Mỗi slide chỉ cần `vai`, `tieu_de`, `hinh`, `nguon`, và vớ
 - Mọi slide KHÔNG phải `doan_dich` phải có `nguon`: 1–4 mã khối chứa nội dung
   của nó. Lượt viết chữ CHỈ được đọc các khối này, không đọc lại cả bài.
 - Ít nhất MỘT NỬA số slide là `doan_dich`. Không bỏ trống mục nào của thân bài.
-  Phần công trình liên quan gói gọn trong 1–2 slide. Không dùng thư mục tham khảo.
+  Không dùng thư mục tham khảo.
 - Kết bằng `gioi_han` rồi `dong_lai`.
 - Mỗi slide `doan_dich` có `muc_do`: 1 = thiếu nó người nghe hiểu sai hoặc thiếu
   ý chính của bài, 2 = nên có, 3 = chi tiết thêm. Bộ dài quá thì công cụ bỏ bớt
   mức 3 rồi mức 2, KHÔNG bao giờ bỏ mức 1 — nên chấm thật, đừng chấm hết là 1.
 
 Chỉ trả về JSON:
-{"slides": [{"vai": "doan_dich", "tieu_de": "…", "doan": ["b31", "b32"], "muc_do": 1, "hinh": ""},
+{"slides": [{"vai": "huong_nc", "tieu_de": "…", "nguon": ["b14", "b15"]},
+            {"vai": "khai_niem", "tieu_de": "…", "nguon": ["b33"]},
+            {"vai": "doan_dich", "tieu_de": "…", "doan": ["b31", "b32"], "muc_do": 1, "hinh": ""},
             {"vai": "co_che", "tieu_de": "…", "nguon": ["b40"], "hinh": "b43"}, …]}
 """
 
@@ -906,7 +1123,7 @@ def _doi_cong_trinh_lien_quan(doc: dict, khung: list[dict]) -> list[dict]:
     if not cua:
         return khung
     con = [x for x in khung if x not in cua]
-    moc = max((i for i, x in enumerate(con) if x["vai"] in ("van_de", "khoang_trong", "yeu_cau")), default=-1)
+    moc = max((i for i, x in enumerate(con) if x["vai"] in ("van_de", "yeu_cau", "huong_nc")), default=-1)
     return con[:moc + 1] + cua + con[moc + 1:]
 
 
@@ -957,9 +1174,9 @@ async def _tao_chi_tiet(doc: dict, so: int, usage, model: str) -> list[dict]:
             khung.append(c)
     if not khung:
         raise ValueError("Model không lên được khung slide nào dùng được. Thử lại.")
-    # Thứ tự của bài, KHÔNG sắp theo chặng: bộ chi tiết đi theo mục của bài.
-    khung = ([x for x in khung if x["vai"] != "dong_lai"]
-             + [x for x in khung if x["vai"] == "dong_lai"][-1:])
+    # Sắp theo SÁU chặng như bộ ngắn — trích đoạn và khái niệm đi theo slide đứng
+    # trước, nên thứ tự bài trong mỗi chặng vẫn giữ nguyên.
+    khung = _sap_lai(khung)
     khung = _cat_theo_muc_do(_tach_trich(_doi_cong_trinh_lien_quan(doc, khung)), so)
     for i, x in enumerate(khung, 1):
         x["_tam"] = f"t{i}"
@@ -1052,6 +1269,7 @@ async def tao(doc_id: str, phut: int = 15, model: str | None = None) -> tuple[di
     doc = store.load(doc_id)
     _mot_hinh_mot_cho(bo)
     _soat_ca_bo(bo)
+    _soat_viet_tat(doc, bo)
     if chi_tiet:
         _soat_do_phu(doc, bo)
     bo = _danh_ma([_mo_dau(doc), _lo_trinh()] + bo)
@@ -1121,7 +1339,7 @@ def lay(doc: dict) -> dict:
 
 # Trường người dùng được sửa tay. KHÔNG có `nguon`: sửa được nguồn thì phép soát
 # số liệu thành vô nghĩa (cùng lý do bản cũ cấm sửa `source_block_ids`).
-_SUA_DUOC = {"tieu_de", "loi_noi", "hinh", "minh_hoa", "du_lieu", "do_do", "thanh_phan",
+_SUA_DUOC = {"tieu_de", "loi_noi", "hinh", "minh_hoa", "du_lieu", "do_do", "thanh_phan", "dai_dien",
              "trich", "nhan_manh",
              "so_sanh", "doi_chung", "cot", "hang", "ten_goc", "tac_gia", "noi_dang", "nguoi_noi",
              "y", "tieu_chi", "buoc", "muc", "so"} | {k for ks in _CHU.values() for k in ks}

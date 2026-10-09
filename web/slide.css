@@ -342,3 +342,43 @@
 
 .sld-dd-ct { margin: 0; align-self: center; max-width: 100%; }
 .sld-dd-ct img { display: block; max-width: 100%; max-height: 7.5cqw; object-fit: contain; margin: 0 auto; }
+
+/* ------------------------------------------------------- lộ trình sáu chặng: lưới 3×2 */
+.sld-lo.luoi { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 3cqw; }
+.sld-lo.luoi::before { content: none; }
+.sld-lo.luoi .sld-tram { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 1.2cqw; }
+.sld-lo.luoi .sld-tram-so { width: 3.6cqw; height: 3.6cqw; font-size: 1.8cqw; }
+.sld-lo.luoi .sld-tram ul { flex-basis: 100%; }
+
+/* ------------------------------------------------------- bối cảnh: nhận định */
+.sld-nd-dinh { font-weight: 600; margin-bottom: 1.4cqw !important; }
+.sld-nd-dinh .sld-tay { margin-right: .5cqw; }
+.sld-vd > .sld-vd-cot { justify-content: center; }
+
+/* ------------------------------------------------------- cơ chế: cơ sở lý luận */
+.sld-coso { margin-top: 1.4cqw !important; font-size: .92em; color: var(--muc-2); border-top: .12cqw dashed var(--chi); padding-top: 1cqw; }
+.sld-coso .sld-tay { margin-right: .5cqw; }
+
+/* ------------------------------------------------------- hướng nghiên cứu */
+.sld-hn { flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3cqw; align-items: center; }
+.sld-hn-trai { display: flex; flex-direction: column; gap: 1.2cqw; }
+.sld-hn .sld-kt-hong { border-radius: .6cqw; padding: 1.8cqw; display: flex; flex-direction: column; gap: .8cqw; }
+.sld-hn-kc { font-size: .92em; color: var(--muc-2); }
+.sld-hn-kc .sld-tay { margin-right: .5cqw; }
+
+/* ------------------------------------------------------- khái niệm: thẻ từ điển */
+.sld-kn { flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; justify-items: center; }
+.sld-kn.co-hinh { flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 3cqw; align-items: stretch; }
+.sld-kn-the { max-width: 52cqw; display: flex; flex-direction: column; gap: 1.4cqw; justify-content: center;
+  background: #fff; border: .16cqw solid var(--muc); border-radius: .6cqw; box-shadow: .35cqw .35cqw 0 var(--muc); padding: 2.4cqw 2.8cqw; }
+.sld-kn.co-hinh .sld-kn-the { max-width: none; }
+.sld-kn-ten { font-family: var(--tieu-de); font-weight: 800; font-size: 1.6em; line-height: 1.25;
+  background: linear-gradient(transparent 58%, color-mix(in srgb, var(--da-quang) 75%, transparent) 58%);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; justify-self: start; }
+.sld-kn-dn { font-family: var(--doc); font-size: 1.08em; line-height: 1.5; }
+.sld-kn-vd, .sld-kn-vs { font-size: .92em; color: var(--muc-2); }
+.sld-kn-vd .sld-tay, .sld-kn-vs .sld-tay { margin-right: .5cqw; }
+
+.sld-cc-cot { display: flex; flex-direction: column; justify-content: center; }
+.sld-cc.co-hinh .sld-cc-cot .sld-buoc { grid-auto-flow: row; grid-auto-rows: auto; gap: 1.6cqw; }
+.sld-hn ul { list-style: none; margin: 0; padding: 0; }

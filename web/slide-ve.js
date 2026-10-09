@@ -37,14 +37,18 @@
       .replace(/(?<![\w>])([A-Za-z])\^([A-Za-z0-9]{1,3})(?![\w{])/g, "$1<sup>$2</sup>");
   }
 
+  // Sáu chặng — phải khớp `slide.CHANG` bên server.
   const CHANG = [
-    ["Bài toán", ["van_de", "khoang_trong", "yeu_cau"]],
-    ["Cách làm", ["y_tuong", "co_che", "cong_thuc", "vi_du", "so_sanh"]],
-    ["Bằng chứng", ["thiet_lap", "bang_chung", "so_lieu"]],
-    ["Giới hạn & đúc kết", ["gioi_han", "dong_lai"]],
+    ["Bài toán", ["van_de", "yeu_cau"]],
+    ["Hướng tiếp cận", ["huong_nc", "khoang_trong", "so_sanh"]],
+    ["Phương pháp", ["y_tuong", "co_che", "cong_thuc", "vi_du"]],
+    ["Thí nghiệm", ["thiet_lap", "cach_lam_tn"]],
+    ["Kết quả & ablation", ["bang_chung", "so_lieu"]],
+    ["Bổ sung", ["gioi_han", "dong_lai"]],
   ];
   const NHAN_VAI = {
-    van_de: "Vấn đề", khoang_trong: "Khoảng trống", yeu_cau: "Thuộc tính cần có",
+    van_de: "Bối cảnh", khoang_trong: "Khoảng trống", yeu_cau: "Mong muốn",
+    huong_nc: "Hướng nghiên cứu", khai_niem: "Khái niệm", cach_lam_tn: "Cách làm thí nghiệm",
     y_tuong: "Ý tưởng cốt lõi", co_che: "Cơ chế", cong_thuc: "Công thức", vi_du: "Ví dụ chạy tay",
     so_sanh: "Khác gì cách cũ", thiet_lap: "Thiết lập thí nghiệm", doan_dich: "Trích đoạn",
     bang_chung: "Bằng chứng", so_lieu: "Con số chính", gioi_han: "Giới hạn", dong_lai: "Đúc kết",
@@ -136,22 +140,24 @@
       }
       case "lo_trinh": {
         const muc = cs.map(([ten, vai], i) => {
-          const tds = bo.filter((x) => vai.includes(x.vai)).slice(0, 2).map((x) => `<li>${chu(x.tieu_de)}</li>`).join("");
+          const tds = bo.filter((x) => vai.includes(x.vai)).slice(0, cs.length > 4 ? 1 : 2).map((x) => `<li>${chu(x.tieu_de)}</li>`).join("");
           return `<li class="sld-tram"><span class="sld-tram-so">${i + 1}</span><b>${esc(ten)}</b><ul>${tds}</ul></li>`;
         }).join("");
-        than = `${tieuDe}<ol class="sld-lo">${muc}</ol>`;
+        than = `${tieuDe}<ol class="sld-lo ${cs.length > 4 ? "luoi" : ""}">${muc}</ol>`;
         break;
       }
       case "van_de": {
         const anh = hinh();
-        const note = `<div class="sld-note"><span class="bang-keo"></span><b class="sld-tay">${nhanViDu}</b>
+        const note = `${s.nhan_dinh || sua ? `<p class="sld-nd-dinh"><b class="sld-tay">Nhận định</b> `
+            + `${o("nhan_dinh", s.nhan_dinh, "span", "", "Nhận định / nhận xét của bài")}</p>` : ""}`
+          + `<div class="sld-note"><span class="bang-keo"></span><b class="sld-tay">${nhanViDu}</b>
           ${o("vi_du", s.vi_du, "p", "", "Một ví dụ cụ thể có thật trong bài")}</div>`;
         // Có hình (thường là Figure 1): chữ + ví dụ xếp dọc bên trái, hình bên phải.
         than = coHinh
           ? `${dau}${tieuDe}<div class="sld-vd co-hinh"><div class="sld-vd-cot">
-              ${o("cau", s.cau, "p", "sld-lon", "Vấn đề và vì sao nó quan trọng")}${note}</div>${anh}</div>`
+              ${o("cau", s.cau, "p", "sld-lon", "Bối cảnh và vì sao nó quan trọng")}${note}</div>${anh}</div>`
           : `${dau}${tieuDe}<div class="sld-vd">
-              ${o("cau", s.cau, "p", "sld-lon", "Vấn đề và vì sao nó quan trọng")}${note}${anh}</div>`;
+              ${o("cau", s.cau, "p", "sld-lon", "Bối cảnh và vì sao nó quan trọng")}<div class="sld-vd-cot">${note}</div>${anh}</div>`;
         break;
       }
       case "khoang_trong":
@@ -183,7 +189,44 @@
         // Bậc thang chỉ rộng ~62% khung: bốn bước dài trong đó là tràn (đã gặp).
         const dang = coHinh ? "co-hinh" : (lanThu % 2 && (s.buoc || []).length <= 3 ? "bac" : "ngang");
         const dan = s.dan || sua ? `<p class="sld-dan">${o("dan", s.dan, "span", "", "Thành phần này nhận gì, trả ra gì")}</p>` : "";
-        than = `${dau}${tieuDe}${dan}<div class="sld-cc ${dang}"><ol class="sld-buoc">${buoc}</ol>${anh}</div>`;
+        const coSo = s.co_so || sua ? `<p class="sld-coso"><b class="sld-tay">Cơ sở</b> `
+          + `${o("co_so", s.co_so, "span", "", "Dựa trên quan sát / lý thuyết / kết quả nào")}</p>` : "";
+        // Có hình: "Cơ sở" nằm TRONG cột bước — đặt sau lưới thì lưới co lại và các
+        // hộp bước đè lên nó (đã gặp); nằm trong cột thì phần thừa đẩy `scrollHeight`
+        // và vòng co chữ thấy được.
+        than = coHinh
+          ? `${dau}${tieuDe}${dan}<div class="sld-cc ${dang}"><div class="sld-cc-cot"><ol class="sld-buoc">${buoc}</ol>${coSo}</div>${anh}</div>`
+          : `${dau}${tieuDe}${dan}<div class="sld-cc ${dang}"><ol class="sld-buoc">${buoc}</ol>${anh}</div>${coSo}`;
+        break;
+      }
+      case "huong_nc": {
+        // Một hướng nghiên cứu trước bài: cách làm + khía cạnh nó nhắm (trái),
+        // vấn đề mô tả chi tiết (phải, khung đỏ) — cùng mã màu với slide khoảng trống.
+        const dd = (s.dai_dien || []).map((x, i) => `<li>${o(`dai_dien.${i}`, x, "span", "", "phương pháp")}</li>`).join("");
+        than = `${dau}${tieuDe}<div class="sld-hn">
+          <div class="sld-hn-trai"><b class="sld-tay">Cách làm</b>${o("cach_lam", s.cach_lam, "p", "", "Hướng này làm thế nào")}
+            ${dd ? `<ul class="sld-tl3-chip">${dd}</ul>` : ""}
+            ${s.khia_canh || sua ? `<p class="sld-hn-kc"><b class="sld-tay">Tập trung vào</b> ${o("khia_canh", s.khia_canh, "span", "", "khía cạnh nào của bài toán")}</p>` : ""}</div>
+          <div class="sld-kt-hong"><b class="sld-tay">Vấn đề</b>${o("han_che", s.han_che, "p", "", "Hỏng trong kịch bản nào, hỏng ra sao")}</div></div>`;
+        break;
+      }
+      case "khai_niem": {
+        // Thẻ giải nghĩa: chèn ngay trước slide đầu tiên dùng thuật ngữ — người
+        // nghe không phải đoán "KD", "reranker", "Open IE" là gì (subagent đã vấp).
+        const anh = hinh();
+        than = `${dau}${tieuDe}<div class="sld-kn ${coHinh ? "co-hinh" : ""}"><div class="sld-kn-the">
+          ${o("thuat_ngu", s.thuat_ngu, "p", "sld-kn-ten", "Thuật ngữ")}
+          ${o("dinh_nghia", s.dinh_nghia, "p", "sld-kn-dn", "Nó là gì")}
+          ${s.vi_du || sua ? `<p class="sld-kn-vd"><b class="sld-tay">Ví dụ</b> ${o("vi_du", s.vi_du, "span", "", "một ví dụ cụ thể")}</p>` : ""}
+          ${s.vi_sao || sua ? `<p class="sld-kn-vs"><b class="sld-tay">Vì sao cần</b> ${o("vi_sao", s.vi_sao, "span", "", "thiếu nó thì hỏng ở đâu")}</p>` : ""}
+          </div>${anh}</div>`;
+        break;
+      }
+      case "cach_lam_tn": {
+        const buoc = ds("buoc", (b, i) => `<li style="--i:${i}"><span class="sld-buoc-so">${i + 1}</span><div>
+          ${o(`buoc.${i}.ten`, b.ten, "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Làm gì")}</div></li>`);
+        than = `${dau}${tieuDe}${s.muc_dich || sua ? `<p class="sld-dan"><b>Câu hỏi thí nghiệm:</b> ${o("muc_dich", s.muc_dich, "span", "", "Thí nghiệm này kiểm câu hỏi gì")}</p>` : ""}
+          <div class="sld-cc ngang"><ol class="sld-buoc">${buoc}</ol></div>`;
         break;
       }
       case "cong_thuc": {
@@ -275,7 +318,7 @@
         than = `${dau}${tieuDe}<div class="sld-bc ${anh ? "co-hinh" : "khong-hinh"} ${lat ? "lat" : ""}">${anh}
           <div class="sld-bc-chu">
             <b class="sld-tay">Cách đọc</b>${o("doc_hinh", s.doc_hinh, "p", "sld-doc", "Trục/cột là gì, nhìn vào đâu")}
-            ${s.ket_luan || sua ? `<b class="sld-tay">Bài kết luận</b>` : ""}
+            ${s.ket_luan || sua ? `<b class="sld-tay">Khẳng định</b>` : ""}
             <p class="sld-kl-p">${o("ket_luan", s.ket_luan, "span", "sld-kl", "Điều bài nói hình này cho thấy")}</p>
             ${so ? `<div class="sld-cac-so">${so}</div>` : ""}</div></div>`;
         break;

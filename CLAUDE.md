@@ -704,9 +704,9 @@ Bản đầu (dàn ý → duyệt → dựng theo mẻ, bảy kiểu bố cục,
 test chê "chán" và bị bỏ hẳn. Ba lỗi gốc, và bản này nhắm đúng ba lỗi đó:
 
 - **Một khuôn lặp lại.** 12/16 slide cùng dáng "tiêu đề + 3 thẻ pastel". Giờ mỗi
-  slide mang một **VAI trong lập luận** (`slide.VAI`): `van_de` · `khoang_trong`
+  slide mang một **VAI trong lập luận** (`slide.VAI`): `van_de` · `huong_nc` · `khai_niem` · `khoang_trong`
   · `yeu_cau` · `y_tuong` · `co_che` · `cong_thuc` · `vi_du` · `so_sanh` ·
-  `thiet_lap` · `bang_chung` · `so_lieu` · `gioi_han` · `dong_lai` · `doan_dich`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
+  `thiet_lap` · `cach_lam_tn` · `bang_chung` · `so_lieu` · `gioi_han` · `dong_lai` · `doan_dich`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
   lấy từ skill viết tài liệu kỹ thuật tiếng Việt (Vấn đề → Khoảng trống → Thuộc
   tính cần có → Ý tưởng cốt lõi → Cơ chế). Mỗi vai một bố cục, nên bộ slide đổi
   dáng theo mạch bài.
@@ -802,6 +802,35 @@ V4 Flash **$0,017**, subagent chấm gần như ngang nhau.
 **Giá của tên tắt `~…-latest` trong danh sách OpenRouter là SAI**: Flash báo
 $0,079/triệu token ra, model gốc $1,28. Mọi ước giá (dịch, giải thích, slide) giờ
 đi qua `llm.gia_model`, tra cả model gốc và lấy mức cao hơn.
+
+**Sáu chặng do người dùng chốt** (`slide.CHANG`, phải khớp `CHANG` bên
+`slide-ve.js`): Bài toán (bối cảnh + nhận định → mong muốn) → Hướng tiếp cận
+(`huong_nc`: mỗi hướng làm gì, nhắm khía cạnh nào, vấn đề chi tiết → khoảng trống
+→ đối chiếu) → Phương pháp (mỗi `co_che` kèm `co_so` lý luận, `cong_thuc` cho mô
+hình toán, `vi_du`) → Thí nghiệm (`thiet_lap` + `cach_lam_tn`) → Kết quả &
+ablation (ô "Khẳng định") → Bổ sung. Lộ trình sáu trạm vẽ lưới 3×2.
+- **`khai_niem` không thuộc chặng nào**, như `doan_dich`: nó đứng ngay trước
+  slide đầu tiên dùng thuật ngữ, ở bất kỳ chặng nào, nên `_sap_lai` cho nó kế
+  thừa chặng của slide đứng trước. Bộ chi tiết giờ cũng đi qua `_sap_lai`.
+- **`_soat_viet_tat`**: viết tắt dùng lần đầu mà chưa giải nghĩa thì máy tự chèn
+  "VT (tên đầy đủ)" vào thân slide (không vào trích đoạn nguyên văn), tra theo thứ
+  tự: văn bản gốc dạng "Phrase (VT)" → bảng thuật ngữ, CHỈ mục ghi "viết tắt
+  của" → cụm viết hoa ở slide trước. Không tra được thì cảnh báo. Hai cái sai đã
+  vấp: lấy cột tiếng Việt của bảng thuật ngữ (bản dịch nghĩa — KD thành "mô hình
+  tích hợp đã chưng cất", người đọc hiểu nhầm là Knowledge Distillation), và tra
+  theo chữ cái đầu trong chú giải biểu đồ (KD → "Kirag Dualrag"). Đoán sai tệ hơn
+  để trống. `_VIET_TAT_PHO_THONG` miễn LLM, RAG… và số La Mã ("Lothair II").
+- **Model giờ đọc được SỐ TRONG BẢNG**: `pipeline.chu_vung_hinh` bóc lớp chữ của
+  PDF trong `figure_rect`, theo dòng, đưa vào danh mục hình và `nguon_chu`; số
+  trong đó cũng vào kho của `so_bia`. Hình raster (không lớp chữ) thì vẫn chỉ có
+  chú thích. Nhận định "độ trễ thấp hơn baseline" vẫn còn là vì chính tác giả
+  viết vậy — slide chép đúng bài.
+- **Ví dụ trong prompt KHÔNG được chứa số thật**: model chép nguyên `"61,4"` /
+  `"57,1"` của ví dụ thành số liệu của bài. Dùng `<số trong bài>`.
+- Ô số phải MỞ ĐẦU bằng con số: lọc theo "có chữ số" để lọt "F1 cao nhất".
+- Model hay trả MỘT chuỗi cho trường danh sách (`"dai_dien": "IRCoT"`) — lặp qua
+  chuỗi là lặp từng ký tự ("I• R• C• o"). Mọi trường danh sách chuỗi đi qua
+  `_ds_chuoi`.
 
 **Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
 bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai

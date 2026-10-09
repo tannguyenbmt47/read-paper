@@ -221,7 +221,8 @@ def test_slide_trich_doan_keo_theo_cong_thuc_chen_giua(monkeypatch):
 def test_slide_o_so_khong_co_chu_so_bi_bo_va_cong_trinh_lien_quan_doi_len():
     from server import slide
     s = slide.chuan_hoa(_doc(), {"vai": "bang_chung", "tieu_de": "t",
-                                 "so": [{"gia_tri": "Giảm mạnh", "nhan": "F1"}, {"gia_tri": "42,5", "nhan": "F1"}]})
+                                 "so": [{"gia_tri": "Giảm mạnh", "nhan": "F1"}, {"gia_tri": "42,5", "nhan": "F1"},
+                                        {"gia_tri": "F1 cao nhất"}, {"gia_tri": "Trung bình hơn 42,5 F1"}]})
     assert [x["gia_tri"] for x in s["so"]] == ["42,5"]
     d = _doc()
     d["blocks"] = [{"id": "h1", "type": "heading", "text": "Method"}, {"id": "p1", "type": "para", "text": "m"},
@@ -230,8 +231,10 @@ def test_slide_o_so_khong_co_chu_so_bi_bo_va_cong_trinh_lien_quan_doi_len():
              {"vai": "doan_dich", "trich": [{"id": "p1", "chu": "m"}]},
              {"vai": "doan_dich", "trich": [{"id": "p2", "chu": "r"}]}]
     ra = slide._doi_cong_trinh_lien_quan(d, khung)
-    assert [x["vai"] for x in ra][:3] == ["van_de", "khoang_trong", "doan_dich"]
-    assert ra[2]["trich"][0]["id"] == "p2"
+    # Chặng 2 (hướng tiếp cận): đoạn công trình liên quan đứng TRƯỚC khoảng trống —
+    # khoảng trống là điều rút ra từ các hướng ấy.
+    assert [x["vai"] for x in ra][:3] == ["van_de", "doan_dich", "khoang_trong"]
+    assert ra[1]["trich"][0]["id"] == "p2"
 
 
 def test_slide_vot_slide_tron_ven_khoi_json_lap_suy_bien():
@@ -258,6 +261,44 @@ def test_gia_ten_tat_lay_muc_cao_hon_cua_model_goc(monkeypatch):
     vao, ra = asyncio.run(llm.gia_model("~deepseek/deepseek-v4-flash-latest"))
     assert abs(ra - 1.28e-6) < 1e-12 and abs(vao - 1.3e-8) < 1e-15
     assert asyncio.run(llm.gia_model("khong/co")) is None
+
+
+def test_slide_sau_chang_khai_niem_di_theo_slide_dung_truoc():
+    """Bố cục sáu chặng; khái niệm và trích đoạn không thuộc chặng nào nên đứng
+    đúng chỗ model đặt (ngay trước slide dùng thuật ngữ), không bị dồn xuống cuối."""
+    from server import slide
+    assert [t for t, _ in slide.CHANG] == ["Bài toán", "Hướng tiếp cận", "Phương pháp",
+                                           "Thí nghiệm", "Kết quả & ablation", "Bổ sung"]
+    bo = [{"vai": v} for v in ("dong_lai", "van_de", "huong_nc", "huong_nc", "khoang_trong",
+                               "khai_niem", "co_che", "bang_chung", "thiet_lap", "gioi_han")]
+    ra = [s["vai"] for s in slide._sap_lai(bo)]
+    assert ra == ["van_de", "huong_nc", "huong_nc", "khoang_trong", "khai_niem", "co_che",
+                  "thiet_lap", "bang_chung", "gioi_han", "dong_lai"]
+    s = slide.chuan_hoa(_doc(), {"vai": "khai_niem", "tieu_de": "t", "thuat_ngu": "KD (Knowledge Discriminator)",
+                                 "dinh_nghia": "mô hình lọc triple"})
+    assert s["thuat_ngu"] == "KD (Knowledge Discriminator)" and s["dinh_nghia"] == "Mô hình lọc triple"
+
+
+def test_slide_viet_tat_chua_giai_nghia_bi_gan_co_va_danh_sach_chuoi():
+    from server import slide
+    d = _doc()
+    d["title"] = "CIRAG: a method"
+    bo = [{"vai": "co_che", "tieu_de": "KD lọc triple bằng LLM trong CIRAG", "canh_bao": []},
+          {"vai": "khai_niem", "tieu_de": "t", "thuat_ngu": "ACMG", "canh_bao": []},
+          {"vai": "co_che", "tieu_de": "ACMG chọn mức ngữ cảnh, TD (Trajectory Distillation) chưng cất", "canh_bao": []}]
+    slide._soat_viet_tat(d, bo)
+    assert bo[0]["canh_bao"] and "KD" in bo[0]["canh_bao"][0] and "LLM" not in bo[0]["canh_bao"][0]
+    assert not bo[2]["canh_bao"]
+    # tên đầy đủ có trong bảng thuật ngữ hoặc đã xuất hiện trước đó: tự chèn, không cảnh báo
+    d["brief"] = {"glossary": [{"en": "KD", "vi": "viết tắt của Knowledge Discriminator"}]}
+    bo = [{"vai": "co_che", "tieu_de": "Trajectory Distillation chưng cất", "buoc": [{"ten": "a", "mo_ta": "KD lọc triple"}], "canh_bao": []},
+          {"vai": "bang_chung", "tieu_de": "Bỏ TD thì giảm", "ket_luan": "TD cần thiết", "canh_bao": []}]
+    slide._soat_viet_tat(d, bo)
+    assert bo[0]["buoc"][0]["mo_ta"] == "KD (Knowledge Discriminator) lọc triple" and not bo[0]["canh_bao"]
+    assert bo[1]["ket_luan"] == "TD (Trajectory Distillation) cần thiết" and not bo[1]["canh_bao"]
+    # model trả chuỗi thay cho danh sách: không được lặp từng ký tự
+    s = slide.chuan_hoa(_doc(), {"vai": "huong_nc", "tieu_de": "t", "dai_dien": "IRCoT, FLARE"})
+    assert s["dai_dien"] == ["IRCoT", "FLARE"]
 
 
 def test_slide_dinh_dang_cu_coi_nhu_chua_co():

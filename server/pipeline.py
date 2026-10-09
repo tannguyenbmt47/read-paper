@@ -1333,6 +1333,42 @@ def _norm_num(s: str) -> str:
 _SO_CACHE: dict[tuple, set[str]] = {}
 
 
+_CHU_HINH: dict[tuple, str] = {}
+
+
+def chu_vung_hinh(doc: dict, bid: str) -> str:
+    """Chữ nằm TRONG vùng một hình/bảng của PDF gốc, giữ theo từng dòng.
+
+    Bảng được cắt thành ẢNH nên model chỉ thấy chú thích, rồi tự suy kết luận —
+    subagent chỉ đọc slide bắt được "cải thiện ở mọi mức", "độ trễ thấp" trái với
+    chính bảng. Nhưng PDF vẫn giữ lớp chữ của bảng; bóc nó ra là model đọc được
+    số. Nhớ tạm ở mức module (mở PDF mỗi lần là chậm).
+    """
+    b = next((x for x in doc.get("blocks") or [] if x["id"] == bid), None)
+    if not b or not b.get("figure_rect") or b.get("figure_page") is None:
+        return ""
+    key = (doc["id"], bid, tuple(round(v) for v in b["figure_rect"]))
+    if key not in _CHU_HINH:
+        chu = ""
+        p = store.pdf_path(doc["id"])
+        if p is not None:
+            try:
+                import fitz
+                with fitz.open(p) as pdf:
+                    tu = pdf[b["figure_page"]].get_text("words", clip=fitz.Rect(*b["figure_rect"]))
+                dong: dict[int, list] = {}
+                for w in tu:
+                    dong.setdefault(round(w[3] / 3), []).append(w)
+                chu = "\n".join(" ".join(w[4] for w in sorted(ws, key=lambda w: w[0]))
+                                 for _, ws in sorted(dong.items()))
+            except Exception:  # noqa: BLE001 — PDF hỏng/thiếu thì coi như không có chữ
+                chu = ""
+        if len(_CHU_HINH) > 2000:
+            _CHU_HINH.clear()
+        _CHU_HINH[key] = chu
+    return _CHU_HINH[key]
+
+
 def _so_toan_bai(doc: dict) -> set[str]:
     """Mọi con số có trong bài (bản gốc + bản dịch), đã chuẩn hoá.
 
@@ -1343,6 +1379,10 @@ def _so_toan_bai(doc: dict) -> set[str]:
         tr = doc.get("translations") or {}
         pool = " ".join((b.get("text") or "") + " " + (tr.get(b["id"]) or "")
                         for b in doc.get("blocks") or [])
+        # Số trong BẢNG/HÌNH cũng là số của bài — model giờ được đọc chữ trong bảng,
+        # không tính chúng thì mọi số đọc đúng từ bảng đều bị coi là bịa.
+        pool += " " + " ".join(chu_vung_hinh(doc, b["id"]) for b in doc.get("blocks") or []
+                               if b.get("figure") and b.get("type") != "equation")
         if len(_SO_CACHE) > 32:
             _SO_CACHE.clear()
         _SO_CACHE[key] = {_norm_num(m) for m in _NUM.findall(pool)}
