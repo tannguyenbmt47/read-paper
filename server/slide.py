@@ -127,6 +127,9 @@ nghe hiểu, chưa tới trần thì không phải cắt.
 Người nghe là kỹ sư thông minh nhưng KHÔNG ở trong nhánh này. Mặt slide phải tự
 giải thích được, không trông vào lời người nói. Vì vậy:
 
+- Không khẳng định nào trên slide mà không có căn cứ trong bài, và không ý nào
+  xuất hiện mà chưa được dẫn dắt từ slide trước. Người nghe hỏi "từ đâu ra?" mà
+  slide không trả lời được là slide hỏng.
 - Mỗi ô viết thành CÂU TRỌN VẸN có chủ ngữ, động từ và quan hệ nhân quả. Cấm lối
   điện tín ghép cụm danh từ ("Mạng nhỏ thiếu sức biểu diễn", "Điều khiển nhỏ").
 - Thuật ngữ chuyên ngành nào xuất hiện trên slide cũng phải được giải nghĩa NGAY
@@ -148,8 +151,10 @@ Ví dụ sửa (lấy từ một bộ slide thật bị chê "đọc không hi�
 | Ý tưởng: Dồn sức mạnh vào world model học không giám sát, giữ controller thật nhỏ. | Tách agent làm hai phần: một world model lớn tự học cách tóm tắt và dự đoán môi trường từ dữ liệu, không cần điểm thưởng; và một controller rất nhỏ chỉ việc chọn hành động dựa trên bản tóm tắt ấy. |
 
 - `van_de` — BỐI CẢNH. `cau` (tình huống thực tế và vì sao nó quan trọng, ≤40
-  chữ), `nhan_dinh` (nhận định / nhận xét của bài về tình huống ấy, ≤45 chữ),
-  `vi_du` (MỘT ví dụ cụ thể, ≤45 chữ).
+  chữ), `nhan_dinh` (nhận định / nhận xét của bài về tình huống ấy, kèm QUAN SÁT
+  hoặc dẫn chứng bài đưa ra cho nhận định đó, ≤45 chữ), `vi_du` (MỘT ví dụ cụ
+  thể, ≤45 chữ). Đây là chỗ đặt nền cho slide mong muốn: mọi tiêu chí ở slide
+  sau phải sinh ra từ một điều đã nói ở đây.
 - `huong_nc` — MỘT hướng nghiên cứu trước bài này. `dai_dien`: 1–4 tên phương
   pháp tiêu biểu, `cach_lam` (hướng này làm thế nào, ≤53 chữ), `khia_canh` (nó
   tập trung giải quyết khía cạnh nào của bài toán, ≤30 chữ), `han_che` (vấn đề
@@ -160,8 +165,13 @@ Ví dụ sửa (lấy từ một bộ slide thật bị chê "đọc không hi�
   thiếu nó thì hỏng ở đâu, ≤38 chữ).
 - `khoang_trong` — `cach_cu` (cách đang làm, ≤45 chữ), `hong` (nó hỏng ở đâu,
   trong kịch bản nào, ≤53 chữ), `he_qua` (hệ quả đo được hoặc quan sát được, ≤38 chữ).
-- `yeu_cau` — MONG MUỐN. `tieu_chi`: 2–4 mục `{"ten": "3–7 chữ", "vi_sao": "≤22
-  chữ"}`, lời giải phải đạt gì. Đây là bước hay bị bỏ sót nhất.
+- `yeu_cau` — MONG MUỐN. `tieu_chi`: 2–4 mục `{"ten": "3–7 chữ", "vi_sao": "≤35
+  chữ, tiêu chí này là gì và thiếu nó thì hỏng ra sao", "can_cu": "≤30 chữ, điều
+  BÀI nói hoặc quan sát mà bài đưa ra dẫn tới tiêu chí này", "nguon": "mã khối
+  chứa căn cứ ấy"}`. Tiêu chí nào cũng phải SINH RA TỪ một vấn đề đã nêu ở slide
+  bối cảnh — người nghe phải thấy nó từ đâu ra, không được tự nhiên xuất hiện
+  (đã bị chê: "tự nhiên cần mạng lớn, dẫn chứng đâu"). Không có căn cứ trong bài
+  thì đừng đưa tiêu chí đó.
 - `y_tuong` — `cau` (trực giác cốt lõi trong MỘT câu, ≤45 chữ), `vi_sao` (vì sao
   trực giác ấy đáp ứng được các tiêu chí, ≤53 chữ).
 - `co_che` — MỘT thành phần của phương pháp. `dan` (thành phần này nhận gì, trả
@@ -476,6 +486,21 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
             out[k] = [{f: _sach(it.get(f)) if f != "ky_hieu" else " ".join(str(it.get(f) or "").split())
                        for f in truong}
                       for it in s[k][:5] if isinstance(it, dict) and any(it.get(f) for f in truong)]
+    if vai == "yeu_cau" and out.get("tieu_chi"):
+        # Căn cứ của từng tiêu chí: câu của bài dẫn tới nó + mã khối (chỉ giữ mã có
+        # thật). Mã ấy cũng vào `nguon` để phép soát số liệu và độ phủ thấy được.
+        by = {b["id"] for b in doc["blocks"]}
+        goc = [it for it in _ds_dict(s.get("tieu_chi"))[:5]]
+        for t, g in zip(out["tieu_chi"], [g for g in goc if any(g.get(f) for f in ("ten", "vi_sao"))]):
+            t["can_cu"] = _sach(g.get("can_cu"))
+            ma = str(g.get("nguon") or "").strip()
+            t["nguon"] = ma if ma in by else ""
+        if any(not t.get("can_cu") for t in out["tieu_chi"]):
+            canh_tc = "Có tiêu chí chưa ghi căn cứ trong bài — người nghe sẽ không biết nó từ đâu ra."
+        else:
+            canh_tc = ""
+    else:
+        canh_tc = ""
     if vai == "cong_thuc" and out.get("thanh_phan"):
         out["thanh_phan"] = out["thanh_phan"][:4]   # 5 ký hiệu làm tràn khung (đã đo)
     if vai == "so_lieu" and isinstance(s.get("so_sanh"), list):
@@ -548,6 +573,11 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
     if vai == "bang_chung" and not h:
         canh.append("Slide bằng chứng chưa có hình — bấm vào khung để chọn hình trong bài.")
     out["nguon"] = [str(x) for x in (s.get("nguon") or []) if str(x) in by_id][:8]
+    if vai == "yeu_cau":
+        out["nguon"] = list(dict.fromkeys(out["nguon"] + [t["nguon"] for t in out.get("tieu_chi") or []
+                                                           if t.get("nguon")]))[:8]
+        if canh_tc:
+            canh.append(canh_tc)
     if vai == "doan_dich":
         out["nguon"] = list(dict.fromkeys([t["id"] for t in out["trich"]] + out["nguon"]))[:8]
         canh += canh_trich
@@ -939,8 +969,13 @@ def _cong_chi_phi(doc_id: str, usage) -> None:
 
 
 def tran_slide(n_chars: int) -> float:
-    """Trần thời gian cho lượt sinh slide — cùng lối với `pipeline.tran_brief`."""
-    return min(240.0, 90.0 + n_chars / 1000)
+    """Trần thời gian cho lượt sinh slide — cùng lối với `pipeline.tran_brief`.
+
+    Bản đầu 90 giây + 1 giây/1.000 ký tự: World Models (63k ký tự) ra 153 giây, mà
+    từ khi slide viết diễn giải và kèm căn cứ, đầu ra dài hơn — V4 Flash quá giờ
+    CẢ HAI lần (504 sau 405 giây) trong khi lượt trước cùng bài chỉ 79–98 giây.
+    Trần dưới 300 giây chung của `llm` để lỗi nói đúng là quá giờ."""
+    return min(280.0, 150.0 + n_chars / 1000)
 
 
 def _nen_nhe(doc: dict) -> str:
@@ -1430,6 +1465,10 @@ def kem_anh(doc: dict, bo: list[dict]) -> list[dict]:
         s["anh_ver"] = "_".join(str(round(v)) for v in (b.get("figure_rect") or [])) if b else ""
         m = re.match(r"\s*((?:Figure|Fig\.?|Table|Hình|Bảng)\s*\d+)", (b or {}).get("text") or "", re.I)
         s["nhan_hinh"] = m.group(1) if m else ""
+        if s.get("vai") == "yeu_cau":
+            for t in s.get("tieu_chi") or []:
+                if t.get("nguon"):
+                    t["muc"] = _muc_cua(doc, t["nguon"])
         if s.get("vai") == "doan_dich" and s.get("trich"):
             s["muc"] = _muc_cua(doc, s["trich"][0]["id"])
             for t in s["trich"]:

@@ -778,14 +778,18 @@ def test_boc_lai_noi_ra_khi_roi_ve_duong_lui(app_client):
     assert "st.layout_used === false" in js, "giao diện không hiện cảnh báo"
 
 
-def test_ma_nguon_duoc_mount_de_khoi_dung_lai_anh(app_client):
-    """Mỗi lần sửa giao diện mà phải dựng lại ảnh Docker thì rất dễ quên, và
-    quên là thấy y hệt bản cũ — đã mất cả buổi vì đúng chuyện đó."""
+def test_ma_nguon_chi_mount_o_ban_phat_trien(app_client):
+    """Mount mã nguồn tiện cho người PHÁT TRIỂN (sửa giao diện khỏi dựng lại ảnh —
+    quên dựng là thấy y hệt bản cũ, đã mất cả buổi vì đúng chuyện đó), nhưng là
+    bẫy với người chỉ CHẠY app: mã trên đĩa che mã trong ảnh. Nên mount nằm ở
+    docker-compose.dev.yml, file compose chính tuyệt đối không mount mã nguồn."""
     from pathlib import Path
-    yml = Path(__file__).resolve().parents[1].joinpath("docker-compose.yml").read_text()
-    assert "./web:/app/web:ro" in yml
-    assert "./server:/app/server:ro" in yml
+    goc = Path(__file__).resolve().parents[1]
+    yml = goc.joinpath("docker-compose.yml").read_text()
+    dev = goc.joinpath("docker-compose.dev.yml").read_text()
+    assert "/app/web" not in yml and "/app/server" not in yml
     assert "./data:/data" in yml          # dữ liệu vẫn phải nằm ngoài ảnh
+    assert "./web:/app/web:ro" in dev and "./server:/app/server:ro" in dev
 
 
 def test_chon_chu_bi_khoa_theo_cot(app_client):

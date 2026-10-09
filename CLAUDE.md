@@ -846,6 +846,16 @@ trần chữ văn xuôi nới ×1,5 (ô bảng, cụm tô sáng giữ nguyên). 
   bước gọn lại; slide ví dụ hơn 3 bước thì bỏ hình (bảng Case Study thu vào nửa
   slide vốn không đọc nổi). Đo lại: 0/22 và 0/28 slide tràn.
 
+**Không ý nào được "tự nhiên xuất hiện".** Người dùng chê slide mong muốn:
+"tự nhiên cần mạng lớn, dẫn chứng đâu". Giờ mỗi tiêu chí của `yeu_cau` mang
+`can_cu` (điều BÀI nói dẫn tới nó) + `nguon` (mã khối, mã bịa bị bỏ), slide hiện
+"Theo bài · <mục>: …"; tiêu chí thiếu căn cứ thì cảnh báo. `van_de.nhan_dinh` phải
+kèm quan sát/dẫn chứng của bài — đó là nền mà mọi tiêu chí sinh ra từ. Prompt có
+luật chung: khẳng định nào cũng phải có căn cứ trong bài và đã được dẫn dắt từ
+slide trước. Trần thời gian `tran_slide` nâng lên 150 giây + 1 giây/1.000 ký tự
+(tối đa 280): chữ diễn giải + căn cứ làm đầu ra dài hơn, V4 Flash từng quá giờ cả
+hai lần ở trần cũ 153 giây rồi chạy xong ở 162 giây.
+
 **Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
 bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai
 slide `bang_chung` liền nhau lật bên hình. Prompt cũng giới hạn mỗi vai tối đa 2

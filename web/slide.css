@@ -394,3 +394,7 @@
 .sld-kl-p { font-size: 1em !important; }
 .sld-so { padding: .5cqw .9cqw; }
 .sld-so b { font-size: 1.45em; }
+
+/* căn cứ của một tiêu chí: chữ nhỏ màu chì, nhãn viết tay — đọc như chú thích nguồn */
+.sld-cancu { font-size: .82em; color: var(--mo); margin-top: .3cqw !important; }
+.sld-cancu .sld-tay { margin-right: .5cqw; font-size: 1em; }

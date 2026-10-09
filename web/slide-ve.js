@@ -168,8 +168,12 @@
           ${s.he_qua || sua ? `<p class="sld-hq"><b class="sld-tay">Hệ quả</b> ${o("he_qua", s.he_qua, "span", "", "Hệ quả đo được")}</p>` : ""}`;
         break;
       case "yeu_cau":
+        // Mỗi tiêu chí kèm CĂN CỨ trong bài — người dùng chê "tự nhiên cần mạng
+        // lớn, dẫn chứng đâu": tiêu chí không nói từ đâu ra thì người nghe không tin.
         than = `${dau}${tieuDe}<ul class="sld-tc">${ds("tieu_chi", (t, i) => `<li><span class="sld-o"></span><div>
-          ${o(`tieu_chi.${i}.ten`, t.ten, "b", "", "Tiêu chí")}${o(`tieu_chi.${i}.vi_sao`, t.vi_sao, "p", "", "Vì sao cần")}</div></li>`)}</ul>`;
+          ${o(`tieu_chi.${i}.ten`, t.ten, "b", "", "Tiêu chí")}${o(`tieu_chi.${i}.vi_sao`, t.vi_sao, "p", "", "Vì sao cần")}
+          ${t.can_cu || sua ? `<p class="sld-cancu"><b class="sld-tay">Theo bài${t.muc ? " · " + chu(t.muc) : ""}</b> `
+            + `${o(`tieu_chi.${i}.can_cu`, t.can_cu, "span", "", "Bài nói gì dẫn tới tiêu chí này")}</p>` : ""}</div></li>`)}</ul>`;
         break;
       case "y_tuong": {
         const anh = hinh();

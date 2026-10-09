@@ -311,6 +311,18 @@ def test_slide_thieu_tieu_de_thi_dung_tam_va_vi_du_dai_bo_hinh():
     assert s["hinh"] == "" and len(s["buoc"]) == 4
 
 
+def test_slide_tieu_chi_mong_muon_phai_co_can_cu_trong_bai():
+    """Người dùng chê "tự nhiên cần mạng lớn, dẫn chứng đâu": tiêu chí nào cũng kèm
+    căn cứ trong bài; mã nguồn bịa bị bỏ, thiếu căn cứ thì cảnh báo."""
+    from server import slide
+    s = slide.chuan_hoa(_doc(), {"vai": "yeu_cau", "tieu_de": "t", "tieu_chi": [
+        {"ten": "Sức biểu diễn", "vi_sao": "cần", "can_cu": "bài nói mạng lớn nén tốt", "nguon": "b1"},
+        {"ten": "Dễ tối ưu", "vi_sao": "cần", "nguon": "bia"}]})
+    assert s["tieu_chi"][0]["can_cu"] == "Bài nói mạng lớn nén tốt" and s["tieu_chi"][0]["nguon"] == "b1"
+    assert s["tieu_chi"][1]["nguon"] == "" and "b1" in s["nguon"]
+    assert any("căn cứ" in c for c in s["canh_bao"])
+
+
 def test_slide_dinh_dang_cu_coi_nhu_chua_co():
     """Bộ slide v1 (deck/outline) không vẽ được bằng bộ vẽ mới — coi như chưa có,
     đừng để giao diện vỡ."""
