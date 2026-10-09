@@ -767,6 +767,22 @@ Màn sửa: thumbnail và sân khấu nằm trong flex/grid có chiều cao cố
 Trình chiếu: mở lời nói (S) thì slide **co lại nhường chỗ** (`:has()` trên
 `.present`), không bị khung lời nói che nửa phải.
 
+**Tắt hẳn nghĩ thầm** (`NO_REASONING`), cả lượt tạo lẫn lượt viết lại. Đo trên
+bài World Models với DeepSeek V4 Flash: mức `{"effort": "low"}` vẫn tiêu **12.812
+token nghĩ thầm**, chạm trần 16.000 rồi trả **chuỗi rỗng** (`finish_reason:
+length`). Người dùng chờ 360 giây cho hai lượt, trả tiền cả hai, nhận "không đọc
+được". Tắt đi: 44 giây, $0,005, 15 slide. Lượt hỏng vẫn được cộng vào chi phí của
+bài (`_cong_chi_phi`), và lời báo nói đúng lý do (rỗng / quá giờ / JSON hỏng).
+
+**Thứ tự sắp ỔN ĐỊNH theo chặng** (`_sap_lai`), vì slide lộ trình gom vai theo
+`CHANG`: model từng đặt slide con số SAU slide giới hạn. Tách hai slide cùng vai
+liền nhau chỉ tráo TRONG cùng chặng; không còn slide nào để chen thì để liền nhau
+và bộ vẽ đổi dáng (slide con số lần hai: số bên trái, lời bên phải).
+
+`_sach` còn dọn hai thứ đã gặp: dấu tổ hợp lơ lửng sau dấu cách (`632 ± ́251`), và
+`_viet_hoa_dau` **chỉ viết hoa từ chữ Latinh** — bản đầu biến `τ=0.1` thành
+`Τ=0.1` (tau hoa là ký hiệu khác).
+
 Giá: đo trên CIRAG **9.539 token ra cho 12 slide** ($0,047 với DeepSeek V4 Pro),
 tức ~700 token/slide vì `loi_noi` 60–110 chữ. Bản đầu ước 260 token/slide và
 hộp thoại ghi "thường dưới 1 xu" — giờ hộp thoại tạo lại hỏi `/slides/gia` và

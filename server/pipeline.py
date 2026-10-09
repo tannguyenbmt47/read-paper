@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import AsyncIterator
 
 from . import db, depth, llm, prompts, store
@@ -1401,6 +1402,13 @@ def _viet_hoa_dau(t: str) -> str:
         return t
     tu = m.group(2)
     if not tu[0].islower() or any(ch.isupper() for ch in tu[1:]):
+        return t
+    # Chỉ viết hoa một TỪ chữ Latinh. Ký hiệu thì để nguyên: "τ=0.1" viết hoa ra
+    # "Τ=0.1" (tau hoa — một ký hiệu khác), "x_{t}" ra "X_{t}" (biến khác). Đã gặp
+    # thật trên slide bài World Models.
+    loi = tu.rstrip(".,;:!?)\"'”’")
+    if not re.fullmatch(r"[^\W\d_]+(?:-[^\W\d_]+)*", loi) or not all(
+            "LATIN" in unicodedata.name(ch, "") for ch in loi if ch != "-"):
         return t
     return m.group(1) + tu[0].upper() + tu[1:] + t[m.end():]
 

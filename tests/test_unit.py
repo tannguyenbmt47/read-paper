@@ -47,6 +47,13 @@ def test_slide_bo_dau_cham_phay_va_viet_hoa():
                                  "cau": "gom bằng chứng trước; rồi mới trả lời"})
     assert ";" not in s["cau"] and s["cau"] == "Gom bằng chứng trước. Rồi mới trả lời"
     assert s["tieu_de"] == "Ý tưởng gọn"
+    # Ký hiệu không bị viết hoa: τ hoa là một ký hiệu khác
+    assert slide._sach("τ=0.1") == "τ=0.1" and slide._sach("x_{t} tăng dần") == "x_{t} tăng dần"
+    assert slide._sach("multi-hop cần nhiều bước") == "Multi-hop cần nhiều bước"
+    assert slide._sach("độ trễ tăng") == "Độ trễ tăng"
+    # Dấu tổ hợp lơ lửng bị bỏ, dấu tiếng Việt (kể cả dạng tách NFD) giữ nguyên
+    assert slide._sach("632 ± \u0301251") == "632 ± 251"
+    assert slide._sach("ca\u0301ch la\u0300m") == "Cách làm"
     # Từ có chữ hoa giữa giữ nguyên
     assert slide._sach("iRAG lặp lại") == "iRAG lặp lại"
 
@@ -97,8 +104,23 @@ def test_slide_sap_lai_dong_lai_cuoi_va_khong_lap_vai():
                                "bang_chung", "gioi_han")]
     ra = [s["vai"] for s in slide._sap_lai(bo)]
     assert ra[-1] == "dong_lai" and ra.count("dong_lai") == 1
-    assert all(a != b or a == "bang_chung" for a, b in zip(ra, ra[1:]))
+    # Hai `co_che` liền nhau được giữ khi chặng "Cách làm" không còn slide nào khác
+    # để chen vào: giữ đúng chặng quan trọng hơn, và bộ vẽ tự đổi dáng vai lặp.
+    chang = {v: i for i, (_, vs) in enumerate(slide.CHANG) for v in vs}
+    assert [chang[v] for v in ra] == sorted(chang[v] for v in ra)
     assert sorted(ra) == sorted(s["vai"] for s in bo)
+
+
+def test_slide_sap_theo_chang_de_khop_lo_trinh():
+    from server import slide
+    bo = [{"vai": v} for v in ("van_de", "bang_chung", "gioi_han", "so_lieu", "dong_lai")]
+    assert [s["vai"] for s in slide._sap_lai(bo)] == [
+        "van_de", "bang_chung", "so_lieu", "gioi_han", "dong_lai"]
+    # Hai slide con số liền nhau: tách bằng slide bằng chứng CÙNG chặng, không
+    # đẩy qua slide giới hạn
+    bo = [{"vai": v} for v in ("bang_chung", "bang_chung", "so_lieu", "so_lieu", "gioi_han")]
+    ra = [s["vai"] for s in slide._sap_lai(bo)]
+    assert ra[-1] == "gioi_han" and ra.index("gioi_han") > max(i for i, v in enumerate(ra) if v == "so_lieu")
 
 
 def test_slide_thieu_co_che_thi_bao_ca_bo():

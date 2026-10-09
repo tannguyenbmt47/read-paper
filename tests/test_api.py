@@ -1507,3 +1507,28 @@ def test_ban_xuat_dung_latex_nhu_man_hinh_va_khong_vach_mau_doc(app_client):
     assert not re.search(r"border-left:\s*[23]px solid", css), "vạch màu dọc cạnh ô chữ"
     assert "text-transform:uppercase" not in css.replace(" ", "")
     assert "data:font/woff2" in css  # font nhúng: mở file ngoài app vẫn đúng chữ
+
+
+def test_slide_model_tra_rong_thi_bao_ro_va_van_ghi_chi_phi(app_client, monkeypatch):
+    """DeepSeek V4 Flash tiêu hết trần token vào nghĩ thầm rồi trả CHUỖI RỖNG.
+    Hai lượt hỏng vẫn bị tính tiền — phải cộng vào chi phí của bài, và lời báo
+    phải nói đúng lý do chứ không phải "không đọc được"."""
+    from server import llm, store
+    r = app_client.post("/api/import", data={
+        "text": "Bài rỗng\n\nMột đoạn văn đủ dài để thành một khối riêng của bài thử.",
+        "model": "test/rong", "force": "1"})
+    did = r.json()["id"]
+    d = store.load(did)
+    d["brief"] = {"title_vi": "Bài rỗng", "glossary": []}
+    store.save(d)
+    goi = []
+
+    async def rong(messages, **kw):
+        goi.append(kw.get("reasoning"))
+        return "", llm.Usage(prompt_tokens=100, completion_tokens=16000, cost=0.008)
+
+    monkeypatch.setattr(llm, "complete", rong)
+    r = app_client.post(f"/api/doc/{did}/slides/tao", json={"phut": 10})
+    assert r.status_code == 502 and "rỗng" in r.json()["detail"]
+    assert len(goi) == 2 and all(x == {"enabled": False} for x in goi)
+    assert abs(store.load(did)["usage"]["cost"] - 0.016) < 1e-9

@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+import unicodedata
 
 from . import db, llm, store
 from .depth import DEPTH_RULES
@@ -201,7 +202,10 @@ def _sach(t) -> str:
     gộp khoảng trắng, viết hoa chữ đầu (trừ từ có chữ hoa giữa như `iRAG`)."""
     from .pipeline import _viet_hoa_dau
 
-    t = " ".join(str(t or "").split())
+    t = unicodedata.normalize("NFC", " ".join(str(t or "").split()))
+    # Dấu tổ hợp lơ lửng (không đứng sau chữ cái): đã gặp "632 ± ́251" — model
+    # chèn U+0301 sau dấu cách, hiện thành dấu sắc lạc giữa con số.
+    t = re.sub(r"(?<![^\W\d_])[\u0300-\u036f]+", "", t)
     t = re.sub(r"\s*;\s*(\S)", lambda m: ". " + m.group(1).upper(), t)
     return _viet_hoa_dau(t)
 
@@ -282,10 +286,17 @@ def _sap_lai(bo: list[dict]) -> list[dict]:
     """Giữ `dong_lai` ở cuối, và tách hai slide liền nhau cùng vai (trừ bằng chứng)
     bằng cách đẩy slide sau xuống chỗ hợp lệ gần nhất."""
     cuoi = [s for s in bo if s["vai"] == "dong_lai"][-1:]
-    con = [s for s in bo if s["vai"] != "dong_lai"]
+    # Sắp ỔN ĐỊNH theo chặng: slide lộ trình gom vai theo `CHANG`, nên một slide
+    # con số đứng sau slide giới hạn (đã gặp trên bài World Models) làm lộ trình
+    # nói một đằng mà thứ tự chiếu một nẻo. Trong cùng chặng giữ thứ tự của model.
+    chang = {v: i for i, (_, vs) in enumerate(CHANG) for v in vs}
+    con = sorted((s for s in bo if s["vai"] != "dong_lai"), key=lambda s: chang.get(s["vai"], 9))
     for i in range(1, len(con)):
         if con[i]["vai"] == con[i - 1]["vai"] and con[i]["vai"] != "bang_chung":
+            # Chỉ tráo TRONG cùng chặng — tráo qua chặng là phá thứ tự vừa sắp.
             for j in range(i + 1, len(con)):
+                if chang.get(con[j]["vai"], 9) != chang.get(con[i]["vai"], 9):
+                    break
                 if con[j]["vai"] != con[i - 1]["vai"]:
                     con[i], con[j] = con[j], con[i]
                     break
@@ -337,6 +348,14 @@ def _danh_ma(bo: list[dict]) -> list[dict]:
     return bo
 
 
+def _cong_chi_phi(doc_id: str, usage) -> None:
+    doc = store.load(doc_id)
+    tong = llm.Usage(**doc.get("usage", {}))
+    tong.add(usage)
+    doc["usage"] = tong.dict()
+    store.save(doc)
+
+
 def tran_slide(n_chars: int) -> float:
     """Trần thời gian cho lượt sinh slide — cùng lối với `pipeline.tran_brief`."""
     return min(240.0, 90.0 + n_chars / 1000)
@@ -344,29 +363,44 @@ def tran_slide(n_chars: int) -> float:
 
 async def tao(doc_id: str, phut: int = 15) -> tuple[dict, dict, dict]:
     """Sinh cả bộ slide: MỘT lượt gọi model. Trả (bộ slide, chi phí lượt này, cộng dồn)."""
-    from .pipeline import LOW_REASONING, HetGio, cached_prefix, full_source_text
+    from .pipeline import NO_REASONING, HetGio, cached_prefix, full_source_text
 
     doc = store.load(doc_id)
     phut = phut if phut in SO_SLIDE else 15
     sysmsg = llm.system_message(cached_prefix(doc), SLIDE_TASK, model=doc["model"])
     user = _user(doc, SO_SLIDE[phut])
     tran = tran_slide(len(full_source_text(doc["blocks"])))
+    # Tắt hẳn nghĩ thầm. Đo trên bài World Models với DeepSeek V4 Flash: mức
+    # "low" vẫn tiêu 12.812 token nghĩ thầm, chạm trần 16.000 rồi trả về CHUỖI
+    # RỖNG (finish_reason=length) — người dùng chờ 360 giây, trả tiền hai lượt,
+    # nhận "không đọc được". Cùng bẫy đã ghi cho bài giảng của kho survey. Độ sâu
+    # ở đây đến từ khuôn vai + trần chữ của `SLIDE_TASK`, không từ token nghĩ thầm.
+    usage = llm.Usage()
+    data, loi = None, ""
     for lan in range(2):
         try:
-            raw, usage = await asyncio.wait_for(llm.complete(
+            raw, u = await asyncio.wait_for(llm.complete(
                 [sysmsg, {"role": "user", "content": user}],
                 model=doc["model"], session_id=doc_id, max_tokens=16000,
-                temperature=0.4, reasoning=LOW_REASONING), timeout=tran)
+                temperature=0.4, reasoning=NO_REASONING), timeout=tran)
+            usage.add(u)
+            if not raw.strip():
+                loi = "model trả về rỗng (hết trần token trước khi viết xong)"
+                continue
             data = llm.extract_json(raw)
             break
         except asyncio.TimeoutError:
-            if lan == 1:
-                raise HetGio(f"model không trả lời sau {int(tran)} giây, đã thử hai lần")
+            loi = f"model không trả lời sau {int(tran)} giây"
         except ValueError:
             # JSON hỏng: thử lại MỘT lần (S11 của báo cáo test — lỗi thô cho người dùng)
-            if lan == 1:
-                raise ValueError("Model trả về nội dung không đọc được, đã thử hai lần. "
-                                 "Thử lại, hoặc đổi model ở nút ▾ cạnh nút Dịch.")
+            loi = "model trả về nội dung không đọc được"
+    if data is None:
+        # Lượt hỏng vẫn bị tính tiền — ghi vào chi phí của bài, không giấu.
+        _cong_chi_phi(doc_id, usage)
+        if loi.startswith("model không trả lời"):
+            raise HetGio(loi + ", đã thử hai lần")
+        raise ValueError(f"Chưa soạn được: {loi}, đã thử hai lần. "
+                         "Thử lại, hoặc đổi model ở nút ▾ cạnh nút Dịch.")
     doc = store.load(doc_id)
     bo = [x for x in (chuan_hoa(doc, s) for s in (data or {}).get("slides") or []
                       if isinstance(s, dict)) if x]
@@ -393,7 +427,7 @@ Giữ đúng vai đã cho. Trả về JSON {"slides": [một slide]}.
 
 async def viet_lai(doc_id: str, sid: str, goi_y: str = "") -> tuple[dict, dict, dict]:
     """Viết lại một slide, giữ vai. Rẻ: prefix vẫn đi qua cache."""
-    from .pipeline import LOW_REASONING, cached_prefix
+    from .pipeline import NO_REASONING, cached_prefix
 
     doc = store.load(doc_id)
     bo = lay(doc)["bo"]
@@ -407,7 +441,7 @@ async def viet_lai(doc_id: str, sid: str, goi_y: str = "") -> tuple[dict, dict, 
         [llm.system_message(cached_prefix(doc), VIET_LAI_TASK, model=doc["model"]),
          {"role": "user", "content": user}],
         model=doc["model"], session_id=doc_id, max_tokens=3000,
-        temperature=0.6, reasoning=LOW_REASONING)
+        temperature=0.6, reasoning=NO_REASONING)
     moi = (llm.extract_json(raw) or {}).get("slides") or []
     doc = store.load(doc_id)
     s = chuan_hoa(doc, {**(moi[0] if moi else {}), "vai": cu["vai"]}) if moi else None

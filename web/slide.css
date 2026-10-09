@@ -216,6 +216,10 @@
 .sld-sl-nhan { font-size: 1.2em; font-weight: 600; }
 .sld-sl-moc { font-family: var(--tay); color: var(--mo); font-size: 1.1em; }
 .sld-sl-yn { max-width: 70%; color: var(--muc-2); margin-top: 1cqw !important; }
+.sld-sl.lat { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); grid-template-rows: auto auto auto;
+  column-gap: 4cqw; align-content: center; align-items: start; text-align: left; }
+.sld-sl.lat .sld-sl-so { grid-row: 1 / 4; align-self: center; font-size: calc(var(--s) * 8.5cqw); }
+.sld-sl.lat .sld-sl-yn { max-width: none; }
 
 /* ------------------------------------------------------- giới hạn */
 .sld-gh { list-style: none; margin: auto 0; padding: 0; display: grid; gap: 1.8cqw; }

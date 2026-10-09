@@ -175,7 +175,9 @@
         break;
       }
       case "so_lieu":
-        than = `${dau}${tieuDe}<div class="sld-sl">
+        // Lần thứ hai trong bộ: số bên trái, lời bên phải — hai slide con số hay
+        // đứng liền nhau (cùng chặng Bằng chứng), cùng dáng là thấy lặp ngay.
+        than = `${dau}${tieuDe}<div class="sld-sl${lanThu % 2 ? " lat" : ""}">
           ${o("gia_tri", s.gia_tri, "b", "sld-sl-so", "Con số")}
           ${o("nhan", s.nhan, "p", "sld-sl-nhan", "Đo cái gì")}
           ${o("moc", s.moc, "p", "sld-sl-moc", "So với gì")}
