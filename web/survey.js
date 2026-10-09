@@ -1196,6 +1196,7 @@ function svWire() {
   $$(".rail-item").forEach((b) => {
     b.onclick = () => {
       if (b.dataset.tool === "survey") { svOpen(); return; }
+      if (b.dataset.tool === "library") { svStopAsk(); tvOpen(); return; }
       svStopAsk();
       // Đang đọc dở một bài thì quay lại đúng chỗ đó, đừng đá về màn nhập —
       // mất chỗ đang đọc là cái giá quá đắt cho một cú bấm nhầm.

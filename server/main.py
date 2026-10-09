@@ -17,7 +17,7 @@ from fastapi import Response  # noqa: E402
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from . import db, layout, llm, parser, pipeline, prompts, store  # noqa: E402
+from . import db, layout, llm, parser, pipeline, prompts, store, thongtin  # noqa: E402
 from . import slide_theme as theme  # noqa: E402
 from . import slide_fit  # noqa: E402
 
@@ -82,7 +82,7 @@ def _with_chunks(doc: dict) -> dict:
 # ----------------------------------------------------------------- trang web
 
 
-_ASSETS = ("vendor/fonts.css", "style.css", "survey.css", "app.js", "survey.js")
+_ASSETS = ("vendor/fonts.css", "style.css", "survey.css", "app.js", "survey.js", "thuvien.js")
 
 
 def _asset_tag() -> str:
@@ -180,6 +180,116 @@ def _ten_thu_muc(body: dict, bo_qua: str | None = None) -> str:
 @app.get("/api/folders")
 async def folders():
     return db.list_folders()
+
+
+# ------------------------------------------- thư viện kiểu Zotero: thông tin & nhãn
+
+_NGAM: set = set()      # giữ tham chiếu tới tác vụ ngầm, không thì GC dọn mất giữa chừng
+
+
+def _lay_thong_tin_ngam(doc_id: str) -> None:
+    # Tắt được (`META_LOOKUP=off`): bộ test không được gọi mạng ngoài.
+    if os.getenv("META_LOOKUP", "on").lower() == "off":
+        return
+
+    async def chay():
+        try:
+            doc = store.load(doc_id)
+            d, nguon = await thongtin.tim(doc)
+            if d:
+                db.set_meta(doc_id, d, nguon)
+        except Exception as e:  # noqa: BLE001 — việc phụ, hỏng thì để nút lấy bù
+            print(f"[thông tin] {doc_id}: {type(e).__name__}: {e}")
+    t = asyncio.get_event_loop().create_task(chay())
+    _NGAM.add(t)
+    t.add_done_callback(_NGAM.discard)
+
+
+@app.get("/api/doc/{doc_id}/meta")
+async def get_meta(doc_id: str):
+    if not store.exists(doc_id):
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    return db.get_meta(doc_id)
+
+
+@app.post("/api/doc/{doc_id}/meta/fetch")
+async def fetch_meta(doc_id: str):
+    """Tra tác giả / năm / nơi đăng từ Semantic Scholar, arXiv, Crossref. Miễn phí.
+    Trường người dùng đã sửa tay không bị ghi đè."""
+    try:
+        doc = store.load(doc_id)
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    d, nguon = await thongtin.tim(doc)
+    if not d:
+        raise HTTPException(404, "Không tìm ra thông tin bài này — tiêu đề có thể bị bóc sai, "
+                                 "hoặc bài không có trên arXiv/Crossref. Bạn điền tay được.")
+    return db.set_meta(doc_id, d, nguon)
+
+
+@app.patch("/api/doc/{doc_id}/meta")
+async def edit_meta(doc_id: str, body: dict = Body(...)):
+    """Sửa tay thông tin bài. Tác giả nhận cả danh sách lẫn chuỗi ngăn bằng `;`."""
+    if not store.exists(doc_id):
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    d = {k: v for k, v in body.items() if k in db.META_FIELDS}
+    if isinstance(d.get("authors"), str):
+        d["authors"] = [a.strip() for a in re.split(r"[;\n]", d["authors"]) if a.strip()]
+    if "year" in d:
+        y = str(d["year"] or "").strip()
+        if y and not (y.isdigit() and 1900 <= int(y) <= 2100):
+            raise HTTPException(400, "Năm phải là một số như 2024")
+        d["year"] = int(y) if y else None
+    return db.set_meta(doc_id, d, "tay", tay=True)
+
+
+@app.post("/api/docs/meta/fetch-missing")
+async def fetch_missing_meta():
+    """Lấy bù thông tin cho mọi bài chưa có. Tuần tự, nghỉ giữa các lượt —
+    Semantic Scholar từ chối khi gọi dồn."""
+    xong, khong = 0, 0
+    for r in db.list_docs():
+        if r.get("meta"):
+            continue
+        d, nguon = await thongtin.tim(store.load(r["id"]))
+        if d:
+            db.set_meta(r["id"], d, nguon)
+            xong += 1
+        else:
+            khong += 1
+        await asyncio.sleep(1.0)
+    return {"found": xong, "missing": khong}
+
+
+@app.put("/api/doc/{doc_id}/tags")
+async def put_tags(doc_id: str, body: dict = Body(...)):
+    if not store.exists(doc_id):
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    tags = body.get("tags")
+    if not isinstance(tags, list):
+        raise HTTPException(400, "Cần danh sách nhãn")
+    return {"tags": db.set_tags(doc_id, tags[:30]), "all": db.list_tags()}
+
+
+@app.get("/api/tags")
+async def all_tags():
+    return db.list_tags()
+
+
+@app.get("/api/docs/bibtex")
+async def docs_bibtex(ids: str = "", folder: str = "", tag: str = ""):
+    """Xuất BibTeX: theo danh sách mã, theo thư mục, theo nhãn, hoặc cả thư viện."""
+    rows = db.list_docs()
+    if ids:
+        chon = {x for x in ids.split(",") if x.strip()}
+        rows = [r for r in rows if r["id"] in chon]
+    elif folder:
+        rows = [r for r in rows if (r.get("folder_id") or "none") == folder]
+    elif tag:
+        rows = [r for r in rows if tag in (r.get("tags") or [])]
+    bib = "\n".join(thongtin.bibtex(r, db.get_meta(r["id"])["data"]) for r in rows)
+    return Response(bib or "% (không có bài nào)\n", media_type="application/x-bibtex",
+                    headers={"Content-Disposition": 'attachment; filename="loupe.bib"'})
 
 
 @app.post("/api/folders")
@@ -1459,6 +1569,9 @@ async def import_doc(
     store.save(doc)
     if che_do == "phien_ban":
         doc["version"] = db.link_version(doc["id"], goc)
+    # Thư viện kiểu Zotero: tự lấy tác giả / năm / nơi đăng — NGẦM, không bắt
+    # người dùng chờ mạng ngoài. Hỏng thì thôi, nút "Lấy thông tin" lấy bù được.
+    _lay_thong_tin_ngam(doc["id"])
     _say(job, "Xong", f"{len(blocks)} khối · {len(imgs)} hình", 100)
     # Nhường một nhịp cho vòng lặp đẩy bước cuối ra dây trước khi đóng kênh —
     # `put_nowait` không nhả quyền điều khiển, đóng ngay thì "Xong" chết trong

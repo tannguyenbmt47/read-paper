@@ -1421,7 +1421,7 @@ async function openDoc(id) {
 /* ============================ bước 1: kiểm tra ============================ */
 
 function showScreen(id) {
-  ["start", "review", "reader", "slides", "survey"].forEach((s) =>
+  ["start", "review", "reader", "slides", "survey", "library"].forEach((s) =>
     $("#" + s).classList.toggle("hidden", s !== id));
   syncRail(id);
   // Về màn nhập là làm mới thống kê và danh sách. Trước đây chúng chỉ nạp một
@@ -1450,6 +1450,7 @@ function docHash() {
   const h = decodeURIComponent(location.hash.slice(1));
   if (!h) return { kind: "start" };
   if (h === "survey" || h.startsWith("survey=")) return { kind: "survey" };
+  if (h === "thu-vien") return { kind: "library" };
   return { kind: "doc", id: h.startsWith("doc=") ? h.slice(4) : h };
 }
 
@@ -1460,6 +1461,10 @@ function wireHashNav() {
     // — tức lúc người dùng bấm Back/Forward về đúng hash ấy.
     if (h.kind === "survey") {
       if ($("#survey")?.classList.contains("hidden") && typeof svOpen === "function") svOpen();
+      return;
+    }
+    if (h.kind === "library") {
+      if ($("#library")?.classList.contains("hidden") && typeof tvOpen === "function") tvOpen();
       return;
     }
     const id = h.id;
@@ -1494,7 +1499,7 @@ function wireHashNav() {
    chỗ khác (mở bài từ #doc= trên thanh địa chỉ, bấm nút quay lại…). Nên đồng bộ
    ở ĐÂY chứ không ở chỗ bấm nút — chỗ bấm nút chỉ là một trong nhiều đường vào. */
 function syncRail(id) {
-  const tool = id === "survey" ? "survey" : "doc";
+  const tool = id === "survey" || id === "library" ? id : "doc";
   $$(".rail-item").forEach((b) => b.classList.toggle("is-on", b.dataset.tool === tool));
 }
 

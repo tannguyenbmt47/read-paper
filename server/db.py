@@ -103,6 +103,23 @@ CREATE TABLE IF NOT EXISTS doc_version (
     so     INTEGER NOT NULL        -- 1, 2, 3…
 );
 CREATE INDEX IF NOT EXISTS idx_doc_version ON doc_version(goc_id);
+
+-- Thông tin thư mục học (tác giả, năm, nơi đăng, DOI…) cho thư viện kiểu Zotero.
+-- Bảng riêng, cùng lý do với `doc_folder`. `sua_tay` liệt kê trường người dùng
+-- đã sửa — lượt tự lấy thông tin sau đó không được ghi đè chúng.
+CREATE TABLE IF NOT EXISTS doc_meta (
+    doc_id     TEXT PRIMARY KEY,
+    data       TEXT NOT NULL,          -- JSON: authors[], year, venue, doi, arxiv, url, abstract…
+    nguon      TEXT,                   -- semanticscholar | arxiv | crossref | tay
+    sua_tay    TEXT,                   -- JSON: danh sách trường đã sửa tay
+    updated_at REAL
+);
+CREATE TABLE IF NOT EXISTS doc_tag (
+    doc_id TEXT NOT NULL,
+    tag    TEXT NOT NULL,
+    PRIMARY KEY (doc_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_doc_tag ON doc_tag(tag);
 """
 
 
@@ -203,6 +220,8 @@ def delete_doc(doc_id: str) -> None:
         # survey): sót dòng này thì thư mục đếm cả bài đã xoá.
         c.execute("DELETE FROM doc_folder WHERE doc_id = ?", (doc_id,))
         c.execute("DELETE FROM doc_version WHERE doc_id = ?", (doc_id,))
+        c.execute("DELETE FROM doc_meta WHERE doc_id = ?", (doc_id,))
+        c.execute("DELETE FROM doc_tag WHERE doc_id = ?", (doc_id,))
 
 
 # ------------------------------------------------------------ phiên bản
@@ -296,11 +315,16 @@ def list_docs() -> list[dict]:
     """Danh sách bài — chỉ đọc cột cần, không nạp cả nội dung như bản JSON cũ."""
     rows = conn().execute(
         "SELECT d.id, d.title, d.title_vi, d.model, d.source, d.usage, d.created_at,"
-        " d.updated_at, d.blocks, d.translations, m.folder_id, v.goc_id, v.so"
+        " d.updated_at, d.blocks, d.translations, m.folder_id, v.goc_id, v.so,"
+        " t.data AS meta"
         " FROM documents d LEFT JOIN doc_folder m ON m.doc_id = d.id"
         " LEFT JOIN doc_version v ON v.doc_id = d.id"
+        " LEFT JOIN doc_meta t ON t.doc_id = d.id"
         " ORDER BY d.updated_at DESC"
     ).fetchall()
+    nhan: dict[str, list[str]] = {}
+    for tr in conn().execute("SELECT doc_id, tag FROM doc_tag ORDER BY tag"):
+        nhan.setdefault(tr["doc_id"], []).append(tr["tag"])
     out = []
     for r in rows:
         blocks = json.loads(r["blocks"] or "[]")
@@ -327,8 +351,91 @@ def list_docs() -> list[dict]:
             "version": r["so"],          # None = bài không có phiên bản nào khác
             "version_of": r["goc_id"],
             "updated_at": r["updated_at"] or 0,
+            # thư viện kiểu Zotero: cột Tác giả / Năm / Nơi đăng + nhãn
+            "meta": _meta_gon(r["meta"]),
+            "tags": nhan.get(r["id"], []),
         })
     return out
+
+
+# ------------------------------------------------------- thông tin & nhãn
+
+META_FIELDS = ("authors", "year", "venue", "doi", "arxiv", "url", "abstract",
+               "title_goc", "cites")
+
+
+def _meta_gon(raw: str | None) -> dict:
+    """Bản gọn cho danh sách: bỏ `abstract` (dài, chỉ khung chi tiết mới cần)."""
+    if not raw:
+        return {}
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        return {}
+    return {k: v for k, v in d.items() if k != "abstract"}
+
+
+def get_meta(doc_id: str) -> dict:
+    row = conn().execute("SELECT data, nguon, sua_tay, updated_at FROM doc_meta"
+                         " WHERE doc_id = ?", (doc_id,)).fetchone()
+    if not row:
+        return {"data": {}, "nguon": "", "sua_tay": [], "updated_at": 0}
+    return {"data": json.loads(row["data"] or "{}"), "nguon": row["nguon"] or "",
+            "sua_tay": json.loads(row["sua_tay"] or "[]"),
+            "updated_at": row["updated_at"] or 0}
+
+
+def set_meta(doc_id: str, data: dict, nguon: str, tay: bool = False) -> dict:
+    """Ghi thông tin bài. `tay=True`: người dùng sửa — ghi đè và nhớ trường đó.
+
+    Lượt tự lấy (`tay=False`) KHÔNG ghi đè trường đã sửa tay: tác giả bóc từ
+    Semantic Scholar sai một tên, bạn sửa, rồi bấm "Lấy lại thông tin" — sửa tay
+    không được mất.
+    """
+    cu = get_meta(doc_id)
+    moi = dict(cu["data"])
+    sua = set(cu["sua_tay"])
+    for k, v in data.items():
+        if k not in META_FIELDS:
+            continue
+        if tay:
+            moi[k] = v
+            sua.add(k)
+        elif k not in sua and v not in (None, "", []):
+            moi[k] = v
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO doc_meta(doc_id, data, nguon, sua_tay, updated_at)"
+                  " VALUES (?, ?, ?, ?, ?)",
+                  (doc_id, json.dumps(moi, ensure_ascii=False),
+                   ((cu["nguon"] or "tay") if tay else nguon),
+                   json.dumps(sorted(sua), ensure_ascii=False), time.time()))
+    return get_meta(doc_id)
+
+
+def norm_tag(t: str) -> str:
+    """Nhãn: gọn khoảng trắng, tối đa 40 ký tự. Giữ hoa thường như người dùng gõ."""
+    return " ".join(str(t or "").split())[:40]
+
+
+def set_tags(doc_id: str, tags: list[str]) -> list[str]:
+    sach = []
+    seen = set()
+    for t in tags:
+        n = norm_tag(t)
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            sach.append(n)
+    with conn() as c:
+        c.execute("DELETE FROM doc_tag WHERE doc_id = ?", (doc_id,))
+        c.executemany("INSERT INTO doc_tag(doc_id, tag) VALUES (?, ?)",
+                      [(doc_id, t) for t in sach])
+    return sach
+
+
+def list_tags() -> list[dict]:
+    """Mọi nhãn kèm số bài — khung trái của thư viện."""
+    return [{"tag": r["tag"], "count": r["n"]} for r in conn().execute(
+        "SELECT tag, COUNT(*) AS n FROM doc_tag GROUP BY tag ORDER BY LOWER(tag)")]
 
 
 def doc_by_sha(sha256: str) -> dict | None:

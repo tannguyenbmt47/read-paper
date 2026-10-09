@@ -67,6 +67,14 @@
     </svg>
     <span class="rail-lb">Dịch</span>
   </button>
+  <button class="rail-item" data-tool="library"
+          title="Thư viện: thư mục, nhãn, tác giả, năm, nơi đăng — kiểu Zotero">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4.5 4v16M8.5 4v16"/><path d="m12.5 4.8 3.9-1 4 15.4-3.9 1z"/>
+    </svg>
+    <span class="rail-lb">Thư viện</span>
+  </button>
   <button class="rail-item" data-tool="survey"
           title="Nạp cả kho tài liệu rồi hỏi — câu trả lời có trích dẫn tới từng đoạn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
@@ -78,6 +86,40 @@
     <span class="rail-lb">Tìm hiểu</span>
   </button>
 </nav>
+
+<!-- ============================= THƯ VIỆN =============================
+     Kiểu Zotero/Mendeley: ba khung — cây thư mục & nhãn · bảng bài báo sắp theo
+     cột · chi tiết bài đang chọn. Mã ở web/thuvien.js. -->
+<section id="library" class="screen hidden">
+  <div class="tv">
+    <aside class="tv-nav" id="tvNav" aria-label="Thư mục và nhãn"></aside>
+    <div class="tv-main">
+      <div class="tv-bar">
+        <input id="tvQ" class="input" type="search" placeholder="Tìm tên bài, tác giả, nơi đăng, nhãn…"
+               aria-label="Tìm trong thư viện">
+        <button id="tvFetch" class="btn btn-sm" title="Tra tác giả, năm, nơi đăng cho các bài còn thiếu — miễn phí, qua Semantic Scholar, arXiv, Crossref">Lấy thông tin còn thiếu</button>
+        <button id="tvBib" class="btn btn-sm" title="Tải BibTeX của các bài đang hiện (hoặc đang chọn)">BibTeX</button>
+        <button id="tvAdd" class="btn btn-sm btn-primary">＋ Nạp bài</button>
+      </div>
+      <div id="tvSel" class="tv-sel hidden"></div>
+      <div class="tv-tablewrap">
+        <table class="tv-table" id="tvTable">
+          <thead><tr>
+            <th class="c-dau" data-sort="tiendo" title="Tiến độ dịch">●</th>
+            <th data-sort="ten">Tiêu đề</th>
+            <th data-sort="tacgia">Tác giả</th>
+            <th class="c-nam" data-sort="nam">Năm</th>
+            <th data-sort="noidang">Nơi đăng</th>
+            <th class="c-ngay" data-sort="them">Đã thêm</th>
+          </tr></thead>
+          <tbody id="tvRows"></tbody>
+        </table>
+        <p id="tvEmpty" class="tv-empty hidden"></p>
+      </div>
+    </div>
+    <aside class="tv-detail" id="tvDetail" aria-label="Chi tiết bài"></aside>
+  </div>
+</section>
 
 <!-- ============================ MÀN HÌNH NHẬP ============================ -->
 <section id="start" class="screen">
@@ -188,6 +230,8 @@
         </div>
         <button id="selBtn" class="btn btn-nho" type="button"
                 title="Chọn nhiều bài để chuyển thư mục hoặc xoá một lượt (Ctrl+bấm vào thẻ cũng được)">Chọn</button>
+        <button id="goLibrary" class="btn btn-nho" type="button"
+                title="Thư viện đầy đủ kiểu Zotero: tác giả, năm, nơi đăng, nhãn, BibTeX">Thư viện ↗</button>
       </div>
       <!-- Thư mục: lọc thư viện, và là chỗ THẢ thẻ bài vào để chuyển. -->
       <nav id="folderBar" class="folder-bar" aria-label="Thư mục"></nav>
@@ -967,5 +1011,6 @@
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/app.js"></script>
 <script src="/survey.js"></script>
+<script src="/thuvien.js"></script>
 </body>
 </html>

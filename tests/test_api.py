@@ -1511,3 +1511,37 @@ def test_boc_lai_doi_ten_anh_theo_ma_khoi(app_client):
         if b["type"] == "caption":
             assert b["figure"] == b["id"], "ảnh phải mang đúng mã khối"
             assert store.image_path(doc["id"], b["id"]).read_bytes() == f"PNG-{b['text']}".encode()
+
+
+def test_thu_vien_thong_tin_nhan_va_bibtex(app_client):
+    """Thư viện kiểu Zotero: sửa tay thông tin, gắn nhãn, xuất BibTeX — và lượt
+    tự lấy thông tin sau đó KHÔNG ghi đè trường đã sửa tay."""
+    from server import db
+    r = app_client.post("/api/import", data={"text": "Attention Is All You Need\n\nThe dominant sequence "
+                                            "transduction models are based on recurrent networks.",
+                                            "model": "test/tv"})
+    did = r.json()["id"]
+    r = app_client.patch(f"/api/doc/{did}/meta", json={"authors": "Ashish Vaswani; Noam Shazeer",
+                                                       "year": "2017", "venue": "NeurIPS"})
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["authors"] == ["Ashish Vaswani", "Noam Shazeer"]
+    assert set(r.json()["sua_tay"]) == {"authors", "year", "venue"}
+    # lượt tự lấy (giả) không được đè tác giả đã sửa tay, nhưng bổ sung trường còn trống
+    db.set_meta(did, {"authors": ["Sai Tên"], "doi": "10.5555/3295222"}, "crossref")
+    m = db.get_meta(did)["data"]
+    assert m["authors"] == ["Ashish Vaswani", "Noam Shazeer"] and m["doi"] == "10.5555/3295222"
+    assert app_client.patch(f"/api/doc/{did}/meta", json={"year": "năm"}).status_code == 400
+
+    r = app_client.put(f"/api/doc/{did}/tags", json={"tags": ["transformer", " Transformer ", "đọc sau"]})
+    assert r.json()["tags"] == ["transformer", "đọc sau"]      # trùng không phân biệt hoa thường
+    assert {"tag": "đọc sau", "count": 1} in app_client.get("/api/tags").json()
+    row = next(x for x in app_client.get("/api/docs").json() if x["id"] == did)
+    assert row["meta"]["year"] == 2017 and row["tags"] == ["transformer", "đọc sau"]
+    assert "abstract" not in row["meta"]                       # danh sách không chở abstract
+
+    bib = app_client.get(f"/api/docs/bibtex?ids={did}").text
+    assert "@article{vaswani2017" in bib and "author = {Ashish Vaswani and Noam Shazeer}" in bib
+    assert "year = {2017}" in bib and "journal = {NeurIPS}" in bib
+
+    app_client.post("/api/docs/delete", json={"ids": [did]})
+    assert db.get_meta(did)["data"] == {} and "đọc sau" not in [t["tag"] for t in db.list_tags()]

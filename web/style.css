@@ -2042,7 +2042,7 @@ mark.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muc) 30%, transpa
 .btn-nho { padding: .3rem .65rem; font-size: .85rem; box-shadow: 2px 2px 0 var(--bong); }
 .btn-nho:hover:not(:disabled) { box-shadow: 3px 3px 0 var(--bong); }
 .btn-nho .ico { width: 1rem; height: 1rem; margin-right: .3rem; }
-.recent-h #selBtn { flex: none; }
+.recent-h #selBtn, .recent-h #goLibrary { flex: none; }
 #selBtn.is-on { background: var(--hl); color: #1d1b18; }
 
 .folder-bar { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .9rem; align-items: center; }
@@ -2185,3 +2185,128 @@ a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: trans
   text-decoration: none;
 }
 .brand-help:hover { background: var(--accent-soft); }
+
+/* ================================================== thư viện kiểu Zotero
+   Ba khung trên một tờ: cây thư mục & nhãn · bảng bài báo · chi tiết bài.
+   Bảng là thứ để QUÉT nhiều bài một lúc, nên dòng mảnh, kẻ chì, chữ sans; chất
+   sổ tay dồn vào khung (nét mực, bóng cứng) và vệt dạ quang khi chọn. */
+#library { height: 100vh; overflow: hidden; }
+@media (max-width: 1250px) { #library { height: auto; min-height: 100vh; overflow: visible; } }
+.tv {
+  display: grid; grid-template-columns: 230px minmax(0, 1fr) 340px; gap: 1rem;
+  height: 100%; padding: 1rem; box-sizing: border-box; min-height: 0;
+}
+.tv-nav, .tv-main, .tv-detail {
+  background: var(--surface); border: 2px solid var(--muc); border-radius: 12px;
+  box-shadow: 3px 3px 0 var(--bong); min-height: 0;
+}
+.tv-nav { overflow-y: auto; padding: .8rem .6rem; }
+.tv-nav h3 {
+  display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--hand); font-weight: 400; font-size: 1.1rem; color: var(--muted);
+  margin: .7rem .4rem .3rem;
+}
+.tv-nav h3:first-child { margin-top: 0; }
+.tv-nav ul { list-style: none; margin: 0; padding: 0; }
+.tv-loc {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: .4rem;
+  padding: .32rem .5rem; border: 1.5px solid transparent; border-radius: 8px;
+  background: none; font: inherit; font-size: .92rem; color: var(--ink-2); cursor: pointer; text-align: left;
+}
+.tv-loc span { display: flex; align-items: center; gap: .4rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-loc .ico { width: 1rem; height: 1rem; flex: none; }
+.tv-loc i { font-style: normal; font-family: var(--hand); color: var(--muted); flex: none; }
+.tv-loc:hover { background: var(--surface-2); }
+.tv-loc.is-on { background: color-mix(in srgb, var(--hl) 45%, transparent); color: var(--ink); border-color: var(--muc); }
+.tv-loc.tha { border: 1.5px dashed var(--accent); background: var(--accent-soft); }
+.tv-tag { color: var(--accent); font-weight: 700; }
+.tv-trong { font-family: var(--hand); color: var(--muted); font-size: .95rem; padding: .2rem .5rem; }
+.tv-them { padding: .1rem; }
+
+.tv-main { display: flex; flex-direction: column; overflow: hidden; }
+.tv-bar { display: flex; gap: .5rem; align-items: center; padding: .7rem; border-bottom: 1.5px dashed var(--line); flex-wrap: wrap; }
+.tv-bar .input { flex: 1 1 14rem; min-width: 0; margin: 0; }
+.tv-sel {
+  display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; padding: .5rem .7rem;
+  background: color-mix(in srgb, var(--hl) 30%, var(--surface)); border-bottom: 1.5px solid var(--muc);
+}
+.tv-sel select { width: auto; margin: 0; }
+.tv-xoa:hover { color: var(--red); border-color: var(--red); }
+.tv-tablewrap { flex: 1; overflow: auto; min-height: 0; }
+.tv-table { width: 100%; border-collapse: collapse; font-size: .9rem; table-layout: fixed; }
+.tv-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left;
+  font-family: var(--display); font-weight: 700; font-size: .88rem; color: var(--ink-2);
+  padding: .45rem .5rem; border-bottom: 2px solid var(--muc); cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.tv-table thead th::after { content: attr(data-dir); margin-left: .3rem; color: var(--accent); }
+.tv-table thead th.is-sort { color: var(--ink); }
+.tv-table td { padding: .42rem .5rem; border-bottom: 1px dashed var(--line); vertical-align: top; color: var(--ink-2); }
+.tv-table tr { cursor: default; }
+.tv-table tbody tr:hover { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.tv-table tbody tr.da-chon { background: color-mix(in srgb, var(--hl) 30%, transparent); }
+.tv-table tbody tr.is-focus { background: color-mix(in srgb, var(--hl) 50%, transparent); box-shadow: inset 3px 0 0 var(--muc); }
+.tv-table tbody tr:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.tv-table .c-dau { width: 2.4rem; text-align: center; }
+.tv-table .c-dau .dau-td { margin: 0 auto; width: 1.15rem; height: 1.15rem; }
+.tv-table .c-dau .dau-td .ico { width: .7rem; height: .7rem; }
+.tv-table th:nth-child(2) { width: auto; }
+.tv-table th:nth-child(3) { width: 9.5rem; }
+.tv-table .c-nam { width: 3.6rem; }
+.tv-table th:nth-child(5) { width: 6.5rem; }
+.tv-table .c-ngay { width: 6.4rem; white-space: nowrap; font-family: var(--hand); font-size: .98rem; }
+.tv-table .c-ten b { display: block; color: var(--ink); font-family: var(--read); font-weight: 600; line-height: 1.35; }
+.tv-table .c-ten b.vo-danh { font-style: italic; color: var(--muted); font-weight: 500; }
+.tv-table .c-ten span { display: block; color: var(--muted); font-size: .82rem; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-table .c-tg, .tv-table .c-nd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-thieu { color: var(--line); font-style: normal; }
+.tv-chip {
+  display: inline-flex; align-items: center; gap: .2rem; margin: .25rem .3rem 0 0;
+  font-style: normal; font-family: var(--hand); font-size: .9rem; line-height: 1.2;
+  padding: 0 .45rem; border: 1.5px solid var(--accent); color: var(--accent); border-radius: 99px;
+}
+.tv-chip button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0; font-size: 1rem; line-height: 1; }
+.tv-empty { font-family: var(--hand); font-size: 1.1rem; color: var(--muted); text-align: center; padding: 2rem 1rem; }
+
+.tv-detail { overflow-y: auto; padding: 1rem 1rem 1.2rem; }
+.tv-goi-y { font-family: var(--hand); color: var(--muted); font-size: 1.05rem; }
+.tv-goi-y b { display: block; font-family: var(--display); color: var(--ink); font-size: 1.15rem; margin-bottom: .4rem; }
+.tv-d-head h2 { font-family: var(--read); font-size: 1.12rem; line-height: 1.35; margin: 0; }
+.tv-goc { color: var(--muted); font-size: .88rem; margin: .35rem 0 0; line-height: 1.4; }
+.tv-d-nut { display: flex; gap: .5rem; flex-wrap: wrap; margin: .8rem 0 .4rem; }
+.tv-f { display: grid; gap: .2rem; margin-top: .65rem; }
+.tv-f > span { font-family: var(--hand); font-size: 1rem; color: var(--muted); }
+.tv-f > span i { font-style: normal; color: var(--accent); }
+.tv-f .input { margin: 0; font-size: .9rem; }
+.tv-f textarea.input { resize: vertical; font-family: var(--sans); }
+.tv-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: .5rem; }
+.tv-lk { margin: .5rem 0 0; font-size: .88rem; }
+.tv-tags { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem; padding: .25rem .35rem;
+  border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); }
+.tv-tags input { flex: 1 1 7rem; min-width: 0; border: 0; background: none; font: inherit; font-size: .88rem; padding: .25rem; color: var(--ink); outline: none; }
+.tv-abs { margin-top: .8rem; font-size: .88rem; color: var(--ink-2); }
+.tv-abs summary { cursor: pointer; font-family: var(--hand); font-size: 1rem; color: var(--accent); }
+.tv-abs p { line-height: 1.55; }
+.tv-so { display: grid; grid-template-columns: auto 1fr; gap: .25rem .7rem; margin: 1rem 0 0; font-size: .86rem;
+  padding-top: .7rem; border-top: 1.5px dashed var(--line); }
+.tv-so dt { font-family: var(--hand); color: var(--muted); font-size: .95rem; }
+.tv-so dd { margin: 0; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.tv-d-cuoi { display: flex; gap: .5rem; margin-top: 1rem; }
+
+/* Màn hẹp: khung chi tiết xuống dưới, rồi khung trái thành dải ngang. */
+@media (max-width: 1250px) {
+  .tv { grid-template-columns: 210px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: auto; }
+  .tv-detail { grid-column: 1 / -1; }
+  .tv-main { min-height: 60vh; }
+}
+@media (max-width: 760px) {
+  .tv { grid-template-columns: minmax(0, 1fr); padding: .6rem; }
+  .tv-nav { max-height: 30vh; }
+  .tv-table th:nth-child(3), .tv-table td:nth-child(3), .tv-table th:nth-child(5),
+  .tv-table td:nth-child(5), .tv-table .c-ngay { display: none; }
+}
+/* nút trong thư viện giữ bề rộng theo chữ — luật `.btn` chung ở vài màn giãn 100% */
+.tv-bar .btn, .tv-d-nut .btn, .tv-d-cuoi .btn, .tv-sel .btn { flex: none; width: auto; }
+/* tiêu đề dài: tối đa hai dòng — bảng là để quét, không phải để đọc hết tên */
+.tv-table .c-ten b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }

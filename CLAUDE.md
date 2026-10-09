@@ -11,7 +11,7 @@ PORT=9000 ./run.sh       # đổi cổng
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 275 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 276 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
 node --check web/app.js web/survey.js   # chưa có test cho frontend
@@ -1432,9 +1432,27 @@ họ tô dạ quang. Đổi tên ngay trên thẻ phải lấy tên cũ từ D�
 Esc / bấm ra ngoài / "Thôi" ở hộp thoại bài trùng là **không làm gì** — không
 tự mở bài nào.
 
+### Thư viện kiểu Zotero (`web/thuvien.js`, `server/thongtin.py`)
+
+Màn `#library` (hash `#thu-vien`), ba khung: thư mục & nhãn · bảng bài sắp theo
+cột · chi tiết sửa được. Màn đầu giữ danh sách gọn để mở nhanh; đây là chỗ
+QUẢN LÝ. `thuvien.js` nạp sau app.js/survey.js và dùng nhờ helper của chúng.
+
+Thông tin thư mục học và nhãn nằm ở bảng riêng `doc_meta`, `doc_tag` — cùng lý
+do với thư mục: `save_doc` ghi đè cả dòng `documents`. `doc_meta.sua_tay` liệt
+kê trường người dùng đã sửa; `db.set_meta(..., tay=False)` (lượt tự tra) **không
+được** ghi đè chúng. `list_docs` chở `meta` (bỏ `abstract`) và `tags`.
+
+`thongtin.tim()` tra theo độ chắc: mã arXiv → DOI → tiêu đề (khớp mờ, PHẢI soát
+độ trùng ≥0,75 — gắn tác giả bài khác vào thư viện tệ hơn để trống). Semantic
+Scholar hay trả 429 khi gọi dồn, nên luôn có đường lùi arXiv / Crossref. Đo trên
+thư viện thật: 8/10 bài ra, 2 bài không ra là bài thử tự dựng. Tự tra NGẦM sau
+khi nạp (`_lay_thong_tin_ngam`); `META_LOOKUP=off` tắt nó — `conftest.py` đặt sẵn,
+vì bộ test không được gọi mạng ngoài.
+
 ### Ba dạng hash, một hàm đọc
 
-`location.hash` có ba dạng sống chung: `#survey`, `#doc=<mã>` (survey.js ghi khi
+`location.hash` có bốn dạng sống chung: `#survey`, `#thu-vien`, `#doc=<mã>` (survey.js ghi khi
 quay về bài đang đọc) và `#<mã>` (app.js ghi khi mở bài). Bộ nghe `hashchange`
 viết cho nút Back/Forward từng coi **mọi** hash khác rỗng là mã bài: bấm "Tìm
 hiểu" thì `svOpen` ghi `#survey`, bộ nghe gọi `openDoc("survey")`, nhận 404, rồi

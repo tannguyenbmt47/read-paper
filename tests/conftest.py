@@ -37,6 +37,9 @@ os.environ.setdefault("RERANK_BACKEND", "off")
 
 # Mô hình bố cục nạp mất hàng chục giây và không test nào cần tới nó.
 os.environ.setdefault("LAYOUT_BACKEND", "off")
+# Nạp bài xong app tự tra tác giả / năm trên Semantic Scholar, arXiv — bộ test
+# không được gọi mạng ngoài (chậm, và kết quả đổi theo ngày).
+os.environ.setdefault("META_LOOKUP", "off")
 
 
 def pytest_report_header(config):
