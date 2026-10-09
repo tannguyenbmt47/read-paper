@@ -1,0 +1,18 @@
+# Dành cho người PHÁT TRIỂN: mã nguồn đọc thẳng từ đĩa thay vì bản đã nướng vào
+# ảnh, để sửa giao diện không phải dựng lại ảnh.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   (hoặc chép thành docker-compose.override.yml — compose tự nạp file đó)
+#
+#   sửa web/    → F5 trên trình duyệt
+#   sửa server/ → docker compose restart
+#
+# Không mount thì MỖI lần sửa giao diện đều phải `docker compose build`, và quên
+# là thấy y hệt bản cũ — đã mất cả buổi vì đúng chuyện đó. Đánh đổi: mã trên đĩa
+# CHE mã trong ảnh, nên đừng dùng file này khi chỉ muốn CHẠY app.
+services:
+  app:
+    volumes:
+      - ./web:/app/web:ro
+      - ./docs:/app/docs:ro
+      - ./server:/app/server:ro

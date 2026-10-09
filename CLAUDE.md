@@ -2192,16 +2192,20 @@ route trả `layout_used` + `fallback_why`, giao diện hiện hẳn một hộp
 lý do và cách chữa.
 
 **Ảnh Docker nướng sẵn `web/` và `server/`.** Nên mỗi lần sửa giao diện đều phải
-`docker compose build`, quên là thấy y hệt bản cũ. Đã mount:
+`docker compose build`, quên là thấy y hệt bản cũ. Phần mount mã nguồn nằm ở
+`docker-compose.dev.yml`; máy phát triển chép nó thành
+`docker-compose.override.yml` (gitignore, compose tự nạp):
 
 ```yaml
       - ./web:/app/web:ro
+      - ./docs:/app/docs:ro
       - ./server:/app/server:ro
 ```
 
-Từ đó: sửa `web/` → F5; sửa `server/` → `docker compose restart`. Đánh đổi: mã
-trên đĩa **che** mã trong ảnh, nên đem ảnh sang máy khác mà không có thư mục
-nguồn thì nó chạy bản cũ nằm trong ảnh — bỏ hai dòng này nếu đem đi nơi khác.
+Từ đó: sửa `web/` → F5; sửa `server/` → `docker compose restart`. File compose
+chính KHÔNG mount mã nguồn — người tải repo về chỉ để chạy phải nhận đúng bản đã
+đóng gói, mã trên đĩa che mã trong ảnh là bẫy với họ. Ảnh gọn đo được 349 MB, bỏ
+`fonts-liberation` vì bộ đo tràn slide phía server (`slide_fit.py`) đã bỏ.
 
 Và nhớ: **container mặc định `LAYOUT_BACKEND=off`** (`WITH_LAYOUT=0`), tức bản
 Docker gọn không có docling. Mọi phép đo về chất lượng bóc phải nói rõ chạy ở

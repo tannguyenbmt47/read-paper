@@ -8,3 +8,8 @@ __pycache__/
 *.pdf
 *.zip
 .claude/
+tests/
+.pytest_cache/
+*.xlsx
+docker-compose*.yml
+.kiemtra-docker/

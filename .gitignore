@@ -22,3 +22,7 @@ SR_presentation_20_slides.pdf
 # PDF bài báo thả vào gốc repo để thử — bài của người khác, không thuộc mã
 # nguồn. Đã có một file lọt vào commit vì `git add -A`; luật này chặn lần sau.
 /*.pdf
+
+# file compose cục bộ của từng máy (bản phát triển chép từ docker-compose.dev.yml)
+docker-compose.override.yml
+.kiemtra-docker/

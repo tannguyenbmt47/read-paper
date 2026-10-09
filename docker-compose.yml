@@ -41,19 +41,9 @@ services:
     volumes:
       # SQLite + PDF gốc + ảnh cắt ra. Nâng cấp ảnh không mất bài đã đọc.
       - ./data:/data
-      # Mã nguồn đọc thẳng từ đĩa thay vì bản đã nướng vào ảnh. Không có hai
-      # dòng này thì MỖI lần sửa giao diện đều phải `docker compose build`, và
-      # quên là thấy y hệt bản cũ — đã mất cả buổi vì đúng chuyện đó.
-      #   sửa web/    → F5 trên trình duyệt
-      #   sửa server/ → docker compose restart
-      #
-      # Đánh đổi: mã trên đĩa CHE mã trong ảnh, nên đem ảnh sang máy khác mà
-      # không có thư mục nguồn thì nó chạy bản cũ nằm trong ảnh. Chấp nhận được
-      # với công cụ chạy local; bỏ hai dòng này nếu đem đi nơi khác.
-      # `:ro` để container không ghi bậy vào mã nguồn.
-      - ./web:/app/web:ro
-      - ./docs:/app/docs:ro
-      - ./server:/app/server:ro
+      # Mã nguồn KHÔNG mount ở đây: ảnh chạy đúng bản đã đóng gói. Người phát
+      # triển muốn sửa mã mà không dựng lại ảnh thì dùng docker-compose.dev.yml
+      # (xem DOCKER.md, mục "Phát triển").
       # Trọng số mô hình bố cục (PP-DocLayoutV2, 205MB). Để ở volume chứ không
       # nướng vào ảnh: dựng lại ảnh mà phải tải lại từ đầu thì rất phiền.
       #

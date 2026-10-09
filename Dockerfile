@@ -1,4 +1,8 @@
-# Đọc paper song ngữ — ảnh chạy được ngay, không cần cài gì trên máy chủ.
+# Loupe — ảnh chạy được ngay, không cần cài gì trên máy chủ. Hướng dẫn: DOCKER.md
+#
+# Không cài font hệ thống: font của giao diện, slide và file xuất ra đều đóng gói
+# sẵn trong `web/vendor/fonts/` (bản đầu cài fonts-liberation cho bộ đo tràn
+# slide phía server — bộ đo ấy đã bỏ, tràn khung giờ đo ngay trong trình duyệt).
 #
 # Mặc định KHÔNG kèm docling: nó kéo theo torch và bộ mô hình, đẩy ảnh từ ~400MB
 # lên nhiều GB. Không có docling thì `parser.parse_pdf()` vẫn chạy bằng heuristic
@@ -18,14 +22,6 @@ FROM python:3.12-slim
 
 ARG WITH_LAYOUT=0
 ARG TORCH_CPU=0
-
-# fonts-liberation KHÔNG phải để hiển thị: `server/slide_fit.py` dùng nó để đo
-# bề rộng chữ bằng metric thật (tương thích Arial) rồi tính xem slide có tràn
-# khung không. Thiếu font này thì bộ đo rơi về ước lượng thô và slide bị cắt chữ.
-# fonts-dejavu-core lo phần dấu tiếng Việt khi Liberation thiếu glyph.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        fonts-liberation fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
