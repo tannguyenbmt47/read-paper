@@ -199,6 +199,67 @@ def test_json_nhay_doi_thua_duoc_va():
     assert llm.extract_json('{"a": "", "": "", "l": ["", "y"]}') == {"a": "", "": "", "l": ["", "y"]}
 
 
+def test_slide_trich_doan_keo_theo_cong_thuc_chen_giua(monkeypatch):
+    """Công thức là khối riêng: chỉ chép chữ thì slide dừng ở "giáo viên sinh ra:"
+    rồi bỏ trống (6 chỗ trên bộ CIRAG). Giờ công thức chen giữa, và công thức ngay
+    sau đoạn kết bằng dấu hai chấm, đi theo trích đoạn — không bị tách khỏi câu dẫn."""
+    from server import slide, store
+    monkeypatch.setattr(store, "image_path", lambda d, f: "x.png")
+    d = _doc()
+    d["blocks"] += [{"id": "b5", "type": "para", "text": "a"},
+                    {"id": "b6", "type": "equation", "text": "y=f(x)", "figure": "b6"},
+                    {"id": "b7", "type": "para", "text": "b"},
+                    {"id": "b8", "type": "equation", "text": "z=g(y)", "figure": "b8"},
+                    {"id": "b9", "type": "para", "text": "c"}]
+    d["translations"].update({"b5": "Mô hình sinh ra:", "b7": "Sau đó bộ truy xuất trả về:", "b9": "Hết."})
+    s = slide.chuan_hoa(d, {"vai": "doan_dich", "tieu_de": "t", "doan": ["b5", "b7"]})
+    assert [(t["id"], bool(t.get("cong_thuc"))) for t in s["trich"]] == [
+        ("b5", False), ("b6", True), ("b7", False), ("b8", True)]
+    assert "b9" not in [t["id"] for t in s["trich"]]   # đoạn model không chọn thì không kéo
+
+
+def test_slide_o_so_khong_co_chu_so_bi_bo_va_cong_trinh_lien_quan_doi_len():
+    from server import slide
+    s = slide.chuan_hoa(_doc(), {"vai": "bang_chung", "tieu_de": "t",
+                                 "so": [{"gia_tri": "Giảm mạnh", "nhan": "F1"}, {"gia_tri": "42,5", "nhan": "F1"}]})
+    assert [x["gia_tri"] for x in s["so"]] == ["42,5"]
+    d = _doc()
+    d["blocks"] = [{"id": "h1", "type": "heading", "text": "Method"}, {"id": "p1", "type": "para", "text": "m"},
+                   {"id": "h2", "type": "heading", "text": "Related Work"}, {"id": "p2", "type": "para", "text": "r"}]
+    khung = [{"vai": "van_de"}, {"vai": "khoang_trong"}, {"vai": "co_che"},
+             {"vai": "doan_dich", "trich": [{"id": "p1", "chu": "m"}]},
+             {"vai": "doan_dich", "trich": [{"id": "p2", "chu": "r"}]}]
+    ra = slide._doi_cong_trinh_lien_quan(d, khung)
+    assert [x["vai"] for x in ra][:3] == ["van_de", "khoang_trong", "doan_dich"]
+    assert ra[2]["trich"][0]["id"] == "p2"
+
+
+def test_slide_vot_slide_tron_ven_khoi_json_lap_suy_bien():
+    """V4 Flash: `"y_chinh":": "…"` rồi leo thang thành `":":":…` tới hết trần
+    token. Các slide viết trọn trước chỗ hỏng phải được giữ lại."""
+    from server import llm, slide
+    raw = ('{"slides": [{"id": "t1", "loi_noi": "a"},\n {"id": "t2", "y_chinh":": "Chọn một", "loi_noi": "b"},'
+           '\n {"id": "t3", "y_chinh":":":":":":":":":')
+    assert [x["id"] for x in slide._vot_slides(raw)] == ["t1", "t2"]
+    assert llm.extract_json('{"y_chinh":": "Chọn một", "a": ":", "b": ": x"}') == {
+        "y_chinh": "Chọn một", "a": ":", "b": ": x"}
+
+
+def test_gia_ten_tat_lay_muc_cao_hon_cua_model_goc(monkeypatch):
+    """`~…-latest` báo giá ra $0,079/triệu token, model gốc $1,28: ước giá từng thấp
+    hơn thực chi ~16 lần. Tra cả hai, lấy mức cao hơn."""
+    import asyncio
+    from server import llm
+
+    async def ds():
+        return [{"id": "~deepseek/deepseek-v4-flash-latest", "pricing": {"prompt": "0.000000008", "completion": "0.000000079"}},
+                {"id": "deepseek/deepseek-v4-flash", "pricing": {"prompt": "0.000000013", "completion": "0.00000128"}}]
+    monkeypatch.setattr(llm, "list_models", ds)
+    vao, ra = asyncio.run(llm.gia_model("~deepseek/deepseek-v4-flash-latest"))
+    assert abs(ra - 1.28e-6) < 1e-12 and abs(vao - 1.3e-8) < 1e-15
+    assert asyncio.run(llm.gia_model("khong/co")) is None
+
+
 def test_slide_dinh_dang_cu_coi_nhu_chua_co():
     """Bộ slide v1 (deck/outline) không vẽ được bằng bộ vẽ mới — coi như chưa có,
     đừng để giao diện vỡ."""

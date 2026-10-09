@@ -28,6 +28,45 @@ function syncSlidesBtn() {
     : "Bộ slide — cần bấm Dịch trước để tool đọc toàn bài và chốt mạch lập luận";
 }
 
+/* ------------------------------------------------------------ model soạn slide
+   Slide được soạn bằng model RIÊNG, mặc định là model rẻ hơn giữa model của bài
+   và model mặc định của app. Bộ chi tiết phần lớn là trích nguyên văn bản dịch,
+   không cần model dịch đắt: đo trên CIRAG 45 phút, V4 Pro tốn $0,18. Người dùng
+   đổi tay thì giữ lựa chọn đó (`SLD.modelTay`). */
+async function sldUngVien() {
+  if (!SLD.cfg) {
+    try { SLD.cfg = await fetch("/api/config").then((r) => r.json()); } catch { SLD.cfg = {}; }
+  }
+  return [...new Set([state.doc.model, SLD.cfg.model].filter(Boolean))];
+}
+async function sldGiaCua(model) {
+  try {
+    return await fetch(`/api/doc/${state.doc.id}/slides/gia?phut=${SLD.phut}&model=${encodeURIComponent(model)}`)
+      .then((r) => r.json());
+  } catch { return { lo: null, hi: null }; }
+}
+/** Dựng ô chọn model (màn trống + thanh trên) kèm giá từng model, chọn sẵn cái rẻ. */
+async function sldModel() {
+  const uv = await sldUngVien();
+  const gia = await Promise.all(uv.map(sldGiaCua));
+  if (!SLD.modelTay || !uv.includes(SLD.model)) {
+    let tot = 0;
+    gia.forEach((g, i) => { if (g.hi != null && (gia[tot].hi == null || g.hi < gia[tot].hi)) tot = i; });
+    SLD.model = uv[tot];
+  }
+  const html = uv.map((m, i) => `<option value="${esc(m)}">${esc(tenModel(m))}`
+    + `${gia[i].hi != null ? ` · ~${money(gia[i].hi)}` : ""}${m === state.doc.model ? " · model của bài" : ""}</option>`).join("");
+  for (const id of ["#slModel", "#slModelTrong"]) {
+    const el = $(id);
+    if (!el) continue;
+    el.innerHTML = html;
+    el.value = SLD.model;
+    el.closest(".sl2-model")?.classList.toggle("hidden", uv.length < 2);
+    el.onchange = (e) => { SLD.model = e.target.value; SLD.modelTay = true; sldModel(); };
+  }
+  sldGia();
+}
+
 async function openSlides() {
   showScreen("slides");
   $("#slTen").textContent = state.doc.brief?.title_vi || state.doc.title || "";
@@ -38,6 +77,7 @@ async function openSlides() {
   $("#slPhut").value = String(SLD.phut);
   if (!SLD.bo.some((s) => s.id === SLD.chon)) SLD.chon = SLD.bo[0]?.id || null;
   sldVe();
+  sldModel();
 }
 
 function sldVe() {
@@ -47,6 +87,7 @@ function sldVe() {
   // Chưa có bộ thì màn trống đã có ô chọn độ dài + nút tạo; để thêm một bộ trên
   // thanh trên là hai ô chọn cùng việc, và nút Trình chiếu xám chẳng để làm gì.
   for (const id of ["#slPhut", "#slTao", "#slChieu"]) $(id).classList.toggle("hidden", !co);
+  $("#slModel").classList.toggle("hidden", !co);
   $("#slTai").closest(".menu").classList.toggle("hidden", !co);
   if (!co) return sldTrong();
   sldDai();
@@ -74,20 +115,24 @@ async function sldTrong() {
           <option value="45">45 phút · chi tiết theo từng đoạn, ~45 slide</option>
         </select>
       </div>
+      <div class="sl2-trong-chon sl2-model hidden">
+        <label for="slModelTrong">Model soạn</label>
+        <select id="slModelTrong" class="input input-sm"></select>
+      </div>
       <button id="slTaoTrong" class="btn btn-primary" ${coBrief ? "" : "disabled"}>Tạo slide</button>
       <p class="hint" id="slGiaTrong">${coBrief ? "Đang ước giá…"
         : "Cần bấm <b>Dịch</b> trước. Slide dựng từ mạch lập luận mà lượt dịch đầu tiên chốt lại."}</p>
     </div>`;
   $("#slPhutTrong").value = String(SLD.phut);
-  $("#slPhutTrong").onchange = (e) => { SLD.phut = +e.target.value; sldGia(); };
+  $("#slPhutTrong").onchange = (e) => { SLD.phut = +e.target.value; sldModel(); };
   $("#slTaoTrong").onclick = () => sldTao();
-  if (coBrief) sldGia();
+  if (coBrief) sldModel();
 }
 
 async function sldGia() {
   const el = $("#slGiaTrong");
   try {
-    const g = await fetch(`/api/doc/${state.doc.id}/slides/gia?phut=${SLD.phut}`).then((r) => r.json());
+    const g = await sldGiaCua(SLD.model || state.doc.model);
     // Bộ chi tiết (≥30 phút) chạy lên khung rồi viết chữ theo mẻ — lâu hơn hẳn.
     const cach = SLD.phut >= 30 ? "lên khung rồi viết theo mẻ · khoảng 2–5 phút" : "một lượt gọi model · khoảng 1–3 phút";
     const txt = g.lo != null ? `~${money(g.lo)}–${money(g.hi)} · ${cach}` : cach;
@@ -103,7 +148,7 @@ async function sldTao() {
     // Nói giá thật: bản đầu ghi "dưới 1 xu" cho một lượt đo được $0,047.
     let gia = "";
     try {
-      const g = await (await fetch(`/api/doc/${state.doc.id}/slides/gia?phut=${SLD.phut}`)).json();
+      const g = await sldGiaCua(SLD.model || state.doc.model);
       if (g.lo != null) gia = ` Ước ${money(g.lo)}–${money(g.hi)}.`;
     } catch { /* không ước được giá thì vẫn hỏi */ }
     if (!(await xacNhan("Tạo lại cả bộ slide?",
@@ -120,7 +165,7 @@ async function sldTao() {
   try {
     const r = await fetch(`/api/doc/${state.doc.id}/slides/tao`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phut: SLD.phut }),
+      body: JSON.stringify({ phut: SLD.phut, model: SLD.model || state.doc.model }),
     });
     if (!r.ok) throw new Error(await apiErr(r, "Không soạn được slide"));
     const d = await r.json();
@@ -299,7 +344,7 @@ function sldDongChieu() {
 (function wireSlideV2() {
   $("#slidesBtn")?.addEventListener("click", () => openSlides());
   $("#slBack").onclick = () => { showScreen("reader"); location.hash = state.doc.id; };
-  $("#slPhut").onchange = (e) => { SLD.phut = +e.target.value; };
+  $("#slPhut").onchange = (e) => { SLD.phut = +e.target.value; sldModel(); };
   $("#slTao").onclick = () => sldTao();
   $("#slChieu").onclick = sldMoChieu;
   $("#slVietLai").onclick = async (e) => {

@@ -354,11 +354,8 @@ async def sections(doc_id: str):
 
     price = None
     try:
-        for m in await llm.list_models():
-            if m.get("id") == doc["model"]:
-                p = m.get("pricing") or {}
-                price = float(p.get("completion") or 0)
-                break
+        g = await llm.gia_model(doc["model"])
+        price = g[1] if g else None
     except Exception:  # noqa: BLE001
         price = None
 
@@ -1805,13 +1802,22 @@ async def get_slides(doc_id: str):
     return _slides_ra(_doc_slide(doc_id))
 
 
+def _model_slide(doc: dict, model: str | None) -> str:
+    """Model được phép soạn slide: model của bài, model mặc định, hoặc một model
+    trong danh sách chọn. Chuỗi lạ thì về model của bài — không gửi slug tuỳ ý
+    lên OpenRouter."""
+    hop_le = {doc["model"], llm.DEFAULT_MODEL} | {m["id"] for m in MODEL_CHOICES}
+    return model if model in hop_le else doc["model"]
+
+
 @app.get("/api/doc/{doc_id}/slides/gia")
-async def slides_gia(doc_id: str, phut: int = 15):
+async def slides_gia(doc_id: str, phut: int = 15, model: str = ""):
     """Ước giá MỘT lượt sinh bộ slide. Trả dải, không một con số (cùng lối với
     ước giá dịch): đầu vào là cả prefix toàn văn. Đầu ra ~700 token mỗi slide —
     đo trên CIRAG: 9.539 token cho 12 slide, vì `loi_noi` 60–110 chữ cộng phần
     nghĩ thầm mức thấp. Bản đầu ước 260 và báo trần $0,036 cho lượt tốn $0,047."""
     doc = _doc_slide(doc_id)
+    model = _model_slide(doc, model)
     so = slide.SO_SLIDE.get(phut, 14)
     vao = len(pipeline.cached_prefix(doc)) / 3.6 + 2500
     ra = so * 700 + 1500
@@ -1819,21 +1825,21 @@ async def slides_gia(doc_id: str, phut: int = 15):
         # Bộ chi tiết: một lượt lên khung + một lượt viết mỗi 8 slide, mỗi lượt đọc
         # lại prefix (phần lớn từ cache, tính ~30% giá). Trích đoạn rẻ hơn slide
         # thường vì chữ chép từ bản dịch, model chỉ viết ý chính + lời nói.
+        # Lượt viết chữ dùng ngữ cảnh rút gọn + khối nguồn (~9k token/mẻ), không
+        # đọc lại toàn văn — chỉ lượt lên khung đọc cả bài.
         me = -(-so // slide.ME_VIET)
-        vao = vao * (1 + 0.3 * me) + 3000 * me
-        ra = so * 700 + 2000   # đo: CIRAG 45 phút ra ~30k token cho 49 slide
+        vao = vao + 9000 * me
+        ra = so * 550 + 2500
     try:
-        gia = next(((float((m.get("pricing") or {}).get("prompt") or 0),
-                     float((m.get("pricing") or {}).get("completion") or 0))
-                    for m in await llm.list_models() if m.get("id") == doc["model"]), None)
+        gia = await llm.gia_model(model)
     except Exception:  # noqa: BLE001
         gia = None
     if not gia:
-        return {"lo": None, "hi": None, "model": doc["model"]}
+        return {"lo": None, "hi": None, "model": model}
     c = vao * gia[0] + ra * gia[1]
     # Bộ chi tiết dao động mạnh hơn (số lượt viết tuỳ số slide sau khi tách).
     hi = 1.5 if so > slide.CHI_TIET_TU else 1.3
-    return {"lo": round(c * 0.6, 4), "hi": round(c * hi, 4), "model": doc["model"]}
+    return {"lo": round(c * 0.6, 4), "hi": round(c * hi, 4), "model": model}
 
 
 @app.post("/api/doc/{doc_id}/slides/tao")
@@ -1843,7 +1849,8 @@ async def slides_tao(doc_id: str, body: dict = Body(default={})):
     if not doc.get("brief"):
         raise HTTPException(400, "Bài chưa có tóm lược — bấm Dịch trước để tool đọc toàn bài.")
     try:
-        _, run, total = await slide.tao(doc_id, int(body.get("phut") or 15))
+        _, run, total = await slide.tao(doc_id, int(body.get("phut") or 15),
+                                        _model_slide(doc, str(body.get("model") or "")))
     except pipeline.HetGio as e:
         raise HTTPException(504, f"Quá giờ khi soạn slide — {e}. Thử lại, hoặc đổi model.")
     except ValueError as e:
@@ -2380,8 +2387,9 @@ def _xuat_slide(doc: dict, *, in_ra: bool = False) -> Response:
         raise HTTPException(400, "Bài này chưa có bộ slide — bấm “Tạo slide” trước")
     anh = {}
     for sl in d["bo"]:
-        if sl.get("anh") and sl["anh"] not in anh:
-            anh[sl["anh"]] = _data_uri(doc["id"], sl["anh"])
+        for x in [sl] + [t for t in sl.get("trich") or [] if t.get("anh")]:
+            if x.get("anh") and x["anh"] not in anh:
+                anh[x["anh"]] = _data_uri(doc["id"], x["anh"])
     du_lieu = _json.dumps({"bo": d["bo"], "anh": anh,
                            "ten_bai": (doc.get("brief") or {}).get("title_vi") or doc.get("title") or ""},
                           ensure_ascii=False).replace("</", "<\\/")

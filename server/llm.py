@@ -220,7 +220,13 @@ _NHAY_DAU = re.compile(r'([:\[,]\s*)""(?=[^\s,}\]"])')
 _NHAY_CUOI = re.compile(r'(?<=[^\\\s:\[{,"])""(?=\s*[,}\]])')
 
 
+# `"y_chinh":": "…"` — tật của V4 Flash: chèn `":` ngay trước giá trị. JSON hợp lệ
+# không bao giờ có `":"` theo sau bởi `: "` nên gỡ an toàn.
+_HAI_CHAM_THUA = re.compile(r'":\s*":\s*"(?=[^\s,}\]"])')
+
+
 def _va_nhay(text: str) -> str:
+    text = _HAI_CHAM_THUA.sub('": "', text)
     return _NHAY_CUOI.sub('"', _NHAY_DAU.sub(r'\1"', text))
 
 
@@ -279,6 +285,27 @@ def extract_json(text: str):
                     except json.JSONDecodeError:
                         return json.loads(_va_nhay(_va_escape(cat)), strict=False)
     raise ValueError("JSON trong phản hồi bị cắt cụt")
+
+
+async def gia_model(model: str) -> tuple[float, float] | None:
+    """(giá vào, giá ra) mỗi token của một model, hoặc None nếu không tra được.
+
+    Tên tắt tự cập nhật (`~deepseek/deepseek-v4-flash-latest`) có mục giá RIÊNG
+    trong danh sách của OpenRouter và mục đó sai: báo $0,079/triệu token ra trong
+    khi model thật (`deepseek/deepseek-v4-flash`) là $1,28 — ước giá thấp hơn thực
+    chi ~16 lần (đo: bộ slide ước $0,0038, thực chi $0,036). Nên với tên tắt thì
+    tra cả model gốc và lấy mức CAO hơn: ước tính lệch về phía rẻ là kiểu sai tệ
+    nhất cho con số người dùng dựa vào để quyết có tiêu tiền hay không.
+    """
+    ten = [model]
+    if model.startswith("~"):
+        ten.append(re.sub(r"-latest$", "", model[1:]))
+    by = {m.get("id"): m for m in await list_models()}
+    gia = [(float((by[t].get("pricing") or {}).get("prompt") or 0),
+            float((by[t].get("pricing") or {}).get("completion") or 0)) for t in ten if t in by]
+    if not gia:
+        return None
+    return max(g[0] for g in gia), max(g[1] for g in gia)
 
 
 async def list_models() -> list[dict]:

@@ -33,7 +33,7 @@
     // viết kiểu này dù prompt đòi `z_{t}`. Cùng luật hẹp với `_SUBSCRIPTISH` bên
     // app.js — gốc là MỘT chữ cái, chỉ số 1–2 ký tự — nên `paper_id` không bị chạm.
     return t
-      .replace(/(?<![\w`>])([A-Za-z])_([A-Za-z0-9](?:\+[A-Za-z0-9]{1,2})?)(?![\w{])/g, "$1<sub>$2</sub>")
+      .replace(/(?<![\w`>])([A-Za-zα-ωΑ-Ω][\u0300-\u036f]*)_([A-Za-z0-9](?:\+[A-Za-z0-9]{1,2})?)(?![\w{])/g, "$1<sub>$2</sub>")
       .replace(/(?<![\w>])([A-Za-z])\^([A-Za-z0-9]{1,3})(?![\w{])/g, "$1<sup>$2</sup>");
   }
 
@@ -180,7 +180,8 @@
           ${o(`buoc.${i}.ten`, b.ten, "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Làm gì và vì sao cần")}</div></li>`);
         // Có hình: bước dọc bên trái + hình. Không hình: lần đầu là dòng chảy
         // ngang, lần sau là bậc thang — hai slide cơ chế không bao giờ cùng dáng.
-        const dang = coHinh ? "co-hinh" : (lanThu % 2 ? "bac" : "ngang");
+        // Bậc thang chỉ rộng ~62% khung: bốn bước dài trong đó là tràn (đã gặp).
+        const dang = coHinh ? "co-hinh" : (lanThu % 2 && (s.buoc || []).length <= 3 ? "bac" : "ngang");
         const dan = s.dan || sua ? `<p class="sld-dan">${o("dan", s.dan, "span", "", "Thành phần này nhận gì, trả ra gì")}</p>` : "";
         than = `${dau}${tieuDe}${dan}<div class="sld-cc ${dang}"><ol class="sld-buoc">${buoc}</ol>${anh}</div>`;
         break;
@@ -238,9 +239,15 @@
           return i < 0 ? h : h.slice(0, i) + `<mark>${q}</mark>` + h.slice(i + q.length);
         }, html);
         // Ở màn sửa vẫn hiện vệt tô sáng: lưu đọc `innerText` nên thẻ <mark> không lọt vào dữ liệu.
-        const doan = (s.trich || []).map((t, i) => sua
-          ? `<p contenteditable="plaintext-only" spellcheck="false" data-p="trich.${i}.chu">${toSang(chu(t.chu))}</p>`
-          : `<p>${toSang(chu(t.chu))}</p>`).join("");
+        const doan = (s.trich || []).map((t, i) => {
+          if (t.cong_thuc) {
+            const url = t.anh && ctx.anh ? ctx.anh(t) : "";
+            return url ? `<figure class="sld-dd-ct"><img src="${esc(url)}" alt=""></figure>` : "";
+          }
+          return sua
+            ? `<p contenteditable="plaintext-only" spellcheck="false" data-p="trich.${i}.chu">${toSang(chu(t.chu))}</p>`
+            : `<p>${toSang(chu(t.chu))}</p>`;
+        }).join("");
         const anh = hinh();
         const yc = s.y_chinh || sua ? `<p class="sld-dd-yc">${o("y_chinh", s.y_chinh, "span", "", "Điều cần nhớ từ đoạn này")}</p>` : "";
         than = `${dau}${tieuDe}${yc}<div class="sld-dd ${coHinh ? "co-hinh" : ""}">
@@ -268,7 +275,8 @@
         than = `${dau}${tieuDe}<div class="sld-bc ${anh ? "co-hinh" : "khong-hinh"} ${lat ? "lat" : ""}">${anh}
           <div class="sld-bc-chu">
             <b class="sld-tay">Cách đọc</b>${o("doc_hinh", s.doc_hinh, "p", "sld-doc", "Trục/cột là gì, nhìn vào đâu")}
-            <p class="sld-kl-p">${o("ket_luan", s.ket_luan, "span", "sld-kl", "Điều hình cho thấy")}</p>
+            ${s.ket_luan || sua ? `<b class="sld-tay">Bài kết luận</b>` : ""}
+            <p class="sld-kl-p">${o("ket_luan", s.ket_luan, "span", "sld-kl", "Điều bài nói hình này cho thấy")}</p>
             ${so ? `<div class="sld-cac-so">${so}</div>` : ""}</div></div>`;
         break;
       }

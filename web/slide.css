@@ -245,7 +245,10 @@
 .sld [contenteditable]:hover { box-shadow: 0 0 0 .15cqw color-mix(in srgb, var(--xanh) 45%, transparent); }
 .sld [contenteditable]:focus { box-shadow: 0 0 0 .2cqw var(--xanh); background: rgba(255, 255, 255, .7); }
 .sld [contenteditable]:empty::before { content: attr(data-ph); color: var(--chi); font-style: italic; }
-.sld.tran::after { content: "Chữ hơi nhiều — bớt một ý hoặc chuyển sang lời nói"; position: absolute; right: 1cqw; top: 1cqw; background: var(--do); color: #fff; font-size: 1cqw; padding: .3cqw .8cqw; border-radius: .4cqw; }
+/* Nhãn "chữ hơi nhiều" là lời nhắn cho NGƯỜI SOẠN: chỉ hiện ở sân khấu màn sửa.
+   Bản đầu khai trên `.sld.tran` nên nó lọt vào file tải về (subagent bắt được ở
+   hai slide của bộ CIRAG). */
+.sl2-san .sld.tran::after { content: "Chữ hơi nhiều — bớt một ý hoặc chuyển sang lời nói"; position: absolute; right: 1cqw; top: 1cqw; background: var(--do); color: #fff; font-size: 1cqw; padding: .3cqw .8cqw; border-radius: .4cqw; }
 
 /* in ra PDF: mỗi slide một trang ngang */
 @media print {
@@ -336,3 +339,6 @@
 .sld-dd-chu mark { background: linear-gradient(transparent 12%, color-mix(in srgb, var(--da-quang) 80%, transparent) 12%);
   color: inherit; padding: 0 .1em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .sld-dd-muc { font-family: var(--tay) !important; color: var(--mo); font-size: .8em !important; text-align: right; }
+
+.sld-dd-ct { margin: 0; align-self: center; max-width: 100%; }
+.sld-dd-ct img { display: block; max-width: 100%; max-height: 7.5cqw; object-fit: contain; margin: 0 auto; }

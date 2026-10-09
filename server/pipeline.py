@@ -390,11 +390,7 @@ async def estimate(doc: dict, mode: str = "both") -> dict:
 
     price = None
     try:
-        for m in await llm.list_models():
-            if m.get("id") == doc["model"]:
-                p = m.get("pricing") or {}
-                price = (float(p.get("prompt") or 0), float(p.get("completion") or 0))
-                break
+        price = await llm.gia_model(doc["model"])
     except Exception:  # noqa: BLE001
         price = None
 

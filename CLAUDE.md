@@ -767,6 +767,42 @@ sáng (phải là chuỗi con thật, không thì bị lọc) và lời nói.
 - **`_soat_do_phu`** báo mục thân bài (≥2 đoạn đã dịch) không có slide nào — đúng
   chỗ "mất ý". Dừng ở phụ lục/tham khảo, bỏ qua tóm tắt và công trình liên quan.
 
+**Chấm bằng một subagent CHỈ nhìn ảnh slide** (không bài gốc, không lời nói) là
+phép đo đã dùng để sửa bộ này — và nó bắt được thứ mọi phép đo máy bỏ lọt:
+- **Công thức mất khỏi trích đoạn**: công thức là khối riêng, chép chữ thì slide
+  dừng ở "giáo viên sinh ra:" (6 chỗ). `_trich` giờ kéo công thức chen giữa và
+  công thức ngay sau đoạn kết bằng ":"; `_tach_trich` coi nó là một khối
+  (`CHO_CONG_THUC`) đi cùng câu dẫn.
+- **Nhãn "Chữ hơi nhiều" lọt vào file tải về** — giờ chỉ khai dưới `.sl2-san`.
+- **Kết luận mâu thuẫn với chính bảng** ("luôn tốt hơn", "vượt mọi baseline").
+  Model không thấy ảnh; prompt cấm đoán xu hướng, và ô kết luận ghi "Bài kết
+  luận" để nó phải là điều BÀI nói. Chưa hết hẳn — đây là lỗi còn lại lớn nhất.
+- Bẫy của chính phép đo: chụp `.sld` sau `scrollIntoView` mà đưa toạ độ khung
+  nhìn cho `captureScreenshot` thì 48/49 ảnh là nền tối. Phải dùng toạ độ trang
+  (`+scrollX/scrollY`) và `captureBeyondViewport`, rồi soát độ lệch chuẩn ảnh.
+
+**Tiền: model RIÊNG cho slide, mặc định cái rẻ hơn.** Lượt viết chữ đã bỏ toàn
+văn (`_nen_nhe` + `nguon_chu`), nhưng đo lại giá gần như không đổi ($0,179 vs
+$0,175): phần cắt là token đọc từ cache vốn rẻ, còn tiền nằm ở token vào CHƯA
+cache (mẻ song song bắn lúc cache nguội) và token ra. Mẻ viết đầu giờ chạy một
+mình để làm ấm cache, lời nói ngắn lại, và giao diện ước giá cả model của bài lẫn
+model mặc định rồi chọn sẵn cái rẻ (`sldModel`). CIRAG 45 phút: V4 Pro $0,179 →
+V4 Flash **$0,017**, subagent chấm gần như ngang nhau.
+
+**V4 Flash có hai tật, cả hai làm hỏng trọn mẻ JSON:**
+- `"y_chinh":": "…"` — chèn `":` trước giá trị, có lượt leo thang thành vòng lặp
+  `":":":…` tới hết trần token. Model giờ viết khoá `diem_chinh` (dữ liệu vẫn lưu
+  `y_chinh`), `llm._va_nhay` gỡ `":": "`, và `_vot_slides` vớt các slide viết trọn
+  trước chỗ hỏng (vá TRƯỚC khi quét — một nháy thừa làm lệch trạng thái "trong
+  chuỗi" tới hết văn bản).
+- Giao việc bằng JSON có khoá `trich` thì nó chép nguyên khoá ra đầu ra và viết
+  vượt phần được giao (t11, t12… khi chỉ giao t1–t10). Giờ giao bằng văn bản, nói
+  rõ đúng danh sách id, và trần token co theo mẻ (450/slide) để vòng lặp tự dừng.
+
+**Giá của tên tắt `~…-latest` trong danh sách OpenRouter là SAI**: Flash báo
+$0,079/triệu token ra, model gốc $1,28. Mọi ước giá (dịch, giải thích, slide) giờ
+đi qua `llm.gia_model`, tra cả model gốc và lấy mức cao hơn.
+
 **Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
 bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai
 slide `bang_chung` liền nhau lật bên hình. Prompt cũng giới hạn mỗi vai tối đa 2
