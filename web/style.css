@@ -1415,7 +1415,8 @@ body.is-resizing { user-select: none; cursor: col-resize; }
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sl-slide .terms b { color: #2563eb; font-weight: 700; }
-.sl-slide .foot { position: absolute; left: 0; right: 0; bottom: 1.56cqw; text-align: center; font-size: 1.02cqw; color: #64748b; }
+.sl-slide .foot { position: absolute; left: 0; right: 0; bottom: 1.56cqw; text-align: center; font-size: max(12px, 1.02cqw); color: #64748b; }
+.present-stage .sl-slide .foot { font-size: max(13px, 1.17cqw); }
 .sl-slide .deco {
   position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(48deg, rgba(37,99,235,.10) 0 3px, transparent 3px 15px);
@@ -1442,7 +1443,19 @@ body.is-resizing { user-select: none; cursor: col-resize; }
 }
 .sl-slide.L-title .art img { max-height: 25.8cqw; max-width: 25.8cqw; }
 .sl-slide.L-closing { justify-content: center; align-items: center; text-align: center; }
-.sl-slide.L-closing h2 { font-size: 4.06cqw; font-weight: 800; margin: 0 0 1.09cqw; }
+.sl-slide.L-closing h2 { font-size: 3.44cqw; font-weight: 800; margin: 0 0 1.09cqw; max-width: 78cqw; }
+/* Slide kết (S4/S17): 3 điều mang về, hộp chốt, cảm ơn + trích dẫn. Khối căn
+   giữa trục nhưng chữ trong từng dòng căn trái — đọc danh sách căn giữa rất mệt.
+   Phải khớp từng số với `_SLIDES_CSS` (1px khung 1280 = 0.078125cqw). */
+.sl-slide .kl { display: flex; flex-direction: column; gap: 1.09cqw; width: 70.3cqw; text-align: left; margin: .94cqw 0; }
+.sl-slide .kl-row { display: grid; grid-template-columns: 3.28cqw 1fr; gap: 1.41cqw; align-items: start; }
+.sl-slide .kl-n { width: 3.28cqw; height: 3.28cqw; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.88cqw; font-weight: 800; }
+.sl-slide .kl-t { font-size: 2.03cqw; font-weight: 700; line-height: 1.3; }
+.sl-slide .kl-d { font-size: 1.88cqw; line-height: 1.35; color: #475569; margin-top: .16cqw; }
+.sl-slide.L-closing .callout { width: 70.3cqw; text-align: left; }
+.sl-slide .cam-on { margin-top: 1.56cqw; display: flex; flex-direction: column; gap: .31cqw; }
+.sl-slide .cam-on b { font-size: 2.19cqw; color: #2563eb; }
+.sl-slide .cam-on span { font-size: 1.41cqw; color: #64748b; }
 .sl-slide.L-agenda .ag { display: flex; flex-direction: column; gap: 1.25cqw; flex: 1; min-height: 0; justify-content: center; }
 .sl-slide .ag-row { display: grid; grid-template-columns: 4.22cqw 1fr; gap: 1.72cqw; align-items: center; border-radius: .94cqw; padding: 1.09cqw 1.56cqw; }
 .sl-slide .ag-n { width: 4.22cqw; height: 4.22cqw; border-radius: .94cqw; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.88cqw; font-weight: 800; }
@@ -1519,7 +1532,11 @@ body.is-resizing { user-select: none; cursor: col-resize; }
   position: fixed; inset: 0; z-index: 90; background: #0b0d12;
   display: flex; align-items: center; justify-content: center;
 }
-.present-stage { width: min(100vw, calc(100vh * 16 / 9)); }
+/* S9: luôn LETTERBOX trọn khung — co theo cạnh nào chật hơn, và TRỪ thanh điều
+   khiển ở đáy (2.6rem). Bản cũ chỉ lấy `100vh * 16/9`, nên ở cửa sổ rộng mà thấp
+   (1568×770) thanh điều khiển đè mất chân slide. */
+.present { padding-bottom: 2.6rem; }
+.present-stage { width: min(100vw - 1rem, calc((100vh - 3.2rem) * 16 / 9)); }
 .present-stage .sl-slide { box-shadow: none; border-radius: 0; }
 .present-stage [contenteditable] { cursor: default; }
 .present-notes {

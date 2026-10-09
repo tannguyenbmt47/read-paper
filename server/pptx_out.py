@@ -366,14 +366,50 @@ def _render(slide, sl: dict, lay: str, ctx: dict, no: str) -> None:
         return
 
     if lay == "closing":
-        _text(slide, PAD_X, 268, body_w, 90, head, size=52, bold=True,
+        # S4/S17: khớp `renderSlide()` / `_export_slides_html` — câu chốt, tối đa
+        # 3 điều mang về, hộp chốt, cảm ơn + trích dẫn. Trước đây chỉ có một câu.
+        y = 120
+        _text(slide, PAD_X, y, body_w, 110, head, size=44, bold=True,
               align=PP_ALIGN.CENTER)
+        y += 120
         if sub:
-            _text(slide, PAD_X, 360, body_w, 40, sub, size=20, color=MUTED,
+            _text(slide, PAD_X, y - 10, body_w, 40, sub, size=20, color=MUTED,
                   align=PP_ALIGN.CENTER)
-        if bl:
-            _bullets(slide, PAD_X, 412, body_w, 140, bl, size=20, color=INK_2,
-                     marker="")
+            y += 36
+        items = []
+        for c in cards[:3]:
+            d = next((x for x in (c.get("bullets") or []) if (x or "").strip()), "")
+            items.append((c.get("title") or "", d))
+        if not items:
+            items = [(b, "") for b in bl[:3]]
+        x0, w0 = (W_PX - 900) / 2, 900
+        for i, (t, d) in enumerate(items):
+            n = _rect(slide, x0, y + 2, 42, 42, _hex(theme.chip_color(i)))
+            try:                      # bo tròn hẳn thành chấm số, như bản HTML
+                n.adjustments[0] = 0.5
+            except Exception:         # noqa: BLE001
+                pass
+            ntf = n.text_frame
+            ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            np_ = ntf.paragraphs[0]; np_.alignment = PP_ALIGN.CENTER
+            nr = np_.add_run(); nr.text = str(i + 1)
+            nr.font.size = px(22); nr.font.bold = True
+            nr.font.name = FONT; nr.font.color.rgb = WHITE
+            _text(slide, x0 + 60, y, w0 - 60, 34, t, size=26, bold=True)
+            if d:
+                _text(slide, x0 + 60, y + 36, w0 - 60, 32, d, size=22, color=INK_2)
+            y += 80 if d else 52
+        co = sl.get("callout") or {}
+        if co.get("title") or co.get("body"):
+            txt = (co.get("title") or "") + (f" — {co['body']}" if co.get("body") else "")
+            _rect(slide, x0, y + 6, w0, 56, _hex(theme.card_tint(0)))
+            _text(slide, x0 + 20, y + 16, w0 - 40, 40, txt, size=20, color=INK_2)
+            y += 74
+        _text(slide, PAD_X, y + 12, body_w, 36, "Cảm ơn · Hỏi đáp", size=28,
+              bold=True, color=ACCENT, align=PP_ALIGN.CENTER)
+        if ctx.get("cite"):
+            _text(slide, PAD_X, y + 52, body_w, 28, ctx["cite"], size=16, color=MUTED,
+                  align=PP_ALIGN.CENTER)
         _footer(slide, ctx["foot"], no)
         return
 
@@ -539,8 +575,13 @@ def _picture(slide, path: str, x, y, w, h) -> None:
 # ------------------------------------------------------------------ vào ra
 
 
-def build(doc: dict) -> bytes:
-    """Cả bộ slide thành một file .pptx."""
+def build(doc: dict, kem_du_phong: bool = False) -> bytes:
+    """Cả bộ slide thành một file .pptx.
+
+    S13: mặc định chỉ xuất BỘ CHÍNH. Trước đây 4 slide dự phòng bị nối thẳng sau
+    slide kết, nên bấm tới cuối buổi là chiếu luôn sang phần không định chiếu.
+    `kem_du_phong` thì thêm, nhưng đứng sau một vách ngăn "Phụ lục".
+    """
     from . import pipeline
 
     brief = doc.get("brief") or {}
@@ -552,6 +593,10 @@ def build(doc: dict) -> bytes:
     # `Pt` trả về Length tính bằng EMU sẵn — đừng nhân 12700 lần nữa
     prs.slide_width = px(W_PX)
     prs.slide_height = px(H_PX)
+    # Mẫu mặc định của python-pptx khai `type="screen4x3"` trong sldSz; đổi kích
+    # thước mà để nguyên nhãn đó thì khổ 16:9 bị khai là 4:3 (S13). Bỏ nhãn đi —
+    # PowerPoint hiểu là khổ tuỳ chỉnh, đúng với 13,333×7,5 inch.
+    prs._element.sldSz.attrib.pop("type", None)
     blank = prs.slide_layouts[6]        # bố cục trống — ta tự đặt mọi khung chữ
 
     title_vi = brief.get("title_vi") or doc.get("title") or "Bài báo"
@@ -562,6 +607,8 @@ def build(doc: dict) -> bytes:
         "venue": (brief.get("venue_guess") or "")[:90],
         "source": (doc.get("source") or "")[:95],
         "foot": title_vi[:70],
+        "cite": " · ".join(x for x in (doc.get("title") or "",
+                                       pipeline.nguon_gon(doc.get("source") or "")) if x)[:120],
     }
 
     secs = [s for s in deck if (s.get("kind") or "") == "section"]
@@ -571,7 +618,12 @@ def build(doc: dict) -> bytes:
     pipeline.attach_terms(doc, deck)
     pipeline.attach_terms(doc, backup)
 
-    for group, tag in ((deck, ""), (backup, "D")):
+    nhom = [(deck, "")]
+    if kem_du_phong and backup:
+        phu_luc = {"kind": "section", "headline": "Phụ lục — slide dự phòng",
+                   "sub": "Dành cho phần hỏi đáp", "eyebrow": "PHỤ LỤC"}
+        nhom.append(([phu_luc] + backup, "D"))
+    for group, tag in nhom:
         for i, sl in enumerate(group, 1):
             slide = prs.slides.add_slide(blank)
             _render(slide, sl, pipeline.slide_layout(sl, doc["id"]), ctx, f"{tag}{i}")

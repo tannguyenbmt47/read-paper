@@ -1376,6 +1376,113 @@ def _norm_num(s: str) -> str:
     return s.replace(",", ".").rstrip("0").rstrip(".") if "." in s or "," in s else s
 
 
+_SO_CACHE: dict[tuple, set[str]] = {}
+
+
+def _so_toan_bai(doc: dict) -> set[str]:
+    """Mọi con số có trong bài (bản gốc + bản dịch), đã chuẩn hoá.
+
+    Nhớ tạm ở mức module, KHÔNG ghi vào `doc`: `doc` được trả về thành JSON, mà
+    `set` thì không chuyển sang JSON được."""
+    key = (doc.get("id"), len(doc.get("blocks") or []), len(doc.get("translations") or {}))
+    if key not in _SO_CACHE:
+        tr = doc.get("translations") or {}
+        pool = " ".join((b.get("text") or "") + " " + (tr.get(b["id"]) or "")
+                        for b in doc.get("blocks") or [])
+        if len(_SO_CACHE) > 32:
+            _SO_CACHE.clear()
+        _SO_CACHE[key] = {_norm_num(m) for m in _NUM.findall(pool)}
+    return _SO_CACHE[key]
+
+
+def so_bia(doc: dict, src_ids: list[str], shown: str) -> list[str]:
+    """Số trên slide/dàn ý KHÔNG có ở đâu trong bài — dấu hiệu số bịa.
+
+    S21: bản đầu chỉ dò trong các khối nguồn được khai, nên báo "900 không có
+    trong khối nguồn" trong khi bài ghi 900 ở ba chỗ khác. Cảnh báo kêu oan vài
+    lần là người dùng thôi đọc, và lúc đó cảnh báo thật cũng trôi theo. Giờ dò
+    trong khối nguồn trước, không thấy thì dò cả bài; chỉ báo khi không có ở đâu.
+    """
+    text_of = {b["id"]: b.get("text") or "" for b in doc.get("blocks") or []}
+    tr = doc.get("translations") or {}
+    pool = " ".join(text_of.get(i, "") + " " + (tr.get(i) or "") for i in src_ids)
+    nums = {_norm_num(m) for m in _NUM.findall(pool)}
+    shown = _URLISH.sub(" ", shown)
+    out = sorted({m for m in _NUM.findall(shown) if _norm_num(m) not in nums})
+    # số thứ tự và phần trăm tròn trĩnh thì bỏ qua, ồn hơn là hữu ích
+    out = [n for n in out if not (n.isdigit() and int(n) <= 12)]
+    if out:
+        ca_bai = _so_toan_bai(doc)
+        out = [n for n in out if _norm_num(n) not in ca_bai]
+    return out
+
+
+def nguon_gon(src: str) -> str:
+    """Nguồn bài rút gọn cho dòng trích dẫn trên slide — bản server của
+    `nguonGon()` bên `app.js`, phải khớp từng chữ. `arXiv:1706.03762` thay cho
+    cả URL; URL khác thì bỏ giao thức, `www.` và đuôi `.pdf` (S6)."""
+    src = (src or "").strip()
+    m = re.search(r"(?:arxiv\.org/(?:abs|pdf)/|arxiv:\s*)(\d{4}\.\d{4,5})", src, re.I)
+    if m:
+        return "arXiv:" + m.group(1)
+    src = re.sub(r"^https?://", "", src, flags=re.I)
+    src = re.sub(r"^www\.", "", src, flags=re.I)
+    return re.sub(r"\.pdf$", "", src, flags=re.I).rstrip("/")
+
+
+def _viet_hoa_dau(t: str) -> str:
+    """Viết hoa chữ đầu câu — nhưng chỉ khi từ đầu viết thường TOÀN BỘ.
+
+    S5: gạch đầu dòng mở bằng "multi-hop question answering cần…", "open IE dựa
+    trên…". Nhưng `iRAG`, `mHC`, `kNN` là tên riêng có chữ hoa bên trong — viết
+    hoa chữ đầu là đổi tên người ta, nên từ nào có chữ hoa ở giữa thì để nguyên.
+    """
+    if not t:
+        return t
+    m = re.match(r"(\s*)(\S+)", t)
+    if not m:
+        return t
+    tu = m.group(2)
+    if not tu[0].islower() or any(ch.isupper() for ch in tu[1:]):
+        return t
+    return m.group(1) + tu[0].upper() + tu[1:] + t[m.end():]
+
+
+def chuan_hoa_slide(sl: dict) -> dict:
+    """Dọn một slide trước khi soát/dựng — chạy cho cả slide mới lẫn bộ đã có.
+
+    - S17: slide `title` không dựng thẻ/hộp chốt, `agenda` không dựng hộp chốt.
+      Model vẫn viết (và ta vẫn trả tiền) rồi giao diện vứt đi, nên dữ liệu và
+      thứ hiện ra lệch nhau. Bỏ khỏi dữ liệu cho hai bên khớp; prompt cũng đã
+      thôi đòi các trường ấy.
+    - S5: viết hoa chữ đầu của tiêu đề và mọi gạch đầu dòng.
+    """
+    kind = sl.get("kind") or "content"
+    if kind == "title":
+        sl["cards"] = []
+        sl["callout"] = {}
+    elif kind == "agenda":
+        sl["callout"] = {}
+    for k in ("headline", "sub"):
+        if isinstance(sl.get(k), str):
+            sl[k] = _viet_hoa_dau(sl[k])
+    if isinstance(sl.get("bullets"), list):
+        sl["bullets"] = [_viet_hoa_dau(b) if isinstance(b, str) else b for b in sl["bullets"]]
+    for c in sl.get("cards") or []:
+        if not isinstance(c, dict):
+            continue
+        if isinstance(c.get("title"), str):
+            c["title"] = _viet_hoa_dau(c["title"])
+        if isinstance(c.get("bullets"), list):
+            c["bullets"] = [_viet_hoa_dau(b) if isinstance(b, str) else b for b in c["bullets"]]
+    co = sl.get("callout")
+    if isinstance(co, dict):
+        for k in ("title", "body"):
+            if isinstance(co.get(k), str):
+                co[k] = _viet_hoa_dau(co[k])
+    return sl
+
+
 def check_slides(doc: dict, deck: list[dict]) -> list[dict]:
     """Soát cơ học từng slide, gắn `warn` — bản sao của `content_kept()` cho slide.
 
@@ -1393,6 +1500,7 @@ def check_slides(doc: dict, deck: list[dict]) -> list[dict]:
     used_fig: set[str] = set()
 
     for sl in deck:
+        chuan_hoa_slide(sl)
         warn: list[str] = []
         kind = sl.get("kind") or "point"
         if kind not in SLIDE_KINDS:
@@ -1540,17 +1648,9 @@ def check_slides(doc: dict, deck: list[dict]) -> list[dict]:
             # mục lục nói về chính buổi nói, không trích gì từ bài
             warn.append("Slide không khai nguồn — không kiểm được số liệu.")
         else:
-            pool = " ".join(text_of[i] + " " + tr.get(i, "") for i in src_ids)
-            pool_nums = {_norm_num(m) for m in _NUM.findall(pool)}
-            shown = _URLISH.sub(" ", head + " " + " ".join(bullets) + " " + fnote)
-            orphan = sorted({
-                m for m in _NUM.findall(shown)
-                if _norm_num(m) not in pool_nums
-            })
-            # số thứ tự và phần trăm tròn trĩnh thì bỏ qua, ồn hơn là hữu ích
-            orphan = [n for n in orphan if not (n.isdigit() and int(n) <= 12)]
+            orphan = so_bia(doc, src_ids, head + " " + " ".join(bullets) + " " + fnote)
             if orphan:
-                warn.append("Số không có trong khối nguồn: " + ", ".join(orphan)
+                warn.append("Số không có ở đâu trong bài: " + ", ".join(orphan)
                             + ". Đối chiếu lại bài trước khi trình bày.")
 
         # Chốt chặn thật cho việc tràn khung: đo bằng metric font thật thay vì
@@ -1654,7 +1754,7 @@ def check_depth(deck: list[dict]) -> None:
     là kiểu hỏng người trình bày không tự nhận ra, vì cả buổi ai cũng gật đầu.
     """
     for sl in deck:
-        if sl.get("kind") in ("title", "agenda", "section", "thanks"):
+        if sl.get("kind") in ("title", "agenda", "section", "thanks", "closing"):
             continue
         w = sl.setdefault("warn", [])
         for b in (sl.get("bullets") or []):
@@ -2021,14 +2121,9 @@ def check_outline(doc: dict, outline: dict) -> dict:
         elif not src:
             warn.append("Mục không khai nguồn — không kiểm được số liệu.")
         else:
-            pool = " ".join(text_of[i] + " " + tr.get(i, "") for i in src)
-            pool_nums = {_norm_num(m) for m in _NUM.findall(pool)}
-            shown = _URLISH.sub(" ", msg + " " + " ".join(pts))
-            orphan = sorted({m for m in _NUM.findall(shown)
-                             if _norm_num(m) not in pool_nums})
-            orphan = [n for n in orphan if not (n.isdigit() and int(n) <= 12)]
+            orphan = so_bia(doc, src, msg + " " + " ".join(pts))
             if orphan:
-                warn.append("Số không có trong khối nguồn: " + ", ".join(orphan)
+                warn.append("Số không có ở đâu trong bài: " + ", ".join(orphan)
                             + ". Đối chiếu lại bài trước khi dựng slide.")
 
         if cjk_leak(msg + " " + " ".join(pts), " ".join(text_of.values())):
@@ -2036,9 +2131,13 @@ def check_outline(doc: dict, outline: dict) -> dict:
 
         # Độ sâu — bắt ở đây rẻ hơn hẳn: sửa một dòng dàn ý, thay vì dựng lại
         # slide rồi mới thấy nó rỗng. Xem `server/depth.py`.
-        for pt in pts:
-            warn += [x["msg"] for x in depth.check_text(pt, label="ý")]
-        warn += [x["msg"] for x in depth.check_text(msg, label="thông điệp")]
+        # S21: chỉ soát độ sâu cho mục NỘI DUNG. Tiêu đề, mục lục, vách ngăn,
+        # slide kết vốn không lập luận — đòi "quan hệ nhân quả" ở mục lục là kêu
+        # oan, và kêu oan trên mọi mục thì người dùng học cách bỏ qua cảnh báo.
+        if kind == "content":
+            for pt in pts:
+                warn += [x["msg"] for x in depth.check_text(pt, label="ý")]
+            warn += [x["msg"] for x in depth.check_text(msg, label="thông điệp")]
 
         it["warn"] = list(dict.fromkeys(warn))[:8]
 

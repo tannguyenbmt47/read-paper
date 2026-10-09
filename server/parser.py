@@ -1189,6 +1189,129 @@ def _chinh_khung_hinh(page, goc, body: float):
     return rect
 
 
+_CAP_BANG = re.compile(r"^\s*(tab(le)?|bảng)\b", re.I)
+
+
+def _vi_tri_caption(page, text: str):
+    """Khung TRỌN khối chú thích trên trang (mọi dòng), dò bằng mấy chữ đầu.
+
+    Phải là trọn khối, không phải dòng đầu: chú thích dài ba dòng thì đáy thật
+    của nó nằm sát bảng của nó, còn dòng đầu lại có thể gần bảng phía trên hơn.
+    Đo trên Theia: chỉ lấy dòng đầu là Table 2 cướp vùng của Table 1.
+    """
+    import fitz
+
+    key = re.sub(r"\s+", " ", text or "").strip()
+    hit = None
+    for n in (24, 12, 8):
+        try:
+            hits = page.search_for(key[:n])
+        except Exception:  # noqa: BLE001
+            hits = []
+        if hits:
+            hit = hits[0]
+            break
+    if hit is None:
+        return None
+    for bl in page.get_text("blocks"):
+        r = fitz.Rect(bl[:4])
+        if r.intersects(hit):
+            return r | hit
+    return hit
+
+
+def _ghep_theo_vi_tri(doc, caps: list, regions: list[dict]) -> list[tuple]:
+    """Ghép chú thích ↔ vùng hình/bảng trên cùng trang theo VỊ TRÍ và LOẠI.
+
+    S16: bản cũ chỉ so khoảng cách CHIỀU DỌC, lần lượt từng chú thích lấy vùng
+    gần nhất còn trống. Trang có hai cột hình đặt ngang nhau thì hai chú thích
+    cùng độ cao — chú thích nào đến trước lấy vùng nào thì lấy. Đo trên CIRAG:
+    "Figure 6: Latency vs F1" (cột trái) nhận vùng BẢNG ở cột phải; trên World
+    Models, Table 1 và Figure 13 tráo nhau.
+
+    Điểm của một cặp (thấp là tốt): khoảng hở dọc giữa hai khung + 4× khoảng hở
+    ngang (khác cột là phạt nặng) + phạt khi sai loại (Figure ↔ bảng). Rồi chọn
+    cách ghép có TỔNG điểm nhỏ nhất cho cả trang (`_ghep_toi_uu`).
+
+    Không phạt theo chiều đặt chú thích (trên/dưới): bài ACL để chú thích bảng
+    DƯỚI bảng, bài khác để TRÊN. Thử phạt thì đúng bài này sai bài kia — đã đo:
+    Theia đúng thì CIRAG Table 7/8 tráo. Tối ưu tổng thì cả hai cùng đúng, vì
+    phương án tráo luôn kéo theo một cặp cách nhau cả nửa trang.
+    """
+    import fitz
+
+    theo_trang: dict[int, tuple[list, list]] = {}
+    for b in caps:
+        if not 0 <= b.page < len(doc):
+            continue
+        cr = _vi_tri_caption(doc[b.page], b.text)
+        if cr is None and b.figure_rect:
+            cr = fitz.Rect(*b.figure_rect)
+        if cr is None:
+            continue
+        theo_trang.setdefault(b.page, ([], []))[0].append((b, cr))
+    for r in regions:
+        if r["page"] in theo_trang:
+            theo_trang[r["page"]][1].append(r)
+
+    out = []
+    for cs, rs in theo_trang.values():
+        if not rs:
+            continue
+        diem = []
+        for b, cr in cs:
+            la_bang = bool(_CAP_BANG.match(b.text or ""))
+            hang = []
+            for r in rs:
+                x0, y0, x1, y1 = r["bbox"]
+                doc_hở = max(0.0, max(y0, cr.y0) - min(y1, cr.y1))
+                ngang_hở = max(0.0, max(x0, cr.x0) - min(x1, cr.x1))
+                loai = (r.get("kind") or "").lower()
+                sai_loai = 300.0 if loai in ("figure", "table") and (loai == "table") != la_bang else 0.0
+                hang.append(doc_hở + 4 * ngang_hở + sai_loai)
+            diem.append(hang)
+        for i, j in _ghep_toi_uu(diem):
+            out.append((cs[i][0], rs[j]))
+    return out
+
+
+# Chi phí để một chú thích KHÔNG nhận vùng nào. Lớn hơn mọi cặp hợp lý trên
+# cùng trang, nhỏ hơn cặp vô lý (khác loại, cách cả trang) — chú thích thừa vùng
+# thì để trống còn hơn nhận nhầm hình.
+_KHONG_GHEP = 400.0
+
+
+def _ghep_toi_uu(diem: list[list[float]]) -> list[tuple[int, int]]:
+    """Ghép mỗi hàng (chú thích) với tối đa một cột (vùng), tổng điểm nhỏ nhất.
+
+    Quy hoạch động trên tập vùng đã dùng (bitmask) — một trang chỉ vài vùng nên
+    2^n rất nhỏ. Quá 12 vùng thì rơi về ghép tham lam theo điểm.
+    """
+    n = len(diem[0]) if diem else 0
+    if n > 12:
+        cap = sorted((d, i, j) for i, h in enumerate(diem) for j, d in enumerate(h))
+        dung_i, dung_j, out = set(), set(), []
+        for d, i, j in cap:
+            if i in dung_i or j in dung_j or d >= _KHONG_GHEP:
+                continue
+            dung_i.add(i); dung_j.add(j); out.append((i, j))
+        return out
+    # tot[mask] = (tổng điểm, danh sách cặp) sau khi xét các hàng đến hiện tại
+    tot = {0: (0.0, [])}
+    for i, hang in enumerate(diem):
+        moi: dict[int, tuple] = {}
+        for mask, (c, ds) in tot.items():
+            ung = [(c + _KHONG_GHEP, mask, ds)]
+            for j, d in enumerate(hang):
+                if not mask & (1 << j) and d < _KHONG_GHEP:
+                    ung.append((c + d, mask | (1 << j), ds + [(i, j)]))
+            for c2, m2, ds2 in ung:
+                if m2 not in moi or c2 < moi[m2][0]:
+                    moi[m2] = (c2, ds2)
+        tot = moi
+    return min(tot.values(), key=lambda t: t[0])[1]
+
+
 def apply_layout(blocks: list[Block], regions: list[dict], pdf_bytes: bytes,
                  dpi: int = 160) -> dict[str, bytes]:
     """Thay khung cắt heuristic bằng khung do mô hình bố cục trả về.
@@ -1218,21 +1341,13 @@ def apply_layout(blocks: list[Block], regions: list[dict], pdf_bytes: bytes,
             used.add(id(r))
             pairs.append((b, r))
 
-    # caption chưa ghép được -> lấy vùng chưa dùng, cùng trang, gần nhất theo chiều dọc
-    for b in caps:
-        if any(p[0] is b for p in pairs):
-            continue
-        cand = [r for r in regions if id(r) not in used and r["page"] == b.page]
-        if not cand:
-            continue
-        cy = (b.figure_rect[1] + b.figure_rect[3]) / 2 if b.figure_rect else 0
-        best = min(cand, key=lambda r: abs((r["bbox"][1] + r["bbox"][3]) / 2 - cy))
-        used.add(id(best))
-        pairs.append((b, best))
-
     out: dict[str, bytes] = {}
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         body = _body_size(doc)
+        # Caption chưa ghép được theo nhãn → ghép theo HÌNH HỌC (`_ghep_theo_vi_tri`).
+        # MinerU không trả chữ nên với nó đây là đường DUY NHẤT.
+        con = [b for b in caps if not any(p[0] is b for p in pairs)]
+        pairs += _ghep_theo_vi_tri(doc, con, [r for r in regions if id(r) not in used])
         for b, r in pairs:
             pno = r["page"]
             if not 0 <= pno < len(doc):

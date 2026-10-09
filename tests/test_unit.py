@@ -1533,3 +1533,79 @@ def test_nhan_ngoai_me_la_cho_model_chep_lai_prefix():
     # câu NHẮC tới mã khối giữa dòng thì không bị cắt
     ra2 = "<<<b25_g>>>\nĐoạn này nối với <<<b8>>> ở trên.\n"
     assert "nối với" in _parse_labeled(ra2, ["b25_g"])["b25_g"]
+
+
+def test_chuan_hoa_slide_viet_hoa_va_bo_truong_thua():
+    """S5/S17: viết hoa chữ đầu (trừ tên riêng có chữ hoa giữa như iRAG); slide
+    tiêu đề không mang thẻ/hộp chốt, mục lục không mang hộp chốt."""
+    from server.pipeline import chuan_hoa_slide, _viet_hoa_dau
+    assert _viet_hoa_dau("multi-hop question answering cần") == "Multi-hop question answering cần"
+    assert _viet_hoa_dau("iRAG hiện có vẫn tích luỹ nhiễu") == "iRAG hiện có vẫn tích luỹ nhiễu"
+    assert _viet_hoa_dau("open IE dựa trên prompt") == "Open IE dựa trên prompt"
+    t = chuan_hoa_slide({"kind": "title", "headline": "x", "cards": [{"title": "a"}],
+                         "callout": {"title": "c"}})
+    assert t["cards"] == [] and t["callout"] == {}
+    a = chuan_hoa_slide({"kind": "agenda", "cards": [{"title": "phần một", "bullets": ["mô tả"]}],
+                         "callout": {"title": "c"}})
+    assert a["callout"] == {} and a["cards"][0]["title"] == "Phần một"
+    assert a["cards"][0]["bullets"] == ["Mô tả"]
+
+
+def test_so_bia_do_tren_toan_bai():
+    """S21: "900" có ở khối khác trong bài thì không phải số bịa."""
+    from server.pipeline import so_bia
+    doc = {"id": "x", "blocks": [{"id": "b1", "text": "Agent đạt 906 ± 21 điểm."},
+                                 {"id": "b2", "text": "Ngưỡng giải được là 900 điểm."}],
+           "translations": {}}
+    assert so_bia(doc, ["b1"], "Đạt 906 điểm, vượt ngưỡng 900") == []
+    assert so_bia(doc, ["b1"], "Đạt 9999 điểm") == ["9999"]
+
+
+def test_nguon_gon_cho_trich_dan():
+    from server.pipeline import nguon_gon
+    assert nguon_gon("https://arxiv.org/abs/1706.03762v7") == "arXiv:1706.03762"
+    assert nguon_gon("https://aclanthology.org/2026.acl-long.1203.pdf") == "aclanthology.org/2026.acl-long.1203"
+
+
+def test_hai_ban_nguon_gon_khop_nhau():
+    """`nguonGon()` (app.js) và `nguon_gon()` (pipeline.py) dựng cùng một dòng
+    trích dẫn ở hai nơi — lệch là file xuất ra khác bản xem trước."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "web" / "app.js").read_text(encoding="utf-8")
+    assert "function nguonGon(" in js
+    for tok in ("arXiv:", "\\.pdf$", "^www\\.", "^https?:"):
+        assert tok in js.split("function nguonGon(")[1][:600], tok
+
+
+def test_ghep_chu_thich_voi_vung_theo_cot_va_tong_diem():
+    """S16: chú thích ↔ vùng hình ghép theo VỊ TRÍ, không theo thứ tự.
+
+    Ca 1 (CIRAG): Figure 6 ở cột trái, Table 4 ở cột phải, cùng độ cao — bản
+    cũ chỉ so chiều dọc nên tráo nhau. Ca 2 (Theia): hai bảng chồng nhau, chú
+    thích Table 2 dài ba dòng — dòng đầu gần bảng 1 hơn, trọn khối thì gần bảng 2.
+    """
+    import fitz
+    from server import parser as P
+    from server.parser import Block
+    d = fitz.open()
+    pg = d.new_page(width=612, height=792)
+    pg.insert_text((71, 210), "Figure 6: Latency vs. F1 on 2WikiMQA.", fontsize=9)
+    pg.insert_text((306, 210), "Table 4: Additional results on single-hop QA.", fontsize=9)
+    pg.insert_text((108, 410), "Table 1: Mean CortexBench score across tasks.", fontsize=9)
+    pg.insert_text((108, 470), "Table 2: Real robot behavioral cloning results measured", fontsize=9)
+    pg.insert_text((108, 481), "by success rate across four tasks and two settings with", fontsize=9)
+    pg.insert_text((108, 492), "the same evaluation protocol for every baseline.", fontsize=9)
+    vung = [{"page": 0, "kind": "table", "bbox": [327, 70, 501, 194]},
+            {"page": 0, "kind": "figure", "bbox": [84, 70, 272, 196]},
+            {"page": 0, "kind": "table", "bbox": [108, 420, 502, 448]},
+            {"page": 0, "kind": "table", "bbox": [108, 500, 502, 570]}]
+    caps = [Block("f6", "caption", "Figure 6: Latency vs. F1 on 2WikiMQA.", page=0),
+            Block("t4", "caption", "Table 4: Additional results on single-hop QA.", page=0),
+            Block("t1", "caption", "Table 1: Mean CortexBench score across tasks.", page=0),
+            Block("t2", "caption", "Table 2: Real robot behavioral cloning results measured", page=0)]
+    ghep = {b.id: r["bbox"] for b, r in P._ghep_theo_vi_tri(d, caps, vung)}
+    assert ghep["f6"] == [84, 70, 272, 196]      # hình cột trái
+    assert ghep["t4"] == [327, 70, 501, 194]     # bảng cột phải
+    assert ghep["t1"] == [108, 420, 502, 448]
+    assert ghep["t2"] == [108, 500, 502, 570]

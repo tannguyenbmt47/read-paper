@@ -11,7 +11,7 @@ PORT=9000 ./run.sh       # đổi cổng
 ```
 
 ```bash
-.venv/bin/python -m pytest          # 269 test · ~3 phút (phần lớn là import docling)
+.venv/bin/python -m pytest          # 275 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
 node --check web/app.js web/survey.js   # chưa có test cho frontend
@@ -909,6 +909,36 @@ Năm chỗ dễ vấp:
   một markup** (`renderSlide()` bên `app.js`, `_export_slides_html` bên
   `main.py`). Sửa một bên phải sửa bên kia, không thì xem trước nói dối. Từ khi
   có `.pptx` thì thành **ba** chỗ — `pptx_out._render()` là chỗ thứ ba.
+
+### Slide sai hình: hai lỗi chồng lên nhau, cả hai ở tầng BÓC chứ không ở slide
+
+Báo cáo 9-10 (S1/S2/S16): slide nói Recall mà chiếu bảng ablation, nói độ trễ mà
+chiếu biểu đồ granularity, slide 9 khung rỗng. Hai nguyên nhân độc lập:
+
+1. **Mã ảnh trôi khỏi mã khối sau khi bóc lại.** `reparse_merge` trả khối về mã
+   CŨ, còn ảnh mang tên của bản bóc MỚI — CIRAG 31/31 khối lệch. Model chọn
+   hình theo mã KHỐI (nó thấy `<<<b94>>>`), renderer hiểu là mã ẢNH. Giờ
+   `_ghep_ban_boc` đổi tên ảnh theo mã khối (`figure = id`), y như `recrop`.
+2. **`apply_layout` ghép chú thích ↔ vùng chỉ theo CHIỀU DỌC, tham lam.** Hai
+   cột hình cùng độ cao thì tráo nhau (CIRAG Figure 6 ↔ Table 4; World Models
+   Table 1 ↔ Figure 13). Giờ `_ghep_theo_vi_tri` dò trọn khối chú thích trên
+   trang, chấm điểm theo khe dọc + 4× khe ngang + phạt sai loại, rồi
+   `_ghep_toi_uu` chọn cách ghép có TỔNG điểm nhỏ nhất cả trang (quy hoạch động
+   trên bitmask vùng; không cần scipy). **Đừng thêm phạt theo chiều đặt chú
+   thích**: ACL để chú thích bảng dưới bảng, bài khác để trên — đã thử, đúng bài
+   này thì sai bài kia (Theia đúng thì CIRAG Table 7/8 tráo).
+
+Bẫy thứ ba khi soát: **ảnh trên slide phải mang `?v=`** (`imgVer`) — đổi khung
+mà URL giữ nguyên thì trình duyệt chiếu tiếp ảnh cũ, và mọi phép đo phía server
+nói "đã sửa".
+
+Cùng đợt: màn trình chiếu chép `innerHTML` của slide trong khi Mermaid còn đang
+vẽ bất đồng bộ, nên sơ đồ không bao giờ hiện khi chiếu — `presentAt` xoá cờ
+`data-done` rồi vẽ lại. Slide kết dựng đủ (3 ý mang về + hộp chốt + cảm ơn +
+trích dẫn) ở cả ba bộ dựng; `chuan_hoa_slide` bỏ thẻ/hộp chốt khỏi slide tiêu
+đề và hộp chốt khỏi mục lục (không dựng thì đừng lưu), viết hoa chữ đầu (trừ từ
+có chữ hoa giữa như `iRAG`). Số trên slide/dàn ý soát trên TOÀN BÀI (`so_bia`).
+File .pptx mặc định chỉ bộ chính, bỏ nhãn `screen4x3`.
 
 ### Xuất `.pptx`
 

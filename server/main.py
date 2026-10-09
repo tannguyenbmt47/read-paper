@@ -614,11 +614,23 @@ def _ghep_ban_boc(doc: dict, blocks: list, imgs: dict, new_title: str,
         stats["fallback_why"] = why_fallback
     if fixed_title:
         stats["title_fixed"] = fixed_title
-    store.save(doc)
 
-    # Ảnh cắt theo mã khối, mà mã khối vừa đổi cho phần mới — ghi lại toàn bộ.
-    if imgs:
-        store.save_images(doc["id"], imgs)
+    # Ảnh của bản bóc mới mang tên theo mã của BẢN BÓC MỚI, còn `reparse_merge`
+    # vừa trả khối về mã CŨ. Để nguyên thì khối `b94` trỏ ảnh `b103`, trong khi
+    # ảnh tên `b94` lại là của khối khác — và slide hỏi "hình b94" theo mã khối
+    # (model thấy bài dưới dạng `<<<b94>>>`) nhận NHẦM HÌNH, hoặc khung rỗng nếu
+    # tên ấy không có file. Đo trên CIRAG sau vài lần bóc lại: 31/31 khối lệch,
+    # 3 slide hiện sai hình (báo cáo 9-10, S1/S2/S16). Đổi tên ảnh theo mã khối
+    # là xoá hẳn chuyện hai thứ mã: mã nào model nói ra cũng chỉ còn một nghĩa.
+    anh: dict[str, bytes] = {}
+    for b in doc["blocks"]:
+        f = b.get("figure")
+        if f and imgs and f in imgs:
+            anh[b["id"]] = imgs[f]
+            b["figure"] = b["id"]
+    store.save(doc)
+    if anh:
+        store.save_images(doc["id"], anh)
     # Bản bóc mới thay luôn bản trong cache, để lần sau nạp cùng file được bản tốt.
     if data:          # bài dán bằng văn bản thì không có file để khoá cache
         db.put_parse(db.sha(data), doc.get("title", ""), [b.dict() for b in blocks],
@@ -2027,7 +2039,8 @@ def _data_uri(doc_id: str, block_id: str) -> str:
 
 
 @app.get("/api/doc/{doc_id}/export")
-async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md"):
+async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md", du_phong: int = 0):
+    """`du_phong=1`: file PowerPoint kèm bộ slide dự phòng sau vách "Phụ lục"."""
     try:
         doc = store.load(doc_id)
     except KeyError:
@@ -2038,7 +2051,7 @@ async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md"):
         slides = doc.get("slides") or {}
         if not (slides.get("deck") or slides.get("backup")):
             raise HTTPException(400, "Bài này chưa có bộ slide nào — bấm “Dựng slide” trước")
-        data = pptx_out.build(doc)
+        data = pptx_out.build(doc, kem_du_phong=bool(du_phong))
         return Response(
             data,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -2548,7 +2561,16 @@ letter-spacing:-.025em;max-width:17em;position:relative}
 .L-title .art{position:absolute;right:70px;top:50%;transform:translateY(-50%);margin:0}
 .L-title .art img{max-height:330px;max-width:330px}
 .L-closing{justify-content:center;align-items:center;text-align:center}
-.L-closing h2{font-size:52px;font-weight:800;margin:0 0 14px}
+.L-closing h2{font-size:44px;font-weight:800;margin:0 0 14px;max-width:1000px}
+.kl{display:flex;flex-direction:column;gap:14px;width:900px;text-align:left;margin:12px 0}
+.kl-row{display:grid;grid-template-columns:42px 1fr;gap:18px;align-items:start}
+.kl-n{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;font-weight:800}
+.kl-t{font-size:26px;font-weight:700;line-height:1.3}
+.kl-d{font-size:24px;line-height:1.35;color:#475569;margin-top:2px}
+.L-closing .callout{width:900px;text-align:left}
+.cam-on{margin-top:20px;display:flex;flex-direction:column;gap:4px}
+.cam-on b{font-size:28px;color:var(--accent)}
+.cam-on span{font-size:18px;color:#64748b}
 
 /* ---- mục lục: badge số vuông bo góc ---- */
 .L-agenda .ag{display:flex;flex-direction:column;gap:16px;flex:1;
@@ -2693,6 +2715,9 @@ def _export_slides_html(doc: dict, *, for_print: bool = False) -> Response:
             hiện ô chờ ở đó là mời người dùng bỏ ảnh vào một khe không nhìn ra
             gì. `slide_fit.room_for_art()` đo chỗ trống thật rồi mới quyết.
             """
+            # S2: file xuất ra là thứ đem đi chiếu — lời nhắn cho người soạn
+            # ("Chỗ dành cho ảnh minh hoạ…") không bao giờ được lọt vào đó.
+            return ""
             room = int(sl.get("art_room") or 0)
             if room < slide_fit.MIN_ART_H:
                 return ""
@@ -2799,10 +2824,29 @@ def _export_slides_html(doc: dict, *, for_print: bool = False) -> Response:
                     f"{f'<div class=ag-d>{rich(desc)}</div>' if desc else ''}</div></div>")
             inner = header() + f"<div class='ag'>{''.join(rows)}</div>"
         elif lay == "closing":
-            inner = (f"<h2>{rich(head)}</h2>"
+            # S4/S17: dựng đủ như `renderSlide()` — câu chốt, tối đa 3 điều mang
+            # về, hộp chốt, cảm ơn + trích dẫn. Trước đây chỉ có một câu.
+            items = []
+            for i, c in enumerate(cards[:3]):
+                d = next((x for x in (c.get("bullets") or []) if (x or "").strip()), "")
+                items.append((c.get("title") or "", d))
+            if not items:
+                items = [(b, "") for b in bl[:3]]
+            rows = "".join(
+                f"<div class='kl-row'><span class='kl-n' "
+                f"style='background:{theme.chip_color(i)}'>{i + 1}</span>"
+                f"<div><div class='kl-t'>{rich(t)}</div>"
+                + (f"<div class='kl-d'>{rich(d)}</div>" if d else "") + "</div></div>"
+                for i, (t, d) in enumerate(items))
+            cite = " · ".join(x for x in (doc.get("title") or "",
+                                          pipeline.nguon_gon(doc.get("source") or "")) if x)
+            inner = (f"<div class='part' data-part=\"head\"><h2>{rich(head)}</h2>"
                      + (f"<p class='sub'>{rich(sl.get('sub'))}</p>"
-                        if (sl.get("sub") or "").strip() else "")
-                     + plain_html())
+                        if (sl.get("sub") or "").strip() else "") + "</div>"
+                     + (f"<div class='kl part' data-part=\"takeaways\">{rows}</div>" if rows else "")
+                     + callout_html()
+                     + "<div class='cam-on part' data-part=\"thanks\"><b>Cảm ơn · Hỏi đáp</b>"
+                     f"<span>{esc(_clip(cite, 120))}</span></div>")
         elif lay == "figwide":
             # ảnh ngang: chữ ở trên, ảnh tràn cả bề ngang ở dưới
             inner = (header() + "<div class='body'>"

@@ -1484,3 +1484,30 @@ def test_trang_gioi_thieu_va_huong_dan(app_client):
             assert f'id="{neo}"' in (goc / trang).read_text(encoding="utf-8"), f"{trang}#{neo}"
     assert app_client.get("/gioi-thieu/").status_code == 200
     assert 'href="/gioi-thieu/huong-dan.html"' in app_client.get("/").text
+
+
+def test_boc_lai_doi_ten_anh_theo_ma_khoi(app_client):
+    """S16: bóc lại giữ MÃ KHỐI cũ (ghép theo nội dung) nhưng ảnh mang tên của bản
+    bóc MỚI. Trên CIRAG: khối b94 (Table 5) trỏ ảnh b103, còn ảnh tên b94 là của
+    khối khác — slide xin "hình b94" theo mã khối nhận nhầm bảng ablation."""
+    from server import main, store
+    from server.parser import Block
+    r = app_client.post("/api/import", data={"text": "Bài có hình\n\nĐoạn mở đầu đủ dài để thành khối.\n\nFigure 1: Hình một.\n\nTable 1: Bảng một.",
+                                            "model": "test/anh"})
+    doc = store.load(r.json()["id"])
+    cap = [b for b in doc["blocks"] if b["type"] == "caption"]
+    assert len(cap) == 2
+    # bản bóc MỚI: cùng nội dung, nhưng mã khối và tên ảnh đã trôi (b7, b9)
+    moi = []
+    for i, b in enumerate(doc["blocks"]):
+        nb = Block(**{**b, "id": f"b{50 + i}"})
+        if b["type"] == "caption":
+            nb.figure = f"b{90 + i}"
+        moi.append(nb)
+    imgs = {nb.figure: f"PNG-{nb.text}".encode() for nb in moi if nb.figure}
+    main._ghep_ban_boc(doc, moi, imgs, "", "", b"")
+    doc = store.load(doc["id"])
+    for b in doc["blocks"]:
+        if b["type"] == "caption":
+            assert b["figure"] == b["id"], "ảnh phải mang đúng mã khối"
+            assert store.image_path(doc["id"], b["id"]).read_bytes() == f"PNG-{b['text']}".encode()

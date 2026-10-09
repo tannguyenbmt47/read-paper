@@ -659,6 +659,17 @@ function tenNguon(src) {
   catch { return src.split(/[\\/]/).pop().slice(0, 40); }
 }
 
+/** Nguồn bài rút gọn cho dòng trích dẫn trên slide (S6): `arXiv:1706.03762`
+    thay cho cả URL; URL khác thì bỏ giao thức, `www.` và đuôi `.pdf`. Phải
+    khớp từng chữ với `pipeline.nguon_gon()` — file xuất ra dùng bản đó. */
+function nguonGon(src) {
+  src = String(src || "").trim();
+  const ax = src.match(/(?:arxiv\.org\/(?:abs|pdf)\/|arxiv:\s*)(\d{4}\.\d{4,5})/i);
+  if (ax) return "arXiv:" + ax[1];
+  return src.replace(/^https?:\/\//i, "").replace(/^www\./i, "")
+    .replace(/\.pdf$/i, "").replace(/\/$/, "");
+}
+
 const RECENT_SORT = {
   moi: (a, b) => b.updated_at - a.updated_at,
   nap: (a, b) => b.created_at - a.created_at,
@@ -2433,9 +2444,18 @@ const iconSvg = (n, sz = 22) => {
 const tint = (i) => CARD_TINTS[i % CARD_TINTS.length];
 const chipCol = (i) => CHIP_COLORS[i % CHIP_COLORS.length];
 
+// S2: ảnh không tải được thì gỡ luôn cả khung lẫn chú giải — khung đen rỗng
+// kèm một câu mô tả biểu đồ không ai thấy còn tệ hơn không có hình.
+// `?v=` theo khung cắt: cắt lại hay ghép lại chú thích ↔ hình thì file đổi mà
+// URL giữ nguyên, và trình duyệt chiếu tiếp ẢNH CŨ — cùng bẫy với màn soát.
+const imgVer = (fig) => {
+  const b = (state.doc?.blocks || []).find((x) => x.figure === fig);
+  return b?.figure_rect ? "?v=" + b.figure_rect.join("_") : "";
+};
 const img = (fig) =>
-  `<img src="/api/doc/${state.doc.id}/img/${esc(fig)}.png" alt=""`
-  + ` loading="lazy" decoding="async">`;
+  `<img src="/api/doc/${state.doc.id}/img/${esc(fig)}.png${imgVer(fig)}" alt=""`
+  + ` loading="lazy" decoding="async"`
+  + ` onerror="(this.closest('figure')||this.closest('.art')||this).remove()">`;
 
 /* Bản sao của `pipeline.slide_layout()`. Bố cục suy ra TỪ NỘI DUNG, và với slide
    có hình thì còn theo TỈ LỆ ẢNH THẬT: ảnh ngang cho tràn khung, ảnh vuông/dọc
@@ -2588,6 +2608,9 @@ function renderSlide(s) {
   // Slide kín thẻ thì chỗ trống chỉ vài chục pixel — hiện ô ở đó là mời người
   // dùng bỏ ảnh vào một khe không nhìn ra gì.
   const placeholderHtml = () => {
+    // S2: ô này là lời nhắn cho NGƯỜI SOẠN — trình chiếu thì người nghe thấy
+    // nguyên câu "Chỗ dành cho ảnh minh hoạ…". Chỉ hiện trong khung sửa.
+    if (state.dangChieu) return "";
     const room = +(s.art_room || 0);
     if (room < 150) return "";
     return `<div class="artslot" style="min-height:${Math.min(room, 300)}px">
@@ -2673,8 +2696,27 @@ function renderSlide(s) {
     }).join("");
     body = header() + `<div class="ag">${rows}</div>`;
   } else if (lay === "closing") {
-    body = `<div class="part" data-part="head"><h2>${sci(s.headline || "")}</h2>`
-      + (s.sub?.trim() ? `<p class="sub">${sci(s.sub)}</p>` : "") + `</div>` + plainHtml();
+    // S4/S17: slide kết từng chỉ hiện một câu, trong khi dữ liệu có 3 thẻ ý
+    // chính + hộp chốt mà model đã viết (và đã tính tiền). Giờ dựng đủ: câu chốt,
+    // tối đa 3 điều mang về, hộp chốt, rồi "Cảm ơn · Hỏi đáp" kèm trích dẫn.
+    const items = cards.length
+      ? cards.slice(0, 3).map((c, i) => {
+          const j = (c.bullets || []).findIndex((x) => (x || "").trim());
+          return { t: c.title, tp: `cards.${i}.title`,
+                   d: j >= 0 ? c.bullets[j] : "", dp: `cards.${i}.bullets.${j}` };
+        })
+      : bl.slice(0, 3).map((b, i) => ({ t: b, tp: `bullets.${i}`, d: "" }));
+    const rows = items.map((x, i) => `<div class="kl-row">
+        <span class="kl-n" style="background:${chipCol(i)}">${i + 1}</span>
+        <div><div class="kl-t"${ed(x.tp)}>${sci(x.t)}</div>
+        ${x.d ? `<div class="kl-d"${ed(x.dp)}>${sci(x.d)}</div>` : ""}</div></div>`).join("");
+    const cite = [state.doc.title, nguonGon(state.doc.source)].filter(Boolean).join(" · ");
+    body = `<div class="part" data-part="head"><h2${ed("headline")}>${sci(s.headline || "")}</h2>`
+      + (s.sub?.trim() ? `<p class="sub"${ed("sub")}>${sci(s.sub)}</p>` : "") + `</div>`
+      + (rows ? `<div class="kl part" data-part="takeaways">${rows}</div>` : "")
+      + calloutHtml()
+      + `<div class="cam-on part" data-part="thanks"><b>Cảm ơn · Hỏi đáp</b>`
+      + `<span>${esc(clip(cite, 120))}</span></div>`;
   } else if (lay === "figwide") {
     body = header() + `<div class="body">${cardsHtml() || plainHtml()}${visualHtml()}
       ${statsHtml()}${calloutHtml()}${termsHtml()}</div>`;
@@ -3627,13 +3669,22 @@ function presentAt(i) {
   tmp.id = "slStage";
   stage.id = "slStageOff";
   document.body.appendChild(tmp);
-  renderSlide(sl);
+  state.dangChieu = true;
+  try { renderSlide(sl); } finally { state.dangChieu = false; }
   $("#presentStage").innerHTML = tmp.innerHTML;
   tmp.remove();
   stage.id = "slStage";
   state.slideSel = keep;
   $$("#presentStage [contenteditable]").forEach((el) =>
     el.removeAttribute("contenteditable"));
+  // S17: Mermaid vẽ BẤT ĐỒNG BỘ, mà ở trên ta chép `innerHTML` ngay sau
+  // `renderSlide` — ô sơ đồ sang đây đã mang cờ `data-done` nhưng còn rỗng, nên
+  // `hydrateDiagrams` bỏ qua và màn trình chiếu không bao giờ có sơ đồ (slide 4,
+  // 5, 14 của CIRAG trống nửa dưới). Xoá cờ và vẽ lại tại chỗ.
+  $$("#presentStage .mmd-slot").forEach((slot) => {
+    delete slot.dataset.done;
+    slot.innerHTML = "";
+  });
   hydrateDiagrams($("#presentStage"));
   $("#presentNotes").textContent = sl.notes || "(slide này không có lời nói)";
   $("#presentNum").textContent = `${state.presentAt + 1} / ${deck.length}`;
@@ -3892,7 +3943,8 @@ function wireSlides() {
     if (!deckOf("deck").length && !deckOf("backup").length) {
       return slStatus("Chưa có slide nào để tải về.");
     }
-    window.open(`/api/doc/${state.doc.id}/export?fmt=${a.dataset.fmt}`, "_blank");
+    window.open(`/api/doc/${state.doc.id}/export?fmt=${a.dataset.fmt}`
+      + (a.dataset.duPhong ? "&du_phong=1" : ""), "_blank");
     if (a.dataset.fmt === "slides-pdf") {
       slStatus("Trang in đã mở ở tab mới — chọn khổ ngang và “Lưu thành PDF”." +
                " Sơ đồ cần vài giây để vẽ xong trước khi hộp in hiện ra.");
