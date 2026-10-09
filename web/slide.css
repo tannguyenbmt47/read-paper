@@ -180,7 +180,10 @@
 .sld-vdu { flex: 1; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) minmax(0, .9fr); gap: 2.4cqw; align-items: center; }
 .sld-note.nho { transform: rotate(1.2deg); }
 .sld-vdu.co-hinh { flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: stretch; }
-.sld-vdu-cot { display: flex; flex-direction: column; gap: 1.4cqw; justify-content: center; }
+.sld-vdu-cot { display: flex; flex-direction: column; gap: 1cqw; justify-content: center; }
+.sld-vdu.co-hinh .sld-note { padding: 1.2cqw 1.4cqw 1cqw; }
+.sld-vdu.co-hinh .sld-tl { gap: .8cqw; }
+.sld-vdu.co-hinh .sld-ra { padding: 1cqw 1.4cqw; }
 .sld-tl { list-style: none; margin: 0; padding: 0 0 0 2.4cqw; border-left: .25cqw dashed var(--chi); display: grid; gap: 1.4cqw; counter-reset: b; }
 .sld-tl li { position: relative; counter-increment: b; }
 .sld-tl li::before { content: counter(b); position: absolute; left: -4cqw; top: 0; width: 3cqw; height: 3cqw; display: grid; place-items: center; border-radius: 50%; background: var(--giay); border: .16cqw solid var(--muc); font-weight: 700; font-size: 1.4cqw; }
@@ -249,3 +252,76 @@
   .sld { break-after: page; page-break-after: always; box-shadow: none !important; }
   .sld.tran::after { content: none; }
 }
+
+/* ------------------------------------------------------- vấn đề / ý tưởng có hình */
+.sld-vd.co-hinh { flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 3cqw; align-items: stretch; }
+.sld-vd-cot { display: flex; flex-direction: column; justify-content: center; gap: 2.4cqw; }
+.sld-vd.co-hinh .sld-lon { font-size: 1.08em; }
+.sld-yt.co-hinh { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 3cqw;
+  align-items: stretch; text-align: left; padding: 0; }
+.sld-yt-chu { display: flex; flex-direction: column; justify-content: center; gap: 1.4cqw; }
+.sld-yt.co-hinh .sld-yt-p { font-size: 1.3em; }
+.sld-yt.co-hinh .sld-yt-vs { max-width: none; }
+
+/* ------------------------------------------------------- cơ chế: dòng dẫn vào → ra */
+.sld-dan { font-family: var(--tay); color: var(--xanh); font-size: 1.05em; margin: -1cqw 0 1.4cqw !important; }
+
+/* ------------------------------------------------------- công thức */
+.sld-ct { flex: 1; display: flex; flex-direction: column; gap: 1.6cqw; justify-content: center; }
+.sld-ct-tg { font-family: var(--doc); font-size: 1.1em; }
+.sld-ct-anh { margin: 0; align-self: center; max-width: 100%; background: #fff; border: .16cqw solid var(--muc);
+  border-radius: .5cqw; box-shadow: .3cqw .3cqw 0 var(--muc); padding: 1.4cqw 2.4cqw; }
+.sld-ct-anh img { display: block; max-width: 100%; max-height: 13cqw; object-fit: contain; margin: 0 auto; }
+.sld-ct-chu { align-self: center; position: relative; font-family: var(--doc); font-size: 1.6em; background: #fff;
+  border: .16cqw solid var(--muc); border-radius: .5cqw; box-shadow: .3cqw .3cqw 0 var(--muc); padding: 1.2cqw 2.6cqw; }
+.sld-them-hinh.tai-cho { position: absolute; top: auto; bottom: -3.2cqw; right: 0; }
+.sld-ct-tp { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(22cqw, 1fr)); gap: 1cqw 2cqw; }
+.sld-ct-tp li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1cqw; align-items: baseline;
+  border-bottom: .12cqw dashed var(--chi); padding: .5cqw 0; font-size: .92em; }
+.sld-kh { font-family: var(--doc); font-style: italic; font-size: 1.25em; color: var(--xanh); min-width: 2.6cqw; }
+.sld-ct-dd { font-size: .95em; color: var(--muc-2); }
+.sld-ct-dd .sld-tay { margin-right: .5cqw; }
+
+/* ------------------------------------------------------- khác gì cách cũ: bảng đối chiếu */
+.sld-ss { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 1.8cqw; }
+.sld-ss table { border-collapse: collapse; width: 100%; font-size: .95em; }
+.sld-ss th, .sld-ss td { padding: .9cqw 1.2cqw; border-bottom: .12cqw dashed var(--chi); text-align: center; }
+.sld-ss tr:first-child th { font-family: var(--tieu-de); font-weight: 700; border-bottom: .2cqw solid var(--muc); }
+.sld-ss tr > th:first-child { text-align: left; font-family: var(--than); font-weight: 600; }
+.sld-ss .cua-bai { background: color-mix(in srgb, var(--da-quang) 38%, transparent); }
+.sld-ss tr:first-child th.cua-bai { background: var(--da-quang); border-radius: .4cqw .4cqw 0 0; }
+.sld-ss td i { font-style: normal; font-weight: 800; font-size: 1.3em; }
+.sld-ss td.co i, .sld-ss td.co span { color: var(--la); font-weight: 700; }
+.sld-ss td.khong i, .sld-ss td.khong span { color: var(--do); font-weight: 700; }
+.sld-ss td.mot-phan i { color: var(--mo); }
+.sld-ss-kl { font-weight: 700; }
+
+/* ------------------------------------------------------- thiết lập thí nghiệm */
+.sld-tl3 { flex: 1; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 2.4cqw; align-content: center; }
+.sld-tl3 section { border: .16cqw solid var(--muc); border-radius: .6cqw; background: #fff; box-shadow: .3cqw .3cqw 0 var(--muc);
+  padding: 1.6cqw 1.6cqw 1.4cqw; display: flex; flex-direction: column; gap: 1cqw; }
+.sld-tl3 ul { list-style: none; margin: 0; padding: 0; }
+.sld-tl3-ds { display: grid; gap: 1cqw; }
+.sld-tl3-ds li { display: grid; font-size: .92em; }
+.sld-tl3-ds b { font-family: var(--tieu-de); }
+.sld-tl3-ds span { color: var(--muc-2); font-size: .9em; }
+.sld-tl3-chip { display: flex; flex-wrap: wrap; gap: .7cqw; }
+.sld-tl3-chip li { border: .14cqw dashed var(--chi); border-radius: 99px; padding: .2cqw 1cqw; font-size: .88em; background: var(--giay); }
+.sld-tl3-nen { margin-top: 1.6cqw !important; font-size: .95em; }
+.sld-tl3-nen .sld-tay { margin-right: .5cqw; }
+
+/* ------------------------------------------------------- con số kèm biểu đồ cột */
+.sld-sl.co-bd { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 4cqw; align-items: center; text-align: left; }
+.sld-sl-trai { display: flex; flex-direction: column; gap: 1cqw; }
+.sld-sl.co-bd .sld-sl-so { font-size: calc(var(--s) * 7.5cqw); }
+.sld-sl.co-bd .sld-sl-yn { max-width: none; }
+.sld-cot { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.3cqw; }
+/* Cột số RỘNG CỐ ĐỊNH: mỗi hàng là một lưới riêng, để `auto` thì thanh của hàng
+   có số dài hơn ngắn đi và độ dài thanh không còn so được với nhau. */
+.sld-cot li { display: grid; grid-template-columns: 14cqw minmax(0, 1fr) 9cqw; gap: 1.2cqw; align-items: center; font-size: .9em; }
+.sld-cot-nhan { text-align: right; color: var(--muc-2); line-height: 1.3; }
+.sld-cot-thanh { height: 2.6cqw; border: .14cqw solid var(--muc); border-radius: .3cqw; background: var(--giay); overflow: hidden; }
+.sld-cot-thanh i { display: block; height: 100%; background: var(--chi); }
+.sld-cot li.cua-bai .sld-cot-thanh i { background: var(--xanh); }
+.sld-cot li.cua-bai .sld-cot-nhan, .sld-cot li.cua-bai b { color: var(--xanh); font-weight: 800; }
+.sld-cot b { font-family: var(--tieu-de); white-space: nowrap; }

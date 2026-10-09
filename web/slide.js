@@ -67,9 +67,9 @@ async function sldTrong() {
       <div class="sl2-trong-chon">
         <label for="slPhutTrong">Độ dài buổi nói</label>
         <select id="slPhutTrong" class="input input-sm">
-          <option value="10">10 phút · ~10 slide</option>
-          <option value="15" selected>15 phút · ~13 slide</option>
-          <option value="20">20 phút · ~16 slide</option>
+          <option value="10">10 phút · ~12 slide</option>
+          <option value="15" selected>15 phút · ~16 slide</option>
+          <option value="20">20 phút · ~20 slide</option>
         </select>
       </div>
       <button id="slTaoTrong" class="btn btn-primary" ${coBrief ? "" : "disabled"}>Tạo slide</button>
@@ -248,13 +248,17 @@ async function sldGui(duong, method, body, xong = "") {
 /* ------------------------------------------------------------ chọn hình */
 
 function sldMoHinh() {
-  const ds = (state.doc.blocks || []).filter((b) => b.figure && b.type !== "equation");
   const s = sldHienTai();
+  // Slide công thức chọn trong ảnh CÔNG THỨC, mọi slide khác chọn hình/bảng —
+  // server cũng từ chối gắn nhầm loại (`slide.chuan_hoa`).
+  const laCT = s.vai === "cong_thuc";
+  const ds = (state.doc.blocks || []).filter((b) => b.figure && b.hidden !== true
+    && (b.type === "equation") === laCT);
   $("#slHinhLuoi").innerHTML = ds.length ? ds.map((b) => `
     <button type="button" class="sl2-hinh-o${b.id === s.hinh ? " is-on" : ""}" data-hinh="${esc(b.id)}">
       <img src="/api/doc/${state.doc.id}/img/${esc(b.figure)}.png?v=${esc((b.figure_rect || []).map(Math.round).join("_"))}" alt="" loading="lazy">
       <span>${esc((state.doc.translations?.[b.id] || b.text || "").slice(0, 90))}</span></button>`).join("")
-    : `<p class="hint">Bài này không có hình/bảng nào cắt được.</p>`;
+    : `<p class="hint">${laCT ? "Bài này không có công thức nào cắt thành ảnh." : "Bài này không có hình/bảng nào cắt được."}</p>`;
   $("#slHinh").classList.remove("hidden");
   $$("#slHinhLuoi [data-hinh]").forEach((b) => (b.onclick = async () => {
     $("#slHinh").classList.add("hidden");

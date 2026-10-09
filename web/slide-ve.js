@@ -29,20 +29,40 @@
       if (t2 === t) break;
       t = t2;
     }
-    return t;
+    // Chỉ số KHÔNG ngoặc (`z_t`, `W_c`, `h_{t+1}` đã xử lý ở trên, `R^32`): model vẫn
+    // viết kiểu này dù prompt đòi `z_{t}`. Cùng luật hẹp với `_SUBSCRIPTISH` bên
+    // app.js — gốc là MỘT chữ cái, chỉ số 1–2 ký tự — nên `paper_id` không bị chạm.
+    return t
+      .replace(/(?<![\w`>])([A-Za-z])_([A-Za-z0-9](?:\+[A-Za-z0-9]{1,2})?)(?![\w{])/g, "$1<sub>$2</sub>")
+      .replace(/(?<![\w>])([A-Za-z])\^([A-Za-z0-9]{1,3})(?![\w{])/g, "$1<sup>$2</sup>");
   }
 
   const CHANG = [
     ["Bài toán", ["van_de", "khoang_trong", "yeu_cau"]],
-    ["Cách làm", ["y_tuong", "co_che", "vi_du"]],
-    ["Bằng chứng", ["bang_chung", "so_lieu"]],
+    ["Cách làm", ["y_tuong", "co_che", "cong_thuc", "vi_du", "so_sanh"]],
+    ["Bằng chứng", ["thiet_lap", "bang_chung", "so_lieu"]],
     ["Giới hạn & đúc kết", ["gioi_han", "dong_lai"]],
   ];
   const NHAN_VAI = {
     van_de: "Vấn đề", khoang_trong: "Khoảng trống", yeu_cau: "Thuộc tính cần có",
-    y_tuong: "Ý tưởng cốt lõi", co_che: "Cơ chế", vi_du: "Ví dụ chạy tay",
+    y_tuong: "Ý tưởng cốt lõi", co_che: "Cơ chế", cong_thuc: "Công thức", vi_du: "Ví dụ chạy tay",
+    so_sanh: "Khác gì cách cũ", thiet_lap: "Thiết lập thí nghiệm",
     bang_chung: "Bằng chứng", so_lieu: "Con số chính", gioi_han: "Giới hạn", dong_lai: "Đúc kết",
   };
+
+  /** Số đầu tiên trong chuỗi ("906 ± 21" → 906, "61,4" → 61.4) — để vẽ cột. */
+  function soDau(t) {
+    const m = String(t || "").replace(/(\d)[.,](\d{3})(?!\d)/g, "$1$2").match(/-?\d+(?:[.,]\d+)?/);
+    return m ? parseFloat(m[0].replace(",", ".")) : NaN;
+  }
+  /** Ô bảng đối chiếu: "có"/"không" thành dấu, chữ khác giữ nguyên. */
+  function oDoiChieu(v) {
+    const t = String(v || "").trim().toLowerCase();
+    if (/^(có|✓|yes|đạt)$/.test(t)) return ["co", "✓"];
+    if (/^(không|✗|no|x|chưa)$/.test(t)) return ["khong", "✗"];
+    if (/^(một phần|phần nào|hạn chế|partial)$/.test(t)) return ["mot-phan", "◐"];
+    return ["", ""];
+  }
 
   /** Các chặng có mặt trong bộ — chặng không có slide nào thì không đánh số. */
   function changCo(bo) {
@@ -117,12 +137,18 @@
         than = `${tieuDe}<ol class="sld-lo">${muc}</ol>`;
         break;
       }
-      case "van_de":
-        than = `${dau}${tieuDe}<div class="sld-vd">
-          ${o("cau", s.cau, "p", "sld-lon", "Vấn đề và vì sao nó quan trọng")}
-          <div class="sld-note"><span class="bang-keo"></span><b class="sld-tay">${nhanViDu}</b>
-          ${o("vi_du", s.vi_du, "p", "", "Một ví dụ cụ thể có thật trong bài")}</div></div>`;
+      case "van_de": {
+        const anh = hinh();
+        const note = `<div class="sld-note"><span class="bang-keo"></span><b class="sld-tay">${nhanViDu}</b>
+          ${o("vi_du", s.vi_du, "p", "", "Một ví dụ cụ thể có thật trong bài")}</div>`;
+        // Có hình (thường là Figure 1): chữ + ví dụ xếp dọc bên trái, hình bên phải.
+        than = coHinh
+          ? `${dau}${tieuDe}<div class="sld-vd co-hinh"><div class="sld-vd-cot">
+              ${o("cau", s.cau, "p", "sld-lon", "Vấn đề và vì sao nó quan trọng")}${note}</div>${anh}</div>`
+          : `${dau}${tieuDe}<div class="sld-vd">
+              ${o("cau", s.cau, "p", "sld-lon", "Vấn đề và vì sao nó quan trọng")}${note}${anh}</div>`;
         break;
+      }
       case "khoang_trong":
         than = `${dau}${tieuDe}<div class="sld-kt">
           <div class="sld-kt-cu"><b class="sld-tay">Cách đang làm</b>${o("cach_cu", s.cach_cu, "p", "", "Cách đang làm")}</div>
@@ -134,11 +160,15 @@
         than = `${dau}${tieuDe}<ul class="sld-tc">${ds("tieu_chi", (t, i) => `<li><span class="sld-o"></span><div>
           ${o(`tieu_chi.${i}.ten`, t.ten, "b", "", "Tiêu chí")}${o(`tieu_chi.${i}.vi_sao`, t.vi_sao, "p", "", "Vì sao cần")}</div></li>`)}</ul>`;
         break;
-      case "y_tuong":
-        than = `${dau}${tieuDe}<div class="sld-yt"><p class="sld-tay">Ý tưởng cốt lõi</p>
+      case "y_tuong": {
+        const anh = hinh();
+        const chu = `<p class="sld-tay">Ý tưởng cốt lõi</p>
           <p class="sld-yt-p">${o("cau", s.cau, "span", "sld-yt-cau", "Trực giác cốt lõi trong một câu")}</p>
-          ${o("vi_sao", s.vi_sao, "p", "sld-yt-vs", "Vì sao nó đáp ứng các tiêu chí")}</div>`;
+          ${o("vi_sao", s.vi_sao, "p", "sld-yt-vs", "Vì sao nó đáp ứng các tiêu chí")}`;
+        than = coHinh ? `${dau}${tieuDe}<div class="sld-yt co-hinh"><div class="sld-yt-chu">${chu}</div>${anh}</div>`
+          : `${dau}${tieuDe}<div class="sld-yt">${chu}${anh}</div>`;
         break;
+      }
       case "co_che": {
         const anh = hinh();
         const buoc = ds("buoc", (b, i) => `<li style="--i:${i}"><span class="sld-buoc-so">${i + 1}</span><div>
@@ -146,7 +176,52 @@
         // Có hình: bước dọc bên trái + hình. Không hình: lần đầu là dòng chảy
         // ngang, lần sau là bậc thang — hai slide cơ chế không bao giờ cùng dáng.
         const dang = coHinh ? "co-hinh" : (lanThu % 2 ? "bac" : "ngang");
-        than = `${dau}${tieuDe}<div class="sld-cc ${dang}"><ol class="sld-buoc">${buoc}</ol>${anh}</div>`;
+        const dan = s.dan || sua ? `<p class="sld-dan">${o("dan", s.dan, "span", "", "Thành phần này nhận gì, trả ra gì")}</p>` : "";
+        than = `${dau}${tieuDe}${dan}<div class="sld-cc ${dang}"><ol class="sld-buoc">${buoc}</ol>${anh}</div>`;
+        break;
+      }
+      case "cong_thuc": {
+        // Trực giác TRƯỚC công thức, vai trò từng ký hiệu SAU nó — đúng trật tự
+        // của skill viết tài liệu kỹ thuật: người nghe hiểu nó tính gì rồi mới nhìn.
+        const url = s.hinh && ctx.anh ? ctx.anh(s) : "";
+        const bt = url
+          ? `<figure class="sld-ct-anh"${sua ? ' data-chon-hinh="1" title="Bấm để đổi công thức"' : ""}><img src="${esc(url)}" alt=""></figure>`
+          : `<div class="sld-ct-chu">${o("bieu_thuc", s.bieu_thuc, "span", "", "Biểu thức, ví dụ y = f(x_{t})")}`
+            + `${sua ? '<button type="button" class="sld-them-hinh tai-cho" data-chon-hinh="1">＋ ảnh công thức</button>' : ""}</div>`;
+        const tp = ds("thanh_phan", (t, i) => `<li>${o(`thanh_phan.${i}.ky_hieu`, t.ky_hieu, "b", "sld-kh", "ký hiệu")}`
+          + `${o(`thanh_phan.${i}.y_nghia`, t.y_nghia, "span", "", "vai trò")}</li>`);
+        than = `${dau}${tieuDe}<div class="sld-ct">
+          ${o("truc_giac", s.truc_giac, "p", "sld-ct-tg", "Công thức này tính gì, vì sao cần")}
+          ${bt}<ul class="sld-ct-tp">${tp}</ul>
+          ${s.danh_doi || sua ? `<p class="sld-ct-dd"><b class="sld-tay">Đánh đổi</b> ${o("danh_doi", s.danh_doi, "span", "", "Tăng/giảm thì được gì, mất gì")}</p>` : ""}</div>`;
+        break;
+      }
+      case "so_sanh": {
+        const cot = s.cot || [];
+        const dau_bang = `<tr><th></th>${cot.map((c, j) => `<th class="${j === cot.length - 1 ? "cua-bai" : ""}">`
+          + `${o(`cot.${j}`, c, "span", "", "cách làm")}</th>`).join("")}</tr>`;
+        const hang = ds("hang", (h, i) => `<tr><th>${o(`hang.${i}.tieu_chi`, h.tieu_chi, "span", "", "tiêu chí")}</th>`
+          + (h.o || []).map((v, j) => {
+            const [lop, dauHieu] = oDoiChieu(v);
+            const noi = sua ? o(`hang.${i}.o.${j}`, v, "span", "", "—")
+              : (dauHieu ? `<i>${dauHieu}</i>` : chu(v));
+            return `<td class="${lop} ${j === cot.length - 1 ? "cua-bai" : ""}">${noi}</td>`;
+          }).join("") + "</tr>");
+        than = `${dau}${tieuDe}<div class="sld-ss"><table>${dau_bang}${hang}</table>
+          ${o("ket_luan", s.ket_luan, "p", "sld-ss-kl", "Điều bảng cho thấy")}</div>`;
+        break;
+      }
+      case "thiet_lap": {
+        const dl = ds("du_lieu", (d, i) => `<li>${o(`du_lieu.${i}.ten`, d.ten, "b", "", "tập dữ liệu")}`
+          + `${o(`du_lieu.${i}.mo_ta`, d.mo_ta, "span", "", "loại câu hỏi, quy mô")}</li>`);
+        const dc = (s.doi_chung || []).map((x, i) => `<li>${o(`doi_chung.${i}`, x, "span", "", "baseline")}</li>`).join("");
+        const dd = ds("do_do", (d, i) => `<li>${o(`do_do.${i}.ten`, d.ten, "b", "", "thước đo")}`
+          + `${o(`do_do.${i}.y_nghia`, d.y_nghia, "span", "", "đo cái gì")}</li>`);
+        than = `${dau}${tieuDe}<div class="sld-tl3">
+          <section><b class="sld-tay">Dữ liệu</b><ul class="sld-tl3-ds">${dl}</ul></section>
+          <section><b class="sld-tay">So với</b><ul class="sld-tl3-chip">${dc}</ul></section>
+          <section><b class="sld-tay">Đo bằng</b><ul class="sld-tl3-ds">${dd}</ul></section></div>
+          ${s.mo_hinh_nen || sua ? `<p class="sld-tl3-nen"><b class="sld-tay">Mô hình nền</b> ${o("mo_hinh_nen", s.mo_hinh_nen, "span", "", "mô hình nền")}</p>` : ""}`;
         break;
       }
       case "vi_du": {
@@ -177,11 +252,22 @@
       case "so_lieu":
         // Lần thứ hai trong bộ: số bên trái, lời bên phải — hai slide con số hay
         // đứng liền nhau (cùng chặng Bằng chứng), cùng dáng là thấy lặp ngay.
-        than = `${dau}${tieuDe}<div class="sld-sl${lanThu % 2 ? " lat" : ""}">
-          ${o("gia_tri", s.gia_tri, "b", "sld-sl-so", "Con số")}
-          ${o("nhan", s.nhan, "p", "sld-sl-nhan", "Đo cái gì")}
-          ${o("moc", s.moc, "p", "sld-sl-moc", "So với gì")}
-          ${o("y_nghia", s.y_nghia, "p", "sld-sl-yn", "Mức chênh ấy nói lên điều gì")}</div>`;
+        {
+          // Biểu đồ cột vẽ từ chính các số trong slide (đã soát với chữ của bài):
+          // một con số đứng một mình không cho thấy nó lớn hay nhỏ.
+          const ss = (s.so_sanh || []).map((x) => ({ ...x, v: soDau(x.gia_tri) })).filter((x) => isFinite(x.v));
+          const max = Math.max(...ss.map((x) => Math.abs(x.v)), 0);
+          const bd = ss.length >= 2 && max > 0 ? `<ul class="sld-cot">${ss.map((x) =>
+            `<li class="${x.cua_bai ? "cua-bai" : ""}"><span class="sld-cot-nhan">${chu(x.nhan)}</span>`
+            + `<span class="sld-cot-thanh"><i style="width:${(Math.abs(x.v) / max * 100).toFixed(1)}%"></i></span>`
+            + `<b>${chu(x.gia_tri)}</b></li>`).join("")}</ul>` : "";
+          const chuSo = `${o("gia_tri", s.gia_tri, "b", "sld-sl-so", "Con số")}
+            ${o("nhan", s.nhan, "p", "sld-sl-nhan", "Đo cái gì")}
+            ${o("moc", s.moc, "p", "sld-sl-moc", "So với gì")}
+            ${o("y_nghia", s.y_nghia, "p", "sld-sl-yn", "Mức chênh ấy nói lên điều gì")}`;
+          than = bd ? `${dau}${tieuDe}<div class="sld-sl co-bd"><div class="sld-sl-trai">${chuSo}</div>${bd}</div>`
+            : `${dau}${tieuDe}<div class="sld-sl${lanThu % 2 ? " lat" : ""}">${chuSo}</div>`;
+        }
         break;
       case "gioi_han":
         than = `${dau}${tieuDe}<ul class="sld-gh">${ds("muc", (m, i) => `<li><span class="sld-gh-dau">!</span><div>

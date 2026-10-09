@@ -133,6 +133,35 @@ def test_slide_thieu_co_che_thi_bao_ca_bo():
     assert bo[0]["canh_bao"] == []
 
 
+def test_slide_cong_thuc_chi_gan_anh_cong_thuc():
+    """Ảnh công thức chỉ cho vai `cong_thuc`; hình/bảng cho mọi vai khác."""
+    from server import slide
+    d = _doc_hinh()
+    assert slide.chuan_hoa(d, {"vai": "cong_thuc", "tieu_de": "t", "hinh": "b3"})["hinh"] == "b3"
+    assert slide.chuan_hoa(d, {"vai": "cong_thuc", "tieu_de": "t", "hinh": "b2"})["hinh"] == ""
+    assert slide.chuan_hoa(d, {"vai": "co_che", "tieu_de": "t", "hinh": "b3"})["hinh"] == ""
+
+
+def test_slide_bang_doi_chieu_va_bieu_do_duoc_chuan_hoa():
+    from server import slide
+    s = slide.chuan_hoa(_doc(), {"vai": "so_sanh", "tieu_de": "t", "cot": ["A", "B", "Ours"],
+        "hang": [{"tieu_chi": "giữ nhiều nhánh", "o": ["không", "có"]}, {"o": ["x"]}]})
+    assert s["cot"] == ["A", "B", "Ours"] and len(s["hang"]) == 1
+    assert len(s["hang"][0]["o"]) == 3  # ô thiếu được bù cho đủ số cột
+    s = slide.chuan_hoa(_doc(), {"vai": "so_lieu", "tieu_de": "Đạt 42,5 điểm", "gia_tri": "42,5",
+        "so_sanh": [{"nhan": "Bài", "gia_tri": "42,5", "cua_bai": True}, {"nhan": "Cũ", "gia_tri": "38,8"}],
+        "nguon": ["b1"]})
+    assert s["so_sanh"][0]["cua_bai"] and any("38,8" in c for c in s["canh_bao"])
+
+
+def test_slide_mot_hinh_chi_mot_cho_uu_tien_co_che():
+    from server import slide
+    bo = [{"vai": "y_tuong", "hinh": "b43"}, {"vai": "co_che", "hinh": "b43"},
+          {"vai": "co_che", "hinh": "b43"}, {"vai": "bang_chung", "hinh": "b69"}]
+    slide._mot_hinh_mot_cho(bo)
+    assert [s["hinh"] for s in bo] == ["", "b43", "", "b69"]
+
+
 def test_slide_dinh_dang_cu_coi_nhu_chua_co():
     """Bộ slide v1 (deck/outline) không vẽ được bằng bộ vẽ mới — coi như chưa có,
     đừng để giao diện vỡ."""

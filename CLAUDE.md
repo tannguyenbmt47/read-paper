@@ -705,8 +705,8 @@ test chê "chán" và bị bỏ hẳn. Ba lỗi gốc, và bản này nhắm đ�
 
 - **Một khuôn lặp lại.** 12/16 slide cùng dáng "tiêu đề + 3 thẻ pastel". Giờ mỗi
   slide mang một **VAI trong lập luận** (`slide.VAI`): `van_de` · `khoang_trong`
-  · `yeu_cau` · `y_tuong` · `co_che` · `vi_du` · `bang_chung` · `so_lieu` ·
-  `gioi_han` · `dong_lai`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
+  · `yeu_cau` · `y_tuong` · `co_che` · `cong_thuc` · `vi_du` · `so_sanh` ·
+  `thiet_lap` · `bang_chung` · `so_lieu` · `gioi_han` · `dong_lai`, cộng `mo_dau` và `lo_trinh` do tool tự dựng. Chuỗi vai
   lấy từ skill viết tài liệu kỹ thuật tiếng Việt (Vấn đề → Khoảng trống → Thuộc
   tính cần có → Ý tưởng cốt lõi → Cơ chế). Mỗi vai một bố cục, nên bộ slide đổi
   dáng theo mạch bài.
@@ -723,6 +723,28 @@ test chê "chán" và bị bỏ hẳn. Ba lỗi gốc, và bản này nhắm đ�
 Mạch và lộ trình **tính từ bộ slide, không hỏi model**: `CHANG` chia vai thành
 bốn chặng, dấu "2/4 · Cách làm" ở góc slide và slide lộ trình đều suy ra từ đó.
 Slide mở đầu dựng từ `brief` + `db.get_meta` (tác giả, nơi đăng, năm).
+
+**Bản đầu bị chê "sơ sài", và đo ra đúng chỗ.** Bộ CIRAG chỉ 4/11 slide có
+hình trong khi bài có 21 hình/bảng và 10 công thức cắt sẵn; cả phương pháp (ICI +
+ACMG + Trajectory Distillation) nén vào MỘT slide ba bước ~10 chữ, vì prompt giới
+hạn mỗi vai 2 slide. Giờ:
+- **Mỗi thành phần phương pháp một slide `co_che`** (tối đa 4, kèm dòng `dan`
+  vào → ra), thêm vai **`cong_thuc`** (ảnh công thức thật + vai trò từng ký hiệu
+  + đánh đổi), **`so_sanh`** (bảng đối chiếu cách cũ theo tiêu chí, cột của bài
+  tô dạ quang), **`thiet_lap`** (dữ liệu · đối chứng · thước đo · mô hình nền,
+  luôn đứng đầu chặng Bằng chứng).
+- **Ít nhất nửa bộ có hình**; `van_de`, `y_tuong`, `vi_du` cũng nhận hình. Một
+  hình chỉ gắn một slide (`_mot_hinh_mot_cho`), giữ ở vai cần nó nhất — "giữ chỗ
+  đầu" là giữ nhầm, vì slide ý tưởng đứng trước slide cơ chế.
+- **`so_lieu` kèm biểu đồ cột** vẽ từ `so_sanh` (số đã soát với chữ của bài),
+  trục bắt đầu từ 0. Cột số rộng cố định — mỗi hàng là một lưới riêng, để `auto`
+  thì độ dài thanh không còn so được với nhau.
+- `SO_SLIDE` 8/11/14 → 10/14/18. Đo lại: CIRAG 17 slide $0,038 (V4 Pro), World
+  Models 15 slide, 11 có hình, $0,005 (V4 Flash).
+- Ảnh công thức chỉ cho `cong_thuc`, hình/bảng cho mọi vai khác — cả `chuan_hoa`
+  lẫn `sua` và ô chọn hình đều chặn gắn nhầm loại.
+- `chu()` của bộ vẽ dựng cả chỉ số KHÔNG ngoặc (`z_t`, `R^32`) theo đúng luật hẹp
+  của `_SUBSCRIPTISH` — model vẫn viết kiểu này dù prompt đòi `z_{t}`.
 
 **Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
 bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai
