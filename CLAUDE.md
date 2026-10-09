@@ -832,6 +832,20 @@ ablation (ô "Khẳng định") → Bổ sung. Lộ trình sáu trạm vẽ lư�
   chuỗi là lặp từng ký tự ("I• R• C• o"). Mọi trường danh sách chuỗi đi qua
   `_ds_chuoi`.
 
+**Chữ trên slide phải DIỄN GIẢI, không điện tín.** Người dùng chê "đọc không
+hiểu vấn đề là gì" ở các ô kiểu "RL model-free thường dùng mạng nhỏ", "Mạng nhỏ
+thiếu sức biểu diễn". Gốc rễ là trần chữ quá chặt (25–35 chữ/ô) ép model nén ý
+thành cụm danh từ, trong khi slide còn trống nửa khung. `SLIDE_TASK` giờ có mục
+**Diễn giải**: câu trọn vẹn có nhân quả, thuật ngữ giải nghĩa ngay tại chỗ, trình
+tự là gì → làm gì → vì sao là vấn đề, kèm bảng sửa mẫu lấy từ chính slide bị chê;
+trần chữ văn xuôi nới ×1,5 (ô bảng, cụm tô sáng giữ nguyên). Hai hệ quả đã vấp:
+- Khối luật dài đẩy yêu cầu `tieu_de` xuống xa → V4 Flash bỏ trống tiêu đề ở
+  22/25 slide. Yêu cầu tiêu đề giờ đứng ĐẦU phần vai, và `chuan_hoa` dựng tạm từ
+  câu đầu của nội dung (kèm cảnh báo) — chữ giữ chỗ không bao giờ lên màn chiếu.
+- Chữ dài hơn làm tràn cột hẹp: cột chữ của slide cơ chế/bằng chứng nới ra, hộp
+  bước gọn lại; slide ví dụ hơn 3 bước thì bỏ hình (bảng Case Study thu vào nửa
+  slide vốn không đọc nổi). Đo lại: 0/22 và 0/28 slide tràn.
+
 **Vai lặp lại thì đổi dáng.** `lanThu` đếm vai này đã xuất hiện mấy lần trong
 bộ: `co_che` không hình lần đầu là dòng chảy ngang, lần sau là bậc thang; hai
 slide `bang_chung` liền nhau lật bên hình. Prompt cũng giới hạn mỗi vai tối đa 2

@@ -115,69 +115,97 @@ vai quyết định bố cục — nên chọn vai cho đúng, đừng ép mọi
 
 ### Các vai và trường phải viết
 
-Trần số chữ ghi trong ngoặc là trần CỨNG: slide là thứ chiếu lên cho cả phòng
-đọc, chữ thân không nhỏ hơn 24px, nên vượt trần là tràn khung. Phần giải thích
-dài hơn thì đưa vào `loi_noi`, không nhồi lên mặt slide.
+MỌI slide BẮT BUỘC có `tieu_de`: một câu KHẲNG ĐỊNH điều slide chứng minh, 6–14
+chữ, không phải nhãn chủ đề, không có dấu hai chấm. Thiếu tiêu đề là slide hỏng.
+
+Trần số chữ ghi trong ngoặc là trần CỨNG (chữ thân không nhỏ hơn 24px, vượt trần
+là tràn khung) — nhưng nó là TRẦN, không phải mục tiêu nén. Viết đủ để người
+nghe hiểu, chưa tới trần thì không phải cắt.
+
+### Diễn giải (bắt buộc — đây là chỗ bộ slide hay hỏng nhất)
+
+Người nghe là kỹ sư thông minh nhưng KHÔNG ở trong nhánh này. Mặt slide phải tự
+giải thích được, không trông vào lời người nói. Vì vậy:
+
+- Mỗi ô viết thành CÂU TRỌN VẸN có chủ ngữ, động từ và quan hệ nhân quả. Cấm lối
+  điện tín ghép cụm danh từ ("Mạng nhỏ thiếu sức biểu diễn", "Điều khiển nhỏ").
+- Thuật ngữ chuyên ngành nào xuất hiện trên slide cũng phải được giải nghĩa NGAY
+  TẠI CHỖ bằng lời thường (trong ngoặc, hoặc một mệnh đề ngay sau), trừ khi đã có
+  slide `khai_niem` cho nó phía trước. Thuật ngữ không cần cho ý chính thì đừng đưa.
+- Nói vấn đề theo trình tự: cái đó LÀ GÌ → nó LÀM gì / xảy ra gì → VÌ SAO điều
+  đó là vấn đề (hậu quả cụ thể). Thiếu vế "vì sao" thì người nghe không biết vấn
+  đề nằm ở đâu.
+- Tên tiêu chí, tên bước ngắn được, nhưng phần mô tả đi kèm phải nói rõ tiêu chí
+  ấy là gì và vì sao cần.
+
+Ví dụ sửa (lấy từ một bộ slide thật bị chê "đọc không hiểu"):
+
+| Viết điện tín (sai) | Viết diễn giải (đúng) |
+|---|---|
+| Cách đang làm: RL model-free thường dùng mạng nhỏ vài nghìn tham số. | Các thuật toán học tăng cường model-free (agent học thẳng từ điểm thưởng, không dựng mô hình của môi trường) thường chỉ huấn luyện được mạng nhỏ, cỡ vài nghìn tham số. |
+| Hỏng ở đâu: Mạng nhỏ thiếu sức biểu diễn để xử lý quan sát pixel phức tạp. | Mạng nhỏ như vậy không đủ sức nén một khung hình pixel thành thông tin hữu ích, nên agent không hiểu được cảnh trước mặt. Muốn mạng lớn thì lại vướng: điểm thưởng quá thưa để chỉnh hàng triệu tham số. |
+| Điều khiển nhỏ: Vùng tìm kiếm nhỏ để thuật toán RL hội tụ. | Bộ điều khiển (phần chọn hành động) cần rất ít tham số, để thuật toán tối ưu chỉ phải dò trong một không gian nhỏ và hội tụ được. |
+| Ý tưởng: Dồn sức mạnh vào world model học không giám sát, giữ controller thật nhỏ. | Tách agent làm hai phần: một world model lớn tự học cách tóm tắt và dự đoán môi trường từ dữ liệu, không cần điểm thưởng; và một controller rất nhỏ chỉ việc chọn hành động dựa trên bản tóm tắt ấy. |
 
 - `van_de` — BỐI CẢNH. `cau` (tình huống thực tế và vì sao nó quan trọng, ≤40
-  chữ), `nhan_dinh` (nhận định / nhận xét của bài về tình huống ấy, ≤30 chữ),
-  `vi_du` (MỘT ví dụ cụ thể, ≤30 chữ).
+  chữ), `nhan_dinh` (nhận định / nhận xét của bài về tình huống ấy, ≤45 chữ),
+  `vi_du` (MỘT ví dụ cụ thể, ≤45 chữ).
 - `huong_nc` — MỘT hướng nghiên cứu trước bài này. `dai_dien`: 1–4 tên phương
-  pháp tiêu biểu, `cach_lam` (hướng này làm thế nào, ≤35 chữ), `khia_canh` (nó
-  tập trung giải quyết khía cạnh nào của bài toán, ≤20 chữ), `han_che` (vấn đề
-  của nó, MÔ TẢ CHI TIẾT trong kịch bản nào thì hỏng và hỏng ra sao, ≤40 chữ).
+  pháp tiêu biểu, `cach_lam` (hướng này làm thế nào, ≤53 chữ), `khia_canh` (nó
+  tập trung giải quyết khía cạnh nào của bài toán, ≤30 chữ), `han_che` (vấn đề
+  của nó, MÔ TẢ CHI TIẾT trong kịch bản nào thì hỏng và hỏng ra sao, ≤60 chữ).
 - `khai_niem` — giải nghĩa MỘT thuật ngữ / hành vi / tên mô-đun TRƯỚC khi nó được
   dùng. `thuat_ngu` (tên, kèm tên đầy đủ nếu là viết tắt), `dinh_nghia` (nó là gì,
-  ≤35 chữ), `vi_du` (một ví dụ cụ thể, ≤25 chữ), `vi_sao` (vì sao bài cần nó /
-  thiếu nó thì hỏng ở đâu, ≤25 chữ).
-- `khoang_trong` — `cach_cu` (cách đang làm, ≤30 chữ), `hong` (nó hỏng ở đâu,
-  trong kịch bản nào, ≤35 chữ), `he_qua` (hệ quả đo được hoặc quan sát được, ≤25 chữ).
+  ≤53 chữ), `vi_du` (một ví dụ cụ thể, ≤38 chữ), `vi_sao` (vì sao bài cần nó /
+  thiếu nó thì hỏng ở đâu, ≤38 chữ).
+- `khoang_trong` — `cach_cu` (cách đang làm, ≤45 chữ), `hong` (nó hỏng ở đâu,
+  trong kịch bản nào, ≤53 chữ), `he_qua` (hệ quả đo được hoặc quan sát được, ≤38 chữ).
 - `yeu_cau` — MONG MUỐN. `tieu_chi`: 2–4 mục `{"ten": "3–7 chữ", "vi_sao": "≤22
   chữ"}`, lời giải phải đạt gì. Đây là bước hay bị bỏ sót nhất.
-- `y_tuong` — `cau` (trực giác cốt lõi trong MỘT câu, ≤30 chữ), `vi_sao` (vì sao
-  trực giác ấy đáp ứng được các tiêu chí, ≤35 chữ).
+- `y_tuong` — `cau` (trực giác cốt lõi trong MỘT câu, ≤45 chữ), `vi_sao` (vì sao
+  trực giác ấy đáp ứng được các tiêu chí, ≤53 chữ).
 - `co_che` — MỘT thành phần của phương pháp. `dan` (thành phần này nhận gì, trả
-  ra gì, ≤25 chữ), `buoc`: 3–4 mục `{"ten": "2–5 chữ", "mo_ta": "≤25 chữ, nói
+  ra gì, ≤38 chữ), `buoc`: 3–4 mục `{"ten": "2–5 chữ", "mo_ta": "≤32 chữ, nói
   bước này làm gì VÀ vì sao cần"}`, `co_so` (cơ sở lý luận của thiết kế này: dựa
-  trên quan sát / lý thuyết / kết quả nào, ≤30 chữ). Đưa ra cái gì cũng phải kèm
+  trên quan sát / lý thuyết / kết quả nào, ≤45 chữ). Đưa ra cái gì cũng phải kèm
   lý do. Gắn `hinh` nếu có hình vẽ thành phần ấy
-  (khi đó tối đa 3 bước, mỗi `mo_ta` ≤20 chữ).
+  (khi đó tối đa 3 bước, mỗi `mo_ta` ≤30 chữ).
 - `cong_thuc` — `hinh` (mã khối CÔNG THỨC trong danh mục công thức dưới; không có
   thì để rỗng và viết `bieu_thuc` bằng `x_{t}`, `x^{2}`), `truc_giac` (công thức
-  này tính cái gì và vì sao cần nó, ≤30 chữ), `thanh_phan`: 2–5 mục
-  `{"ky_hieu": "α", "y_nghia": "≤18 chữ, vai trò của nó, không chỉ tên"}`,
-  `danh_doi` (tăng/giảm thành phần nào thì được gì mất gì, ≤25 chữ).
-- `vi_du` — `dau_vao` (≤25 chữ), `buoc`: 3–4 mục `{"ten", "mo_ta": "≤18 chữ"}`
-  cho biết đầu vào ấy biến đổi ra sao, `dau_ra` (≤15 chữ), `minh_hoa` (true/false).
-  Gắn `hinh` thì tối đa 3 bước, `dau_vao` ≤18 chữ.
+  này tính cái gì và vì sao cần nó, ≤45 chữ), `thanh_phan`: 2–5 mục
+  `{"ky_hieu": "α", "y_nghia": "≤27 chữ, vai trò của nó, không chỉ tên"}`,
+  `danh_doi` (tăng/giảm thành phần nào thì được gì mất gì, ≤38 chữ).
+- `vi_du` — `dau_vao` (≤38 chữ), `buoc`: 3–4 mục `{"ten", "mo_ta": "≤27 chữ"}`
+  cho biết đầu vào ấy biến đổi ra sao, `dau_ra` (≤23 chữ), `minh_hoa` (true/false).
+  Gắn `hinh` thì tối đa 3 bước, `dau_vao` ≤27 chữ.
 - `so_sanh` — `cot`: 3–4 cách làm (tên ngắn), cột CUỐI là phương pháp của bài.
   `hang`: 3–5 mục `{"tieu_chi": "3–7 chữ", "o": ["có", "không", "một phần", …]}`
   với `o` đúng bằng số cột, mỗi ô ≤4 chữ. Tiêu chí nên lấy từ slide `yeu_cau`.
-  `ket_luan` (điều bảng cho thấy, ≤25 chữ). Chỉ ghi điều bài nói về các cách đó.
-- `thiet_lap` — `du_lieu`: 2–4 mục `{"ten": "tên tập", "mo_ta": "≤15 chữ, loại câu
+  `ket_luan` (điều bảng cho thấy, ≤38 chữ). Chỉ ghi điều bài nói về các cách đó.
+- `thiet_lap` — `du_lieu`: 2–4 mục `{"ten": "tên tập", "mo_ta": "≤23 chữ, loại câu
   hỏi/quy mô"}`, `doi_chung`: 2–6 tên baseline, `do_do`: 1–3 mục `{"ten": "EM",
-  "y_nghia": "≤15 chữ, đo cái gì"}`, `mo_hinh_nen` (mô hình nền dùng, ≤15 chữ).
-- `cach_lam_tn` — `muc_dich` (thí nghiệm này kiểm câu hỏi gì, ≤25 chữ), `buoc`:
-  2–4 mục `{"ten": "2–5 chữ", "mo_ta": "≤22 chữ"}` (tiến hành ra sao: chia dữ
+  "y_nghia": "≤23 chữ, đo cái gì"}`, `mo_hinh_nen` (mô hình nền dùng, ≤23 chữ).
+- `cach_lam_tn` — `muc_dich` (thí nghiệm này kiểm câu hỏi gì, ≤38 chữ), `buoc`:
+  2–4 mục `{"ten": "2–5 chữ", "mo_ta": "≤33 chữ"}` (tiến hành ra sao: chia dữ
   liệu, chạy gì, đo gì, so với gì).
 - `bang_chung` — `hinh` (BẮT BUỘC, mã khối của hình/bảng trong danh mục dưới),
-  `doc_hinh` (cách đọc hình: trục/cột là gì, nhìn vào đâu, ≤28 chữ),
-  `ket_luan` (kết quả này KHẲNG ĐỊNH điều gì cho luận điểm của bài, ≤25 chữ), `so`: 0–2 mục
+  `doc_hinh` (cách đọc hình: trục/cột là gì, nhìn vào đâu, ≤42 chữ),
+  `ket_luan` (kết quả này KHẲNG ĐỊNH điều gì cho luận điểm của bài, ≤38 chữ), `so`: 0–2 mục
   `{"gia_tri": "<số trong bài>", "nhan": "<thước đo> trên <tập dữ liệu>", "moc": "so với <số> của <baseline>"}`.
 - `so_lieu` — `gia_tri` (một con số), `nhan` (đo cái gì), `moc` (so với gì: baseline,
-  benchmark, mô hình nền), `y_nghia` (mức chênh ấy nói lên điều gì, ≤30 chữ),
+  benchmark, mô hình nền), `y_nghia` (mức chênh ấy nói lên điều gì, ≤45 chữ),
   `so_sanh`: 2–5 mục `{"nhan": "<tên phương pháp>", "gia_tri": "<số trong bài>", "cua_bai": false}` để vẽ
   biểu đồ cột (mục của bài có `"cua_bai": true`). Chỉ dùng số có trong CHỮ của bài,
   cùng một thước đo, cùng một tập dữ liệu.
-- `gioi_han` — `muc`: 2–4 mục `{"ten": "3–8 chữ", "he_qua": "≤25 chữ"}`.
+- `gioi_han` — `muc`: 2–4 mục `{"ten": "3–8 chữ", "he_qua": "≤38 chữ"}`.
 - `doan_dich` — trích NGUYÊN VĂN bản dịch lên slide, dùng khi câu chữ của bài quan
   trọng (định nghĩa, bước của phương pháp, kết quả chính, giới hạn tác giả tự nêu).
   `doan`: 1–3 mã khối LIỀN NHAU trong cùng một mục (công cụ tự chép bản dịch của
   chúng vào slide, bạn KHÔNG chép lại chữ), `diem_chinh` (điều cần nhớ từ đoạn này,
-  ≤20 chữ, không lặp lại câu trong đoạn, không nhắc lại tiêu đề), `nhan_manh`: 1–3 cụm ≤12 chữ CHÉP
+  ≤30 chữ, không lặp lại câu trong đoạn, không nhắc lại tiêu đề), `nhan_manh`: 1–3 cụm ≤12 chữ CHÉP
   NGUYÊN VĂN từ bản dịch của đoạn để tô sáng, `hinh` nếu đoạn nói về một hình.
-- `dong_lai` — `y`: đúng 3 điều mang về (mỗi điều ≤25 chữ), `cau_hoi`: một câu hỏi
-  thảo luận mở cho người nghe (≤30 chữ).
+- `dong_lai` — `y`: đúng 3 điều mang về (mỗi điều ≤38 chữ), `cau_hoi`: một câu hỏi
+  thảo luận mở cho người nghe (≤45 chữ).
 
 Mọi slide có thêm `tieu_de` (một câu KHẲNG ĐỊNH điều slide chứng minh, 6–14 chữ,
 không phải nhãn chủ đề, KHÔNG có dấu hai chấm), `nguon` (mã các khối trong bài
@@ -433,8 +461,13 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
     if vai not in VAI:
         return None
     out = {"vai": vai, "tieu_de": _sach(s.get("tieu_de")).rstrip(".")}
+    thieu_td = not out["tieu_de"]
     for k in _CHU[vai]:
         out[k] = _sach(s.get(k))
+        if k not in ("thuat_ngu", "bieu_thuc"):
+            # Gạch ngang chèn mệnh đề ("…quyết định — mỗi phần…") → tách câu, theo
+            # luật văn phong. Chỉ ở văn xuôi; tên riêng/biểu thức để nguyên.
+            out[k] = re.sub(r"\s+[—–]\s+(\S)", lambda m: ". " + m.group(1).upper(), out[k])
     for k, truong in (("tieu_chi", ("ten", "vi_sao")), ("buoc", ("ten", "mo_ta")),
                       ("muc", ("ten", "he_qua")), ("so", ("gia_tri", "nhan", "moc")),
                       ("du_lieu", ("ten", "mo_ta")), ("do_do", ("ten", "y_nghia")),
@@ -505,6 +538,12 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
             canh.append("Hình model chọn không có trong bài — đã bỏ." if not h else
                         "Model gắn nhầm loại hình (công thức ↔ hình/bảng) — đã bỏ.")
             h = ""
+    if h and vai == "vi_du" and len(out.get("buoc") or []) > 3:
+        # Ví dụ 4 bước + hình thì tràn khung (đo trên CIRAG), mà hình hay gặp ở đây
+        # là bảng Case Study chữ nhỏ, thu vào nửa slide thì không đọc nổi. Các bước
+        # đã kể trọn ví dụ — giữ bước, bỏ hình.
+        canh.append("Đã bỏ hình khỏi slide ví dụ vì có hơn 3 bước — bớt một bước nếu muốn gắn lại hình.")
+        h = ""
     out["hinh"] = h
     if vai == "bang_chung" and not h:
         canh.append("Slide bằng chứng chưa có hình — bấm vào khung để chọn hình trong bài.")
@@ -544,6 +583,16 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
     bia = so_bia(doc, out["nguon"], _chu_slide(out))
     if bia:
         canh.append("Số không có ở đâu trong bài: " + ", ".join(bia) + ".")
+    if thieu_td:
+        # Model bỏ trống tiêu đề (đã gặp: 22/25 slide của một lượt V4 Flash) thì dựng
+        # tạm từ câu đầu của nội dung — chữ giữ chỗ "Tiêu đề — một câu khẳng định"
+        # lọt lên màn chiếu còn tệ hơn một tiêu đề tạm.
+        nguon_td = next((str(out[k]) for k in _CHU[vai] if out.get(k)), "") or next(
+            (t["chu"] for t in out.get("trich") or [] if t.get("chu")), "")
+        cau = re.split(r"(?<=[.!?])\s", nguon_td.strip())[0].rstrip(".")
+        tu = cau.split()
+        out["tieu_de"] = " ".join(tu[:14]) + ("…" if len(tu) > 14 else "")
+        canh.append("Model không viết tiêu đề cho slide này — tiêu đề đang là câu đầu của nội dung, nên sửa lại.")
     out["canh_bao"] = canh
     return out
 

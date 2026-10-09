@@ -382,3 +382,15 @@
 .sld-cc-cot { display: flex; flex-direction: column; justify-content: center; }
 .sld-cc.co-hinh .sld-cc-cot .sld-buoc { grid-auto-flow: row; grid-auto-rows: auto; gap: 1.6cqw; }
 .sld-hn ul { list-style: none; margin: 0; padding: 0; }
+
+/* Chữ diễn giải dài hơn (người dùng chê lối điện tín) thì cột chữ phải rộng hơn:
+   đo trên World Models, 5/22 slide cơ chế + bằng chứng tràn ở cột cũ. */
+.sld-cc.co-hinh { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2.4cqw; }
+.sld-cc.co-hinh .sld-buoc, .sld-cc.co-hinh .sld-cc-cot .sld-buoc { gap: 1.1cqw; }
+.sld-cc.co-hinh .sld-buoc li { padding: .8cqw 1.2cqw .8cqw 4.4cqw; }
+.sld-cc.co-hinh .sld-buoc b { margin-bottom: .2cqw; }
+.sld-bc.co-hinh { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 2.4cqw; }
+.sld-bc.co-hinh.lat { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+.sld-kl-p { font-size: 1em !important; }
+.sld-so { padding: .5cqw .9cqw; }
+.sld-so b { font-size: 1.45em; }

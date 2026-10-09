@@ -301,6 +301,16 @@ def test_slide_viet_tat_chua_giai_nghia_bi_gan_co_va_danh_sach_chuoi():
     assert s["dai_dien"] == ["IRCoT", "FLARE"]
 
 
+def test_slide_thieu_tieu_de_thi_dung_tam_va_vi_du_dai_bo_hinh():
+    from server import slide
+    s = slide.chuan_hoa(_doc(), {"vai": "khoang_trong", "cach_cu": "Các phương pháp cũ chọn một đường. Câu sau.",
+                                 "hong": "x"})
+    assert s["tieu_de"] == "Các phương pháp cũ chọn một đường" and any("tiêu đề" in c for c in s["canh_bao"])
+    s = slide.chuan_hoa(_doc_hinh(), {"vai": "vi_du", "tieu_de": "t", "hinh": "b2",
+                                      "buoc": [{"ten": str(i), "mo_ta": "m"} for i in range(4)]})
+    assert s["hinh"] == "" and len(s["buoc"]) == 4
+
+
 def test_slide_dinh_dang_cu_coi_nhu_chua_co():
     """Bộ slide v1 (deck/outline) không vẽ được bằng bộ vẽ mới — coi như chưa có,
     đừng để giao diện vỡ."""
