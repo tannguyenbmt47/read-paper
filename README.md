@@ -22,15 +22,31 @@ typical paper costs **$0.04–0.10** to translate.
 
 ## Install
 
-You need Python 3.10+ and an [OpenRouter API key](https://openrouter.ai/keys).
+You need an [OpenRouter API key](https://openrouter.ai/keys), plus either
+Docker or Python 3.10+.
+
+**With Docker** (nothing else to install):
 
 ```bash
-./run.sh     # first run creates .env, then stops
+git clone https://github.com/tannguyenbmt47/read-paper.git loupe && cd loupe
+cp .env.example .env                 # add your key: OPENROUTER_API_KEY=...
+echo "DOCKER_UID=$(id -u)" >> .env   # lets the container write to ./data
+echo "DOCKER_GID=$(id -g)" >> .env
+docker compose up -d --build         # ~2 minutes the first time
+```
+
+Open <http://localhost:8010>. Your papers live in `./data`, so rebuilding or
+upgrading (`git pull && docker compose up -d --build`) keeps them. The default
+image is about 350 MB. For better figure and equation detection, GPU use,
+backups and troubleshooting, see [DOCKER.md](DOCKER.md) (in Vietnamese).
+
+**With Python**:
+
+```bash
+./run.sh     # first run creates .venv and .env, then stops
              # add your key: OPENROUTER_API_KEY=...
 ./run.sh     # starts the app at http://localhost:8010
 ```
-
-Docker: see [DOCKER.md](DOCKER.md).
 
 ## How to use
 
