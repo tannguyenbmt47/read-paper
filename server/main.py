@@ -80,7 +80,7 @@ def _with_chunks(doc: dict) -> dict:
 # ----------------------------------------------------------------- trang web
 
 
-_ASSETS = ("vendor/fonts.css", "style.css", "slide.css", "survey.css", "app.js", "survey.js",
+_ASSETS = ("vendor/fonts.css", "style.css", "slide.css", "survey.css", "app.js", "survey.js", "sv-bando.js",
            "thuvien.js", "slide-ve.js", "slide.js")
 
 

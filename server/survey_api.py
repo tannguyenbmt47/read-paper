@@ -21,7 +21,7 @@ import time
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from . import store
+from . import llm, store
 from .survey import agent, embed
 from .survey import db as sdb
 from .survey import ingest, lecture, refs, search, sources, synth
@@ -478,6 +478,83 @@ async def get_graph(sid: str, limit: int = 60):
     """Đồ thị thực thể để vẽ. Không gọi model."""
     _need(sid)
     return sdb.graph_overview(sid, limit=limit)
+
+
+# ---------------------------------------------------------------- bản đồ
+#
+# Màn chính của kho: bài và thực thể trên một mặt phẳng. Đọc thì miễn phí; chỉ
+# nút *Dựng đồ thị* (`…/do-thi/dung`) tốn tiền, và nút đó hỏi giá trước.
+
+# Đầu ra của pass đồ thị đo trên kho thật: 8–25 thực thể kèm quan hệ, chừng
+# 1.500–2.500 token. Ước theo mức trên, lệch về phía rẻ là kiểu sai tệ nhất.
+_RA_DO_THI = 2500
+_VAO_THEM = 1200        # GRAPH_SYSTEM + phần user
+
+
+@router.get("/{sid}/ban-do")
+async def ban_do(sid: str):
+    """Bài, thực thể, quan hệ của cả kho để vẽ. **Không gọi model.**"""
+    _need(sid)
+    return sdb.ban_do(sid)
+
+
+@router.get("/{sid}/thuc-the")
+async def thuc_the(sid: str, ten: str = Query(...)):
+    """Chi tiết một thực thể: quan hệ có nguồn và đoạn nhắc tới. **Miễn phí.**"""
+    _need(sid)
+    return sdb.thuc_the(sid, ten)
+
+
+@router.get("/{sid}/do-thi/gia")
+async def gia_do_thi(sid: str):
+    """Ước giá dựng đồ thị cho những bài chưa có. Không gọi model."""
+    _need(sid)
+    thieu = sdb.bai_chua_co_do_thi(sid)
+    _strong, fast = sdb.models_of(sid)
+    gia = await llm.gia_model(fast) if thieu else None
+    usd = 0.0
+    for p in thieu:
+        vao = min(p["chars"], 300_000) / 3.6 + _VAO_THEM
+        usd += (vao * gia[0] + _RA_DO_THI * gia[1]) if gia else 0.006
+    return {"bai": len(thieu), "usd": round(usd, 4), "model": fast,
+            "ten": [p["title"][:80] for p in thieu]}
+
+
+@router.get("/{sid}/do-thi/dung")
+async def dung_do_thi(sid: str):
+    """Dựng đồ thị cho mọi bài chưa có, phát SSE. **Tốn tiền.**
+
+    Song song 3: mỗi bài một prefix riêng nên không có cache chung để làm ấm, và
+    không bài nào cần kết quả của bài khác.
+    """
+    _need(sid)
+    thieu = sdb.bai_chua_co_do_thi(sid)
+
+    async def gen():
+        q: asyncio.Queue = asyncio.Queue()
+        sem = asyncio.Semaphore(3)
+
+        async def mot(p: dict) -> None:
+            async with sem:
+                try:
+                    r = await ingest.dung_do_thi(sid, p["id"])
+                    await q.put(("bai", {**r, "title": p["title"][:80]}))
+                except Exception as e:       # noqa: BLE001
+                    await q.put(("hong", {"id": p["id"], "title": p["title"][:80],
+                                          "msg": f"{type(e).__name__}: {e}"[:200]}))
+
+        tasks = [asyncio.create_task(mot(p)) for p in thieu]
+        tong, xong = 0.0, 0
+        yield _sse("bat_dau", {"bai": len(thieu)})
+        while xong < len(tasks):
+            kind, data = await q.get()
+            xong += 1
+            tong += data.get("cost", 0.0)
+            yield _sse(kind, {**data, "xong": xong, "bai": len(tasks)})
+        yield _sse("done", {"cost": round(tong, 5)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ---------------------------------------------------------------- hỏi đáp

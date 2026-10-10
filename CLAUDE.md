@@ -14,7 +14,7 @@ PORT=9000 ./run.sh       # đổi cổng
 .venv/bin/python -m pytest          # 245 test · ~3 phút (phần lớn là import docling)
 .venv/bin/python -m pytest tests/test_unit.py -q    # phần logic thuần, ~3 giây
 .venv/bin/python -m pytest tests/test_survey.py -q  # kho survey, ~4 giây
-node --check web/app.js web/survey.js web/thuvien.js web/slide.js web/slide-ve.js   # chưa có test cho frontend
+node --check web/app.js web/survey.js web/sv-bando.js web/thuvien.js web/slide.js web/slide-ve.js   # chưa có test cho frontend
 ```
 
 `tests/test_unit.py` — logic thuần, không cần server: chuẩn hoá slide (vai, hình,
@@ -1924,6 +1924,48 @@ phép đo nói dối. Phải `Page.reload(ignoreCache=True)`.
 "sô´", "chuỗi" ra "chuôĩ", "biểu" ra "biêủ". Nên `.sv-note` (văn xuôi giải thích
 ký hiệu) dùng font thường; chỉ ký hiệu lẻ trong `<code>` mới để mono. Cùng họ
 với cái bẫy `line-height` ở slide.
+
+### Màn Bản đồ (`web/sv-bando.js`) — màn MỞ RA ĐẦU TIÊN của kho
+
+Người dùng chê phần Tìm hiểu "khó dùng và không hiệu quả", và chỉ tab đồ thị là
+"có vẻ ổn hơn". Soát lại thì thấy vì sao: mở kho ra là tab Tổng hợp, mà kho mới
+chưa dựng thì nó chỉ là một nút vàng đòi ~$0,09; Hỏi đáp thì đòi biết trước phải
+hỏi gì; còn đồ thị nằm cuối tab thứ năm dưới dạng một bức tường chip. Giờ Bản
+đồ là tab đầu: bài và khái niệm trên một mặt phẳng, miễn phí, có ngay. Ô tra
+đoạn (BM25 + vector) gộp vào thanh của nó — gõ thì tô sáng điểm, Enter thì tra.
+
+**Bài lấy từ phần Dịch không có đồ thị**, vì `ingest_loupe_doc` cố ý bỏ mọi pass
+tốn tiền. Kho thử năm bài như vậy hiện "Chưa có thực thể nào". `db.ban_do()` lấy
+node từ PHIẾU (dữ liệu, độ đo, đối chứng, từ khoá) cho bài chưa có đồ thị, gộp
+theo `norm_name` với node thật, gắn `nguon = "phieu"` (viền đứt, không đoạn
+nguồn). Nút *Dựng đồ thị* (`…/do-thi/gia` rồi `…/do-thi/dung`) chỉ chạy
+`graph.extract` cho đúng những bài còn thiếu — đo trên kho năm bài: ~$0,0045.
+Bơm cả bài thì trả thêm ngữ cảnh hoá + cây + phiếu mà bản đồ không cần.
+
+`thuc_the()` tra theo TÊN (node từ phiếu không có dòng `entity`), đoạn nhắc tới
+lấy từ `mention` trước, thiếu thì bù bằng BM25 nhưng **chỉ giữ đoạn chứa nguyên
+cụm tên** — BM25 xé "Success Rate" thành hai từ và khớp mọi đoạn có chữ "rate".
+
+Bốn chỗ của bộ vẽ đã vấp khi nhìn ảnh chụp:
+
+- **Lực đẩy FR là K²/d, không phải K²/d².** Viết nhầm bình phương thì lực tắt
+  quá nhanh theo khoảng cách và cả bản đồ co thành một cục 150px.
+- **Điểm và nhãn giữ nguyên cỡ trên màn** (`scale(1/k)` trên từng node), chỉ
+  khoảng cách co giãn. Phóng cả điểm thì xem toàn kho chữ còn 6px.
+- **Vì thế K phải tính theo diện tích sân vẽ** (`K = C·√(W·H/N)`, công thức gốc
+  của FR) để bản đồ vừa khung ở mức phóng ~1, và phép tách chồng (`tachChong`)
+  phải chạy SAU khi biết mức phóng thật — thẻ bài cố định 180px chiếm gấp đôi
+  chỗ trên mặt phẳng ở mức 0,5.
+- **Khái niệm lá xếp thành vòng quanh bài** (`hoaQuanhBai`), giữ thứ tự góc FR
+  tìm ra. Để FR tự rơi thì chúng dồn hai phía thẻ (thẻ rộng mà thấp), rồi phép
+  tách chồng gạt thành hai hàng thẳng như cái bảng.
+
+Bố cục chạy MỘT lượt rồi đứng yên (không mô phỏng liên tục) và hạt giống ngẫu
+nhiên lấy từ mã điểm: mở lại kho phải ra đúng bản đồ cũ, không thì mất mốc.
+
+Cột trái: tên bài là nút nhảy tới bài đó trên bản đồ; thao tác ít dùng gập sau
+⋯ (bản trước hiện khi rê chuột — rê qua cột để bấm tên bài là cả cột nhảy). Bài
+từ phần Dịch mang chip "từ bản dịch" thay cho "đủ", và có nút Bơm nội dung.
 
 ### Trang giới thiệu và hướng dẫn (`docs/`)
 

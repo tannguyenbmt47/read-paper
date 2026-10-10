@@ -115,22 +115,30 @@
   border: 1px solid var(--line); border-radius: var(--radius);
   padding: 7px 9px; background: var(--bg);
 }
-.sv-ptitle { font-size: 12.5px; line-height: 1.35; font-weight: 600; }
+/* Tên bài là nút: bấm thì nhảy tới bài đó trên bản đồ. */
+.sv-ptitle {
+  display: block; width: 100%; text-align: left; padding: 0; border: 0; background: none;
+  font: inherit; font-size: 12.5px; line-height: 1.35; font-weight: 600; color: var(--ink);
+  cursor: pointer;
+}
+.sv-ptitle:hover { color: var(--accent); }
+.sv-pmeta .grow { flex: 1; }
+.sv-pmore {
+  border: 0; background: none; cursor: pointer; color: var(--muted);
+  font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: var(--radius);
+  min-width: 24px; min-height: 22px;
+}
+.sv-pmore:hover, .sv-paper.mo .sv-pmore { background: var(--surface-2); color: var(--ink); }
 .sv-pmeta {
   display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
   font-size: 10.5px; color: var(--muted); margin-top: 3px;
 }
-/* Nút thao tác chỉ hiện khi rê chuột vào thẻ. Bốn mươi thẻ × ba nút lúc nào
-   cũng bày ra thì cột trái thành một bức tường nút, và mắt mất luôn thứ đáng
-   nhìn là tên bài. `@media (hover: hover)` để máy cảm ứng — nơi không có "rê
-   chuột" — vẫn thấy nút bình thường. */
-.sv-pact { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-
-@media (hover: hover) {
-  .sv-pact { display: none; }
-  .sv-paper:hover .sv-pact,
-  .sv-paper:focus-within .sv-pact { display: flex; }
-}
+/* Nút thao tác gập sau ⋯. Bốn mươi thẻ × năm nút lúc nào cũng bày ra thì cột
+   trái thành một bức tường nút, và mắt mất luôn thứ đáng nhìn là tên bài. Bản
+   trước hiện nút khi rê chuột, nhưng rê qua cột để bấm tên bài là cả cột nhảy
+   lên nhảy xuống — một nút mở hẳn thì đứng yên và chạy cả trên máy cảm ứng. */
+.sv-pact { display: none; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.sv-paper.mo .sv-pact { display: flex; }
 
 .btn.xs { font-size: 11px; padding: 2px 7px; }
 .btn.is-danger { color: #c0392b; }
@@ -659,3 +667,109 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
    chuẩn trợ năng. `.fld` thay chỗ `<label>` trong hộp tuỳ chọn. */
 .sv-optbox .fld { display: block; }
 .sv-inline > label { white-space: nowrap; }
+
+/* ================================================================ bản đồ
+   Màn chính của kho — xem `web/sv-bando.js`. Sân vẽ bên trái, khung chi tiết
+   bên phải. Sân vẽ là giấy SẠCH: ô ly của nền app sau một đồ thị dày nét làm
+   mắt không tách được nét nối với nét kẻ. */
+
+.sv-pane-map { padding: 0; overflow: hidden; display: flex; }
+.bd { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 32%); flex: 1; min-height: 0; }
+.bd-san {
+  position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background: var(--surface);
+}
+.bd-bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px 4px; flex-wrap: wrap; }
+.bd-tim { flex: 1 1 260px; min-width: 0; }
+.bd-chk { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.bd-chk label { cursor: pointer; }
+.bd-loai { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 6px; }
+.bd-loai-nut, .bd-tag {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font: inherit; font-size: 11.5px; color: var(--ink-2);
+  border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 2px 9px 2px 6px;
+}
+.bd-loai-nut i, .bd-tag i {
+  width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--muc);
+  background: var(--surface-2); flex: none;
+}
+.bd-loai-nut.tat { opacity: .45; text-decoration: line-through; }
+[data-mau="y"] > i { background: var(--c-y); } [data-mau="g"] > i { background: var(--c-g); }
+[data-mau="b"] > i { background: var(--c-b); } [data-mau="p"] > i { background: var(--c-p); }
+[data-mau="v"] > i { background: var(--c-v); }
+
+.bd-svg { flex: 1; width: 100%; min-height: 0; display: block; cursor: grab; touch-action: none; user-select: none; }
+.bd-svg.dang-keo { cursor: grabbing; }
+.bd-rong { position: absolute; inset: 45% 0 auto; text-align: center; color: var(--muted); }
+.bd-goc { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
+.bd-goc .icon-btn { background: var(--surface); border: 1.5px solid var(--muc); min-width: 30px; min-height: 30px; }
+.bd-msg {
+  position: absolute; left: 14px; bottom: 10px; margin: 0; max-width: calc(100% - 170px);
+  font-size: 12px; color: var(--muted);
+}
+
+/* Nét nối: bài–khái niệm là bút chì đứt (chỉ nói "bài có nhắc tới"), quan hệ
+   giữa hai khái niệm là mực liền (bài PHÁT BIỂU quan hệ đó, có đoạn nguồn). */
+.bd-l { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.bd-l.qh { stroke: var(--ink-2); stroke-width: 1.6; stroke-dasharray: none; }
+.bd-n { cursor: pointer; }
+.bd-n text { font-family: var(--sans); fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round; }
+.bd-bai rect { fill: var(--c-y); stroke: var(--muc); stroke-width: 2; filter: drop-shadow(2px 2px 0 var(--bong)); }
+.bd-bai.chua rect { fill: var(--surface); stroke-dasharray: 5 3; }
+.bd-bai text { font-family: var(--display); font-size: 13px; font-weight: 700; stroke: none; }
+.bd-tt circle { fill: var(--surface-2); stroke: var(--muc); stroke-width: 1.5; }
+.bd-tt[data-mau="y"] circle { fill: var(--c-y); } .bd-tt[data-mau="g"] circle { fill: var(--c-g); }
+.bd-tt[data-mau="b"] circle { fill: var(--c-b); } .bd-tt[data-mau="p"] circle { fill: var(--c-p); }
+.bd-tt[data-mau="v"] circle { fill: var(--c-v); }
+.bd-tt.phieu circle { stroke-dasharray: 3 2; }
+.bd-tt.chung circle { stroke-width: 2.2; }
+.bd-tt text { font-size: 11px; text-anchor: middle; display: none; }
+.bd-tt.luon text, .bd-svg.gan .bd-tt text, .bd-tt.sang text, .bd-tt:hover text { display: block; }
+.bd-tt.chung text { font-weight: 600; }
+.bd-n:hover circle, .bd-n.dang-chon circle { stroke-width: 3; }
+.bd-n.dang-chon rect { stroke-width: 3; }
+.bd-svg.mo .bd-n:not(.sang) { opacity: .16; }
+.bd-svg.mo .bd-l:not(.sang) { opacity: .07; }
+.bd-svg.mo .bd-l.sang { stroke: var(--accent); stroke-dasharray: none; }
+
+/* Khung chi tiết */
+.bd-pan {
+  border-left: 1px solid var(--line); overflow-y: auto; min-height: 0;
+  padding: 14px 16px 40px; background: var(--bg); font-size: 13px; line-height: 1.5;
+}
+.bd-lui { font-size: 12px; margin-bottom: 6px; }
+.bd-h { font-family: var(--display); font-size: 17px; line-height: 1.3; margin: 2px 0 4px; color: var(--ink); }
+.bd-h4 {
+  font-family: var(--display); font-size: 14px; margin: 18px 0 6px; color: var(--ink);
+  padding-bottom: 3px; border-bottom: 1px solid var(--line);
+}
+.bd-so { margin: 0 0 10px; color: var(--ink-2); }
+.bd-tldr { margin: 8px 0; color: var(--ink); }
+.bd-dong { margin: 6px 0; color: var(--ink-2); }
+.bd-nut { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.bd-goiy {
+  margin: 10px 0 4px; padding: 10px 12px; border: 1.5px dashed var(--muc);
+  border-radius: var(--radius); background: var(--surface);
+}
+.bd-goiy p { margin: 0 0 8px; color: var(--ink-2); }
+.bd-ds { list-style: none; margin: 0; padding: 0; }
+.bd-ds > li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.bd-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.bd-tag b { font-size: 10px; color: var(--muted); }
+.bd-baitag {
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left;
+  border: 1.5px solid var(--muc); background: var(--c-y); color: var(--ink);
+  border-radius: 6px; padding: 1px 8px;
+}
+.bd-qh span { font-weight: 600; }
+.bd-qh b { color: var(--accent); font-weight: 600; }
+.bd-doan { cursor: pointer; display: block !important; }
+.bd-doan:hover { background: var(--surface); }
+.bd-meo { margin-top: 18px; }
+.bd-pan .sv-hit { font-size: 12.5px; }
+
+@media (max-width: 900px) {
+  .bd { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
+  .sv-pane-map { overflow-y: auto; }
+  .bd-pan { border-left: 0; border-top: 1px solid var(--line); }
+}

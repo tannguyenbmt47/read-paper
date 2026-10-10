@@ -4,10 +4,13 @@
    với luồng đọc-hiểu trong app.js. Chỗ duy nhất chạm vào nhau là `showScreen()`
    và mấy hàm tiện dụng nhỏ (`$`, `esc`, `sci`) — đều đọc, không ghi.
 
-   Ba tab:
-     Hỏi đáp          — nhật ký từng vòng hiện dần theo SSE, rồi câu trả lời
-     Bảng so sánh     — bài × facet, dựng từ phiếu, mở không tốn tiền
-     Tra đoạn & bản đồ — tra thuần (miễn phí) + đồ thị thực thể
+   Năm tab:
+     Bản đồ        — màn chính, mở ra đầu tiên: bài và khái niệm nối nhau thế
+                     nào, kèm ô tra đoạn văn. Miễn phí. Vẽ ở `sv-bando.js`.
+     Hỏi đáp       — nhật ký từng vòng hiện dần theo SSE, rồi câu trả lời
+     Tổng hợp      — bản đọc cả kho, dựng một lần (tốn tiền)
+     Bài giảng     — giảng một bài cho hiểu (tốn tiền)
+     Bảng so sánh  — bài × facet, dựng từ phiếu, mở không tốn tiền
 
    Mọi danh sách dài đều **vẽ dần** (`SV_PAGE` + `svWatchTail`): kho sinh ra để
    chứa vài trăm bài, vẽ hết một lượt là trang khựng ngay lúc mở.
@@ -265,7 +268,7 @@ async function svLoad() {
   // rồi báo "không mở được đoạn".
   if (SV.shown !== SV.id) {
     ["#svSyn", "#svLec", "#svAnswer", "#svSteps", "#svWarns", "#svLecWarns",
-     "#svSynWarns", "#svHits", "#svGraph", "#svGrid"].forEach((sel) => {
+     "#svSynWarns", "#svHits", "#svGrid"].forEach((sel) => {
       const el = $(sel); if (el) el.innerHTML = "";
     });
     ["#svCost", "#svSynProg", "#svLecProg"].forEach((sel) => {
@@ -291,6 +294,9 @@ async function svLoad() {
     `${st.papers} bài · ${st.chunks} đoạn · ${st.carded} phiếu · đã tiêu ${money(st.spent)}`;
   // Kho đã có bài thì gấp khối thêm bài lại, nhường chỗ cho danh sách.
   $("#svAddBox").classList.toggle("is-shut", st.papers > 0);
+  // Bản đồ vẽ từ chính danh sách bài, nên thêm/bỏ/chuyển bài xong là nó phải
+  // theo ngay — người dùng vừa kéo năm bài vào thì phải thấy năm bài trên đó.
+  if (!$("#svPaneMap").classList.contains("hidden")) BanDo.mo(SV.id).catch(() => {});
 }
 
 function svRenderPapers(more = false) {
@@ -309,6 +315,12 @@ function svRenderPapers(more = false) {
   }
   if (!more) SV.shownPapers = 0;
   const chip = (p) => {
+    // Bài lấy từ phần Dịch có phiếu (dựng từ tóm lược) nhưng chưa qua các pass
+    // của kho — ghi "đủ" cho nó là nói quá, và người dùng không biết vì sao bản
+    // đồ của bài ấy không nối với bài nào.
+    if (p.card?.from_brief) {
+      return '<i class="chip" title="Phiếu dựng từ tóm lược của phần Dịch. Chưa có câu ngữ cảnh, cây tóm lược và đồ thị riêng.">từ bản dịch</i>';
+    }
     if (p.status === "carded") return '<i class="chip ok">đủ</i>';
     if (p.status === "indexed") return '<i class="chip">chưa bơm</i>';
     if (p.status === "abstract_only") return '<i class="chip warn">chỉ abstract</i>';
@@ -316,20 +328,24 @@ function svRenderPapers(more = false) {
     return `<i class="chip">${esc(p.status)}</i>`;
   };
   const slice = SV.papers.slice(SV.shownPapers, SV.shownPapers + SV_PAGE);
+  // Thao tác ít dùng gập sau nút ⋯: năm bài × năm nút là cả cột toàn nút, và
+  // tên bài — thứ người ta tìm trong cột này — chìm giữa chúng.
   const html = slice.map((p) => `
     <li class="sv-paper" data-pid="${esc(p.id)}">
-      <div class="sv-ptitle">${esc(p.title || "(không tiêu đề)")}</div>
+      <button class="sv-ptitle" data-act="xem" title="Xem bài này trên bản đồ">${esc(p.title || "(không tiêu đề)")}</button>
       <div class="sv-pmeta">
         ${chip(p)}
         ${p.year ? `<span>${p.year}</span>` : ""}
         ${p.venue ? `<span>${esc(p.venue)}</span>` : ""}
         ${p.cites ? `<span>${p.cites} trích dẫn</span>` : ""}
         ${p.loupe_doc_id ? `<a href="#doc=${esc(p.loupe_doc_id)}" title="Mở trong phần Dịch">đọc →</a>` : ""}
+        <span class="grow"></span>
+        <button class="sv-pmore" data-act="more" title="Thao tác với bài này" aria-label="Thao tác">⋯</button>
       </div>
       <div class="sv-pact">
-        ${p.status === "indexed"
-          ? '<button class="btn xs" data-act="enrich">Bơm nội dung · ~$0,034</button>' : ""}
-        ${p.card ? '<button class="btn xs" data-act="recard">Bóc lại phiếu · ~$0,01</button>' : ""}
+        ${p.status === "indexed" || p.card?.from_brief
+          ? `<button class="btn xs" data-act="enrich" title="Ngữ cảnh hoá từng đoạn, cây tóm lược, phiếu và đồ thị — tìm chính xác hơn nhiều">Bơm nội dung · ~$0,034</button>` : ""}
+        ${p.card && !p.card.from_brief ? '<button class="btn xs" data-act="recard">Bóc lại phiếu · ~$0,01</button>' : ""}
         <button class="btn xs" data-act="edit" title="Sửa tiêu đề, năm, nơi đăng — miễn phí">Sửa</button>
         <button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>
         <button class="btn xs is-danger" data-act="drop">Bỏ</button>
@@ -985,56 +1001,10 @@ function svRenderGrid(more = false) {
 
 /* ------------------------------------------------------ bản đồ và đoạn */
 
-async function svGraph() {
-  const d = await svFetch(`/api/survey/${SV.id}/graph`);
-  if (!d.entities.length) {
-    $("#svGraph").innerHTML = '<p class="muted small">Chưa có thực thể nào — bơm nội dung cho vài bài trước.</p>';
-    return;
-  }
-  const by = {};
-  d.entities.forEach((e) => { (by[e.kind] = by[e.kind] || []).push(e); });
-  const nice = { method: "Phương pháp", dataset: "Tập dữ liệu", metric: "Độ đo",
-    task: "Bài toán", model: "Mô hình", concept: "Khái niệm", org: "Tổ chức" };
-  const names = Object.fromEntries(d.entities.map((e) => [e.id, e.name]));
-  // Mỗi loại chỉ vẽ 24 chip đầu; loại nào dài hơn thì mở bằng nút. Kho lớn có
-  // hàng trăm thực thể, và một bức tường chip thì không ai đọc.
-  const CHIPS = 24;
-  $("#svGraph").innerHTML =
-    Object.entries(by).map(([k, list]) => `
-      <div class="sv-gcol"><h4>${esc(nice[k] || k)} · ${list.length}</h4>
-        <div data-ents="${esc(k)}">${list.slice(0, CHIPS).map((e) =>
-          `<span class="sv-ent" data-ent="${esc(e.name)}">${esc(e.name)}<i>${e.papers}</i></span>`
-        ).join("")}</div>
-        ${list.length > CHIPS
-          ? `<button class="sv-link" data-more-ents="${esc(k)}">+${list.length - CHIPS} nữa</button>`
-          : ""}</div>`).join("")
-    + '<div class="sv-edges"><h4>Quan hệ các bài phát biểu</h4>'
-    + (d.edges.length
-      ? d.edges.slice(0, 60).map((g) =>
-        `<div class="sv-edge">${esc(names[g.src] || "?")}
-           <b>${esc(g.rel)}</b> ${esc(names[g.dst] || "?")}
-           ${g.chunk_id ? `<a class="sv-cite" data-cite="${esc(g.chunk_id)}">[nguồn]</a>` : ""}
-           ${g.note ? `<span class="muted small">${esc(g.note)}</span>` : ""}</div>`).join("")
-      : '<p class="muted small">Chưa có quan hệ nào.</p>')
-    + (d.edges.length > 60 ? `<p class="small muted">…và ${d.edges.length - 60} quan hệ nữa.</p>` : "")
-    + "</div>";
-
-  $("#svGraph").querySelectorAll("[data-more-ents]").forEach((b) => {
-    b.onclick = () => {
-      const k = b.dataset.moreEnts;
-      $(`[data-ents="${k}"]`, $("#svGraph")).insertAdjacentHTML("beforeend",
-        by[k].slice(CHIPS).map((e) =>
-          `<span class="sv-ent" data-ent="${esc(e.name)}">${esc(e.name)}<i>${e.papers}</i></span>`
-        ).join(""));
-      b.remove();
-    };
-  });
-}
-
 async function svSearch() {
   const q = $("#svSearch").value.trim();
   if (!q || !await svNeedId()) return;
-  $("#svHits").innerHTML = '<p class="muted small">đang tra…</p>';
+  if ($("#svHits")) $("#svHits").innerHTML = '<p class="muted small">đang tra…</p>';
   // Lấy về nhiều hơn số vẽ ra: tra là miễn phí và nhanh (không gọi model), nên
   // chi phí thật nằm ở việc dựng DOM chứ không ở việc lấy dữ liệu.
   const d = await svFetch(`/api/survey/${SV.id}/search?q=${encodeURIComponent(q)}&limit=60`);
@@ -1046,6 +1016,9 @@ async function svSearch() {
 function svRenderHits(more = false) {
   const el = $("#svHits");
   const btn = $("#svMoreHits");
+  // Ô kết quả nằm trong khung chi tiết của bản đồ, và người dùng có thể đã bấm
+  // sang điểm khác trước khi lượt tra trả về — khi đó không còn chỗ để vẽ.
+  if (!el || !btn) return;
   if (!SV.hits.length) {
     el.innerHTML = '<p class="muted small">Không tra được đoạn nào khớp.</p>';
     btn.classList.add("hidden");
@@ -1180,10 +1153,31 @@ async function svPickDocs() {
 async function svOpen() {
   showScreen("survey");
   location.hash = "survey";
+  // Mở ra là thấy BẢN ĐỒ — `svLoad` (gọi trong `svLoadList`) tự vẽ nó khi tab
+  // đang mở. Bản tổng hợp từng là màn đầu, nhưng kho mới chưa dựng thì nó chỉ
+  // là một nút vàng đòi tiền; hỏi đáp thì đòi biết trước phải hỏi gì. Bản đồ có
+  // ngay, miễn phí, và trả lời câu đầu tiên: các bài này nối nhau ở đâu.
   await svLoadList();
-  // Mở ra là thấy bản tổng hợp — thứ để đọc mà hiểu. Hỏi đáp đứng sau, vì hỏi
-  // đáp chỉ có ích khi người ta đã biết phải hỏi gì.
-  svLoadSynth().catch(() => {});
+}
+
+/* Chuyển tab — một chỗ duy nhất, để bản đồ gọi sang Hỏi đáp / Bài giảng được.
+   Nội dung của tab nào chỉ dựng khi mở tab đó. */
+const SV_TABS = {
+  svTabMap: "svPaneMap", svTabAsk: "svPaneAsk", svTabSyn: "svPaneSyn",
+  svTabLec: "svPaneLec", svTabGrid: "svPaneGrid",
+};
+
+function svTab(tab) {
+  const pane = SV_TABS[tab];
+  Object.entries(SV_TABS).forEach(([t, p]) => {
+    $("#" + t).classList.toggle("is-on", t === tab);
+    $("#" + p).classList.toggle("hidden", p !== pane);
+  });
+  if (!SV.id) return;
+  if (pane === "svPaneMap") BanDo.mo(SV.id).catch(() => {});
+  if (pane === "svPaneSyn") svLoadSynth().catch(() => {});
+  if (pane === "svPaneLec") svLoadLec().catch(() => {});
+  if (pane === "svPaneGrid") svGrid().catch(() => {});
 }
 
 function svWire() {
@@ -1311,8 +1305,15 @@ function svWire() {
   $("#svPapers").onclick = async (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
-    const pid = btn.closest("[data-pid]").dataset.pid;
+    const li = btn.closest("[data-pid]");
+    const pid = li.dataset.pid;
     const act = btn.dataset.act;
+    if (act === "more") { li.classList.toggle("mo"); return; }
+    if (act === "xem") {
+      if ($("#svPaneMap").classList.contains("hidden")) svTab("svTabMap");
+      setTimeout(() => BanDo.chon("P" + pid), 50);
+      return;
+    }
     if (act === "drop") {
       if (!await xacNhan("Bỏ bài này khỏi kho?",
         "Mất phiếu, câu ngữ cảnh của từng đoạn, cây tóm lược, vector và bài giảng "
@@ -1338,23 +1339,8 @@ function svWire() {
     await svLoad();
   };
 
-  // tab — nội dung của tab nào chỉ dựng khi mở tab đó
-  const tabs = {
-    svTabSyn: "svPaneSyn", svTabLec: "svPaneLec", svTabAsk: "svPaneAsk",
-    svTabGrid: "svPaneGrid", svTabMap: "svPaneMap",
-  };
-  Object.entries(tabs).forEach(([tab, pane]) => {
-    $("#" + tab).onclick = () => {
-      Object.entries(tabs).forEach(([t, p]) => {
-        $("#" + t).classList.toggle("is-on", t === tab);
-        $("#" + p).classList.toggle("hidden", p !== pane);
-      });
-      if (pane === "svPaneSyn") svLoadSynth().catch(() => {});
-      if (pane === "svPaneLec") svLoadLec().catch(() => {});
-      if (pane === "svPaneGrid") svGrid().catch(() => {});
-      if (pane === "svPaneMap") svGraph().catch(() => {});
-    };
-  });
+  Object.keys(SV_TABS).forEach((tab) => { $("#" + tab).onclick = () => svTab(tab); });
+  BanDo.noi();
   $("#svSynGo").onclick = svBuildSynth;
 
   /* Bỏ bản đã dựng. Dựng lại tốn tiền nên phải hỏi trước và nói rõ bao nhiêu —
@@ -1406,18 +1392,17 @@ function svWire() {
   $("#svLecModel").onchange = setStrong;
   $("#svFastModel").onchange = (e) => patch({ fast_model: e.target.value });
 
-  $("#svSearchGo").onclick = svSearch;
-  $("#svSearch").onkeydown = (e) => { if (e.key === "Enter") svSearch(); };
 
   // Trích dẫn bấm được, ở bất cứ đâu trong màn — nhật ký, câu trả lời, đồ thị,
   // kết quả tìm. Một listener trên cả màn thay vì gắn lại sau mỗi lần vẽ.
   $("#survey").addEventListener("click", (e) => {
     const a = e.target.closest("[data-cite]");
     if (a) { e.preventDefault(); svOpenCite(a.dataset.cite); return; }
+    // Tên khái niệm ở chỗ khác trong màn thì nhảy về đúng điểm đó trên bản đồ.
     const ent = e.target.closest("[data-ent]");
     if (ent) {
-      $("#svSearch").value = ent.dataset.ent;
-      svSearch();
+      svTab("svTabMap");
+      setTimeout(() => BanDo.chonTen(ent.dataset.ent), 300);
     }
   });
 

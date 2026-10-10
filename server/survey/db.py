@@ -971,6 +971,149 @@ def graph_overview(survey_id: str, limit: int = 60) -> dict:
     return {"entities": ents, "edges": edges}
 
 
+# Trường nào của phiếu thành loại thực thể nào, khi bài CHƯA có đồ thị bóc riêng.
+_PHIEU_THANH_NODE = (("datasets", "dataset"), ("metrics", "metric"),
+                     ("baselines", "method"), ("keywords_en", "concept"))
+
+
+def _ten_trong_phieu(v) -> list[str]:
+    """Danh sách tên trong một trường phiếu. Model có lúc trả chuỗi thay cho danh sách."""
+    if isinstance(v, str):
+        v = [x for x in re.split(r"[,;]", v)]
+    out = []
+    for x in v or []:
+        if isinstance(x, dict):
+            x = x.get("name") or x.get("ten") or ""
+        x = str(x).strip()
+        if 2 <= len(x) <= 60:
+            out.append(x)
+    return out[:12]
+
+
+def ban_do(survey_id: str) -> dict:
+    """Toàn bộ đồ thị của kho cho màn Bản đồ: bài, thực thể, quan hệ. **Miễn phí.**
+
+    Khác `graph_overview` ở ba chỗ, và cả ba là lý do màn này dùng được:
+
+    - **Bài là node.** Đồ thị chỉ có thực thể thì người xem thấy "HotpotQA nối
+      với DPR" mà không biết bài nào nói thế. Nối bài với thực thể nó nhắc tới
+      thì thực thể chung giữa hai bài hiện ra đúng là cây cầu giữa chúng.
+    - **Mỗi thực thể mang danh sách bài**, không chỉ con số `papers`, để tô sáng
+      được hàng xóm khi bấm.
+    - **Bài chưa dựng đồ thị vẫn có mặt**, với thực thể lấy từ PHIẾU (dữ liệu,
+      độ đo, đối chứng, từ khoá). Bài lấy từ phần Dịch đi đường này: nó có phiếu
+      dựng từ tóm lược nhưng không qua pass đồ thị, nên trước bản này kho năm
+      bài như vậy hiện "Chưa có thực thể nào" dù phiếu có đủ tên. Node từ phiếu
+      gắn `nguon = "phieu"` vì nó không có mã đoạn nên không trích dẫn được.
+    """
+    c = conn()
+    check_id(survey_id)
+    papers = list_papers(survey_id)
+    links: dict[str, set] = {}
+    # Cùng luật đếm với `put_graph`: thực thể khai trong quan hệ mà quên mã đoạn
+    # vẫn là thực thể bài ấy nhắc tới.
+    for r in c.execute(
+            "SELECT m.entity_id, m.paper_id FROM mention m JOIN entity en"
+            " ON en.id = m.entity_id WHERE en.survey_id = ?"
+            " UNION SELECT src, paper_id FROM edge WHERE survey_id = ?"
+            " UNION SELECT dst, paper_id FROM edge WHERE survey_id = ?",
+            (survey_id, survey_id, survey_id)):
+        links.setdefault(r[0], set()).add(r[1])
+
+    ents: dict[str, dict] = {}
+    for r in c.execute("SELECT id, name, norm, kind FROM entity WHERE survey_id = ?",
+                       (survey_id,)):
+        ps = links.get(r["id"])
+        if ps:
+            ents[r["id"]] = {"id": r["id"], "name": r["name"], "kind": r["kind"] or "concept",
+                             "papers": sorted(ps), "nguon": "do_thi"}
+    co_do_thi = {p for s in links.values() for p in s}
+
+    for p in papers:
+        if p["id"] in co_do_thi:
+            continue
+        card = p.get("card") or {}
+        for key, kind in _PHIEU_THANH_NODE:
+            for ten in _ten_trong_phieu(card.get(key)):
+                norm = norm_name(ten)
+                if len(norm) < 2:
+                    continue
+                eid = ent_id(survey_id, norm)
+                e = ents.setdefault(eid, {"id": eid, "name": ten, "kind": kind,
+                                          "papers": [], "nguon": "phieu"})
+                if p["id"] not in e["papers"]:
+                    e["papers"].append(p["id"])
+
+    edges = [dict(r) for r in c.execute(
+        "SELECT src, dst, rel, paper_id, chunk_id, note FROM edge WHERE survey_id = ?",
+        (survey_id,)) if r["src"] in ents and r["dst"] in ents]
+
+    def bai(p: dict) -> dict:
+        card = p.get("card") or {}
+        return {"id": p["id"], "title": p.get("title") or "", "year": p.get("year"),
+                "title_vi": card.get("title_vi", ""), "tldr": card.get("tldr_vi", ""),
+                "status": p.get("status"), "loupe_doc_id": p.get("loupe_doc_id") or "",
+                "co_do_thi": p["id"] in co_do_thi}
+
+    return {"papers": [bai(p) for p in papers],
+            "entities": sorted(ents.values(), key=lambda e: (-len(e["papers"]), e["name"])),
+            "edges": edges}
+
+
+def thuc_the(survey_id: str, ten: str, limit: int = 12) -> dict:
+    """Một thực thể: bài nhắc tới, quan hệ, và đoạn nhắc tới nó. **Miễn phí.**
+
+    Tra theo TÊN chứ không theo mã, vì node lấy từ phiếu không có dòng `entity`.
+    Đoạn nhắc tới lấy từ `mention` trước (model đã chỉ đúng chỗ), thiếu thì bù
+    bằng BM25 — nhưng chỉ giữ đoạn CHỨA nguyên cụm tên, vì BM25 xé tên thành
+    từng từ và "Success Rate" khớp mọi đoạn có chữ "rate".
+    """
+    norm = norm_name(ten)
+    if not norm:
+        return {"name": ten, "edges": [], "chunks": []}
+    eid = ent_id(survey_id, norm)
+    c = conn()
+    row = c.execute("SELECT * FROM entity WHERE id = ?", (eid,)).fetchone()
+    edges = neighbours(survey_id, [eid]) if row else []
+    ids = [r["chunk_id"] for r in c.execute(
+        "SELECT chunk_id FROM mention WHERE entity_id = ? LIMIT ?", (eid, limit))]
+    ids += [e["chunk_id"] for e in edges if e.get("chunk_id")]
+    ids = list(dict.fromkeys(ids))
+    if len(ids) < limit:
+        for cid, _s in bm25(survey_id, ten, limit=40):
+            if len(ids) >= limit:
+                break
+            if cid in ids:
+                continue
+            ch = get_chunks([cid], survey_id).get(cid)
+            if ch and not ch.get("level") and norm in norm_name(ch.get("text") or ""):
+                ids.append(cid)
+    got = get_chunks(ids[:limit], survey_id)
+    chunks = [{"id": i, "paper_id": got[i]["paper_id"], "title": got[i].get("paper_title", ""),
+               "section": got[i].get("section") or "", "text": (got[i].get("text") or "")[:500],
+               "vi": (got[i].get("vi") or "")[:500]} for i in ids[:limit] if i in got]
+    return {"id": eid, "name": row["name"] if row else ten,
+            "kind": row["kind"] if row else "", "edges": edges, "chunks": chunks}
+
+
+def bai_chua_co_do_thi(survey_id: str) -> list[dict]:
+    """Bài đã có đoạn mà chưa có thực thể nào — việc của nút *Dựng đồ thị*."""
+    c = conn()
+    co = {r[0] for r in c.execute(
+        "SELECT DISTINCT paper_id FROM mention m JOIN entity en ON en.id = m.entity_id"
+        " WHERE en.survey_id = ? UNION SELECT paper_id FROM edge WHERE survey_id = ?",
+        (check_id(survey_id), survey_id))}
+    out = []
+    for p in list_papers(survey_id):
+        if p["id"] in co:
+            continue
+        n = c.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(text)), 0) FROM chunk"
+                      " WHERE paper_id = ? AND level = 0", (p["id"],)).fetchone()
+        if n[0]:
+            out.append({"id": p["id"], "title": p.get("title") or "", "chars": n[1]})
+    return out
+
+
 _NORM_STRIP = re.compile(r"[^a-z0-9À-ỹ ]+")
 
 

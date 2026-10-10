@@ -575,6 +575,26 @@ async def enrich_paper(survey_id: str, paper_id: str, *, say=None) -> dict:
             "usage": usage.dict(), "tree": t}
 
 
+async def dung_do_thi(survey_id: str, paper_id: str) -> dict:
+    """Chỉ chạy pass đồ thị cho một bài đã có đoạn. **Có giá** (~$0,006 một bài).
+
+    Bài lấy từ phần Dịch đi `ingest_loupe_doc`, vốn cố ý bỏ hết các pass tốn tiền
+    — nên nó có phiếu (dựng từ tóm lược) mà không có thực thể nào, và màn Bản đồ
+    chỉ nối được nó qua tên trong phiếu. Bơm cả bài (`enrich_paper`) thì trả thêm
+    ngữ cảnh hoá + cây tóm lược + phiếu mới, trong khi thứ màn Bản đồ cần chỉ là
+    lượt cuối cùng.
+    """
+    p = sdb.load_paper(paper_id)
+    chunks = sdb.paper_chunks(paper_id, level=0)
+    if not chunks:
+        raise ValueError("Bài này chưa có đoạn nào.")
+    _strong, fast = sdb.models_of(survey_id)
+    g, usage = await graph.extract(paper_id, p["title"], labeled_text(paper_id, chunks), fast)
+    graph.save(survey_id, paper_id, g)
+    return {"id": paper_id, "entities": len(g["entities"]), "edges": len(g["edges"]),
+            "cost": round(usage.cost, 5)}
+
+
 def _card_from_brief(brief: dict, pid: str, chunks: list[dict]) -> dict:
     return {
         "title_vi": brief.get("title_vi", ""),

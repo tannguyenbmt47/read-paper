@@ -197,6 +197,86 @@ def test_bo_soat_do_thi_bo_canh_treo_va_ten_rac(kho):
     assert len(got["edges"]) == 1                                        # bỏ cạnh treo + rel lạ
 
 
+# ------------------------------------------------------------- bản đồ
+
+
+def test_ban_do_noi_bai_voi_thuc_the_va_lay_tu_phieu_khi_chua_co_do_thi(client, sdb, kho):
+    """Bài lấy từ phần Dịch có phiếu mà không qua pass đồ thị. Trước bản này màn
+    đồ thị của một kho toàn bài như vậy ghi "Chưa có thực thể nào" dù phiếu có
+    đủ tên tập dữ liệu, độ đo. Bản đồ phải lấy node từ phiếu, gộp đúng với node
+    cùng tên của bài đã có đồ thị — đó chính là cây cầu giữa hai bài."""
+    sid, p1, p2 = kho["sid"], kho["p1"], kho["p2"]
+    sdb.put_graph(sid, p1,
+                  [{"name": "HotpotQA", "norm": "hotpotqa", "kind": "dataset", "chunks": [f"{p1}c2"]},
+                   {"name": "CIRAG", "norm": "cirag", "kind": "method", "chunks": [f"{p1}c1"]}],
+                  [{"src": "cirag", "dst": "hotpotqa", "rel": "đánh giá trên",
+                    "chunk": f"{p1}c2", "note": ""}])
+    # Model hay trả MỘT chuỗi cho trường danh sách — phải tách, không lặp từng ký tự.
+    sdb.update_paper(p2, card={"title_vi": "Theia", "tldr_vi": "Chưng cất mô hình thị giác.",
+                               "datasets": ["HotpotQA", "CortexBench"], "metrics": "Success Rate",
+                               "keywords_en": ["distillation"], "from_brief": True})
+    d = client.get(f"/api/survey/{sid}/ban-do").json()
+    bai = {p["id"]: p for p in d["papers"]}
+    assert bai[p1]["co_do_thi"] and not bai[p2]["co_do_thi"]
+    ten = {e["name"]: e for e in d["entities"]}
+    assert sorted(ten["HotpotQA"]["papers"]) == sorted([p1, p2])    # gộp theo tên chuẩn hoá
+    assert ten["HotpotQA"]["nguon"] == "do_thi"
+    assert ten["CortexBench"]["nguon"] == "phieu" and ten["CortexBench"]["kind"] == "dataset"
+    assert "Success Rate" in ten and len([n for n in ten if len(n) == 1]) == 0
+    assert d["entities"][0]["name"] == "HotpotQA"                   # điểm chung lên đầu
+    assert len(d["edges"]) == 1
+
+    # Chỉ bài CHƯA có đồ thị mới vào danh sách việc của nút Dựng đồ thị.
+    assert [p["id"] for p in sdb.bai_chua_co_do_thi(sid)] == [p2]
+
+
+def test_thuc_the_chi_bu_doan_chua_nguyen_cum_ten(client, sdb, kho):
+    """BM25 xé tên thành từng từ, nên "Exact Match" khớp mọi đoạn có chữ "match".
+    Đoạn bù vào phải chứa NGUYÊN cụm tên."""
+    sid, p1 = kho["sid"], kho["p1"]
+    sdb.put_chunks(p1, [
+        {"ord": 3, "section": "Eval", "page": 6, "kind": "para",
+         "text": "We report Exact Match on every benchmark.", "ctx": "", "vi": ""},
+        {"ord": 4, "section": "Eval", "page": 6, "kind": "para",
+         "text": "An exact retriever does not match the oracle.", "ctx": "", "vi": ""},
+    ], title="CIRAG: Construction-Integration Retrieval")
+    d = client.get(f"/api/survey/{sid}/thuc-the", params={"ten": "Exact Match"}).json()
+    ids = [c["id"] for c in d["chunks"]]
+    assert f"{p1}c3" in ids and f"{p1}c4" not in ids
+
+
+def test_dung_do_thi_chi_chay_bai_con_thieu_va_bao_gia_truoc(client, sdb, kho, monkeypatch):
+    """Nút Dựng đồ thị: ước giá không gọi model, rồi chạy ĐÚNG những bài còn
+    thiếu — bài đã có đồ thị mà chạy lại là trả tiền hai lần cho cùng một thứ."""
+    from server import llm
+    from server.survey import graph
+    sid, p1, p2 = kho["sid"], kho["p1"], kho["p2"]
+    sdb.put_graph(sid, p1, [{"name": "CIRAG", "norm": "cirag", "kind": "method",
+                             "chunks": [f"{p1}c1"]}], [])
+
+    async def gia(_m):
+        return (1e-6, 2e-6)
+    monkeypatch.setattr(llm, "gia_model", gia)
+    g = client.get(f"/api/survey/{sid}/do-thi/gia").json()
+    assert g["bai"] == 1 and g["usd"] > 0
+
+    goi = []
+
+    async def extract(pid, title, prefix, fast=""):
+        goi.append(pid)
+        assert f"<<<{pid}c1>>>" in prefix          # đọc toàn văn có mã đoạn
+        return ({"entities": [{"name": "Theia", "norm": "theia", "kind": "method",
+                               "chunks": [f"{pid}c1"]}], "edges": []},
+                llm.Usage(cost=0.001))
+    monkeypatch.setattr(graph, "extract", extract)
+    body = client.get(f"/api/survey/{sid}/do-thi/dung").text
+    assert goi == [p2]
+    assert "event: done" in body and '"cost": 0.001' in body
+    assert sdb.bai_chua_co_do_thi(sid) == []
+    d = client.get(f"/api/survey/{sid}/ban-do").json()
+    assert all(p["co_do_thi"] for p in d["papers"])
+
+
 # ------------------------------------------------------- chốt chặn
 
 

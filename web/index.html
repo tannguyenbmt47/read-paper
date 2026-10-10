@@ -742,16 +742,16 @@
     <!-- ------------------------------ giữa: ba tab ----------------------- -->
     <main class="sv-main">
       <nav class="sv-tabs">
-        <button id="svTabSyn"  class="sv-tab is-on">Tổng hợp</button>
-        <button id="svTabLec"  class="sv-tab">Bài giảng</button>
+        <button id="svTabMap"  class="sv-tab is-on" title="Bài và khái niệm nối với nhau thế nào — miễn phí">Bản đồ</button>
         <button id="svTabAsk"  class="sv-tab">Hỏi đáp</button>
+        <button id="svTabSyn"  class="sv-tab">Tổng hợp</button>
+        <button id="svTabLec"  class="sv-tab">Bài giảng</button>
         <button id="svTabGrid" class="sv-tab">Bảng so sánh</button>
-        <button id="svTabMap"  class="sv-tab">Tra đoạn &amp; bản đồ</button>
       </nav>
 
       <!-- ---- tab 0: tổng hợp — thứ để ĐỌC MÀ HIỂU, đặt trước hỏi đáp vì hỏi
            đáp giả định người ta đã biết phải hỏi gì ---- -->
-      <section id="svPaneSyn" class="sv-pane">
+      <section id="svPaneSyn" class="sv-pane hidden">
         <div class="sv-col">
           <div class="sv-synbar">
             <div>
@@ -878,18 +878,32 @@
         <button id="svMoreRows" class="sv-link hidden"></button>
       </section>
 
-      <!-- ---- tab 3: tra đoạn + bản đồ ---- -->
-      <section id="svPaneMap" class="sv-pane hidden">
-        <div class="sv-col">
-          <div class="sv-row">
-            <input id="svSearch" class="input" placeholder="Tra trong kho — miễn phí, không gọi model">
-            <button id="svSearchGo" class="btn btn-primary">Tra</button>
+      <!-- ---- bản đồ: màn chính, mở ra đầu tiên. Vẽ ở web/sv-bando.js ---- -->
+      <section id="svPaneMap" class="sv-pane sv-pane-map">
+        <div class="bd">
+          <div class="bd-san">
+            <div class="bd-bar">
+              <input id="svSearch" class="input bd-tim" type="search"
+                placeholder="Tìm khái niệm hay bài để tô sáng · Enter để tra đoạn văn"
+                aria-label="Tìm trên bản đồ">
+              <div class="fld bd-chk">
+                <input type="checkbox" id="bdChung">
+                <label for="bdChung">Chỉ điểm chung</label>
+              </div>
+              <button id="bdDung" class="btn btn-primary xs hidden">Dựng đồ thị</button>
+            </div>
+            <div id="bdLoai" class="bd-loai" aria-label="Loại khái niệm"></div>
+            <svg id="bdSvg" class="bd-svg" role="img" aria-label="Bản đồ bài và khái niệm"></svg>
+            <p id="bdRong" class="bd-rong hidden">Kho chưa có bài nào. Thêm bài ở cột trái.</p>
+            <div class="bd-goc">
+              <button id="bdGan" class="icon-btn" title="Phóng to">+</button>
+              <button id="bdXa" class="icon-btn" title="Thu nhỏ">−</button>
+              <button id="bdVua" class="icon-btn" title="Vừa khung">⤢</button>
+              <button id="bdXep" class="icon-btn" title="Xếp lại từ đầu">↻</button>
+            </div>
+            <p id="bdMsg" class="bd-msg"></p>
           </div>
-          <div id="svHits" class="sv-hits"></div>
-          <button id="svMoreHits" class="sv-link hidden">Xem thêm kết quả…</button>
-          <h3 class="sv-h3">Bản đồ thực thể</h3>
-          <p class="small muted">Thực thể xuất hiện ở nhiều bài nhất, và quan hệ mà chính các bài phát biểu ra.</p>
-          <div id="svGraph" class="sv-graph"></div>
+          <aside id="bdPan" class="bd-pan"></aside>
         </div>
       </section>
     </main>
@@ -944,6 +958,7 @@
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/app.js"></script>
 <script src="/survey.js"></script>
+<script src="/sv-bando.js"></script>
 <script src="/thuvien.js"></script>
 <script src="/slide-ve.js"></script>
 <script src="/slide.js"></script>
