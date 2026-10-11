@@ -591,6 +591,75 @@ def reflect_user(items: list[dict], draft: dict[str, str]) -> str:
 
 # ------------------------------------------------ pass 3: giải thích lập luận
 
+# ------------------------------------------- pass 1b: gap phản biện
+#
+# Đi SAU `cached_prefix` (toàn văn đã nằm ở đó), nên nằm ở phần thay đổi theo
+# request — đặt vào `TRANSLATION_RULES` hay `BRIEF_SYSTEM` là đổi prefix của mọi
+# bài. Tách khỏi lượt dựng tóm lược vì lượt ấy đã ra tới 20.000 token và có trần
+# thời gian riêng; thêm một khối phải nghĩ kỹ vào đó là kéo cả hai cùng hỏng.
+
+PHAN_BIEN_TASK = LANGUAGE_RULE + """\
+## Nhiệm vụ: dựng phần GAP PHẢN BIỆN cho bài báo ở trên
+
+Bạn là người phản biện (reviewer) khó tính nhưng công bằng của một hội nghị hàng
+đầu. Phần tóm lược đã nêu khoảng trống mà TÁC GIẢ tuyên bố và giới hạn tác giả
+tự nhận. Việc của bạn khác hẳn: chỉ ra những chỗ một người đọc kỹ CÓ THỂ chất vấn
+bài này, để người đọc biết bài đứng vững tới đâu và hỏi lại điều gì.
+
+Ba phần, theo đúng thứ tự:
+
+1. `gap_bai_neu` — Khoảng trống mà bài tuyên bố có ĐỨNG VỮNG không? Cách làm
+   trước đó có thật sự thất bại đúng như bài nói, hay bài chọn đối thủ yếu, định
+   nghĩa bài toán hẹp cho vừa phương pháp của mình, hoặc bỏ qua một hướng đã giải
+   quyết một phần? Kết luận một trong ba mức: "vung" (đứng vững), "mot_phan",
+   "ho" (còn hở), kèm lý do.
+
+2. `diem` — 3 đến 6 điểm phản biện, điểm nặng nhất trước. Mỗi điểm thuộc MỘT loại:
+   - "giả định ngầm": bài dựa vào một điều chưa nói ra hoặc chưa kiểm chứng.
+   - "thí nghiệm thiếu": thiếu ablation, thiếu đối chứng, thiếu tập dữ liệu khó.
+   - "so sánh chưa công bằng": khác ngân sách tính toán, khác dữ liệu, baseline
+     cấu hình yếu, chạy lại baseline không đúng cài đặt gốc.
+   - "khái quát quá": kết luận rộng hơn phạm vi thí nghiệm (ít tác vụ, ít seed,
+     một miền dữ liệu, một mô hình nền).
+   - "độ đo lệch": độ đo không bắt đúng điều bài muốn chứng minh.
+   - "chi phí ẩn": độ trễ, bộ nhớ, dữ liệu, công gán nhãn mà bài không tính.
+   - "tái lập": thiếu chi tiết để người khác làm lại được.
+
+3. `con_bo_ngo` — 1 đến 3 câu hỏi nghiên cứu còn bỏ ngỏ SAU bài này: hướng làm
+   tiếp mà chính những điểm phản biện ở trên mở ra.
+
+Luật cứng, quyết định phần này có giá trị hay không:
+
+- **Mỗi điểm phải neo vào bài.** `nguon` là mã khối (dạng b12) cho thấy chỗ hở:
+  khối mô tả thiết lập thí nghiệm thiếu X, khối đưa ra khẳng định rộng, bảng kết
+  quả chỉ có một seed. Phản biện không neo được vào đâu là phản biện chung chung,
+  áp vào bài nào cũng được, nên bỏ.
+- **Không bịa số và không bịa công trình.** Con số nào cũng phải có trong bài.
+  Không nêu tên bài báo khác mà bài không nhắc tới.
+- **Phân biệt với giới hạn tác giả đã tự nhận.** Điều tác giả đã thừa nhận thì
+  chỉ đưa vào nếu bạn thấy hệ quả của nó nặng hơn mức tác giả nói, và nói rõ vì sao.
+- **Công bằng.** Nếu bài đã làm đúng một thí nghiệm để chặn một câu chất vấn
+  hiển nhiên thì không đưa câu chất vấn đó vào.
+- `cau_hoi` là câu hỏi cụ thể gửi tác giả, hoặc thí nghiệm cụ thể sẽ phân xử
+  được điểm ấy. Không viết "cần thêm thí nghiệm" chung chung.
+
+""" + VAN_PHONG + """
+Trả về DUY NHẤT một object JSON hợp lệ, không lời dẫn, không bọc trong ```:
+{
+  "gap_bai_neu": {"muc": "vung|mot_phan|ho", "danh_gia": "2-4 câu", "nguon": ["b12"]},
+  "diem": [
+    {"loai": "một trong bảy loại ở trên", "diem": "điều bị chất vấn, ≤20 chữ",
+     "vi_sao": "vì sao đáng ngờ, nói cơ chế, 2-3 câu", "nguon": ["b45"],
+     "cau_hoi": "câu hỏi gửi tác giả hoặc thí nghiệm phân xử, 1-2 câu"}
+  ],
+  "con_bo_ngo": [{"cau_hoi": "câu hỏi nghiên cứu", "vi_sao": "vì sao nó đáng làm, 1-2 câu"}]
+}
+"""
+
+PHAN_BIEN_LOAI = ("giả định ngầm", "thí nghiệm thiếu", "so sánh chưa công bằng",
+                  "khái quát quá", "độ đo lệch", "chi phí ẩn", "tái lập")
+
+
 EXPLAIN_SYSTEM = LANGUAGE_RULE + """\
 Bạn là người hướng dẫn đọc bài báo khoa học cho độc giả Việt Nam. Người đọc đang
 dừng lại ở một đoạn cụ thể và muốn hiểu nó thật sự — không phải hiểu nghĩa chữ

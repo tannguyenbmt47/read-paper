@@ -3367,7 +3367,14 @@ function renderSide() {
       (b.reader_warnings?.length
         ? `<p class="brief-line"><b>Dễ hiểu nhầm</b></p><ul class="warns">${
             b.reader_warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`
-        : "");
+        : "") +
+      phanBienHtml(b);
+    $$("#briefBox [data-go]").forEach((el) => (el.onclick = () => jumpToBlock(el.dataset.go)));
+    const pbBtn = $("#pbBtn");
+    if (pbBtn) {
+      pbBtn.onclick = () => dungPhanBien(false);
+      giaPhanBien(pbBtn);
+    }
 
     const dia = (code, cap) => code?.trim()
       ? `<div class="mmd-slot" data-mmd="${esc(code)}" data-cap="${esc(cap)}"></div>` : "";
@@ -3408,6 +3415,88 @@ function renderSide() {
       }).join("")}</nav>`
     : `<p class="muted">Không nhận ra mục nào.</p>`;
   $$("#outlineBox [data-go]").forEach((el) => (el.onclick = () => jumpToBlock(el.dataset.go)));
+}
+
+/* ------------------------------------------------- gap phản biện
+
+   Tóm lược kể lại bài theo lời TÁC GIẢ: khoảng trống bài nêu, giới hạn bài tự
+   nhận. Phần này đứng ở phía người phản biện — khoảng trống ấy có đứng vững
+   không, chỗ nào chất vấn được, hỏi lại tác giả điều gì. Mỗi điểm neo vào một
+   đoạn của bài (bấm để nhảy tới) để người đọc tự kiểm, không phải tin suông.
+   Dựng ở `pipeline.run_phan_bien`, lưu trong `brief.phan_bien`. */
+const PB_MUC = { vung: "đứng vững", mot_phan: "đứng vững một phần", ho: "còn hở" };
+
+function doanNgan(id) {
+  const t = state.doc.translations?.[id] || state.doc.blocks.find((x) => x.id === id)?.text || "";
+  const w = t.replace(/\s+/g, " ").trim().split(" ").slice(0, 6).join(" ");
+  return w ? `“${w}…”` : id;
+}
+
+function phanBienHtml(b) {
+  const pb = b.phan_bien;
+  if (!pb) {
+    return `<div class="pb pb-moi"><p class="brief-line"><b>Gap phản biện</b></p>
+      <p class="muted">Khoảng trống bài nêu có đứng vững không, chỗ nào chất vấn được, nên
+        hỏi lại tác giả điều gì. Mỗi điểm neo vào một đoạn của bài.</p>
+      <button id="pbBtn" class="btn btn-sm">Dựng gap phản biện</button></div>`;
+  }
+  const nguon = (ids) => (ids || []).map((id) =>
+    `<button class="go pb-go" data-go="${esc(id)}" title="Nhảy tới đoạn này">→ ${esc(doanNgan(id))}</button>`).join("");
+  const g = pb.gap_bai_neu || {};
+  const gap = g.danh_gia ? `<div class="pb-gap" data-muc="${esc(g.muc || "")}">
+      <span class="pb-nhan">Khoảng trống bài nêu${g.muc ? ` · <b>${esc(PB_MUC[g.muc] || g.muc)}</b>` : ""}</span>
+      <p>${sci(g.danh_gia)}</p>${nguon(g.nguon)}</div>` : "";
+  const diem = (pb.diem || []).length ? `<ol class="pb-ds">${pb.diem.map((x) => `<li>
+      ${x.loai ? `<span class="pb-loai">${esc(x.loai)}</span>` : ""}
+      <b class="pb-diem">${sci(x.diem)}</b>
+      <p>${sci(x.vi_sao)}</p>
+      ${x.cau_hoi ? `<p class="pb-hoi"><span>Hỏi lại</span> ${sci(x.cau_hoi)}</p>` : ""}
+      ${nguon(x.nguon)}</li>`).join("")}</ol>` : "";
+  const mo = (pb.con_bo_ngo || []).length
+    ? `<p class="pb-con">Còn bỏ ngỏ sau bài này</p><ul class="pb-mo">${pb.con_bo_ngo.map((x) =>
+        `<li><b>${sci(x.cau_hoi)}</b>${x.vi_sao ? ` ${sci(x.vi_sao)}` : ""}</li>`).join("")}</ul>` : "";
+  const bo = (pb.bo || []).length
+    ? `<p class="muted pb-bo" title="${esc(pb.bo.join("\n"))}">Đã bỏ ${pb.bo.length} điểm vì mang số không có trong bài.</p>` : "";
+  return `<div class="pb"><p class="brief-line"><b>Gap phản biện</b></p>${gap}${diem}${mo}${bo}
+    <button id="pbBtn" class="sv-link pb-lai">Dựng lại phần phản biện</button></div>`;
+}
+
+async function giaPhanBien(btn) {
+  try {
+    const r = await fetch(`/api/doc/${state.doc.id}/phan-bien/gia`);
+    if (!r.ok) return;
+    const d = await r.json();
+    if (btn.isConnected && !btn.disabled) {
+      btn.dataset.gia = d.usd;
+      btn.textContent = `${btn.classList.contains("pb-lai") ? "Dựng lại phần phản biện" : "Dựng gap phản biện"} · ~${money(d.usd)}`;
+    }
+  } catch (_) { /* không ước được giá thì nút vẫn bấm được */ }
+}
+
+/* `tuDong`: chạy ngay sau mẻ dịch đầu của bài MỚI — prefix vừa được mẻ ấy nạp
+   vào cache nên lượt này gần như chỉ trả tiền phần viết ra. Bài cũ thì chỉ chạy
+   khi người dùng bấm, vì "Dịch tiếp" không được tự tiêu tiền vào việc khác. */
+async function dungPhanBien(tuDong) {
+  const btn = $("#pbBtn");
+  if (!tuDong && state.doc.brief?.phan_bien && !await xacNhan(
+    "Dựng lại phần phản biện?",
+    `Tốn một lượt gọi model${btn?.dataset.gia ? `, khoảng ${money(+btn.dataset.gia)}` : ""}. Bản hiện tại bị thay.`,
+    { ok: "Dựng lại" })) return;
+  if (btn) { btn.disabled = true; btn.textContent = "Đang đọc bài như một người phản biện…"; }
+  const id = state.doc.id;
+  try {
+    const r = await fetch(`/api/doc/${id}/phan-bien`, { method: "POST" });
+    if (!r.ok) throw new Error(await apiErr(r, "không dựng được phần phản biện"));
+    const res = await r.json();
+    if (state.doc?.id !== id) return;          // người dùng đã mở bài khác
+    state.doc.brief.phan_bien = res.phan_bien;
+    renderSide();
+    if (!state.translating) reportCost("Đã dựng gap phản biện", res.run, res.total);
+    else state.doc.usage = res.total;
+  } catch (e) {
+    if (state.doc?.id === id && !state.translating) status("Lỗi: " + e.message);
+    if (btn?.isConnected) { btn.disabled = false; btn.textContent = "Thử dựng lại phần phản biện"; }
+  }
 }
 
 /** Cuộn tới một khối và làm nổi nó lên. */
@@ -3577,8 +3666,10 @@ async function runTranslate() {
 
   state.bo = new AbortController();
   let thuLaiTomLuoc = "";        // lý do hỏng ở bước tóm lược, nếu có
+  let vuaTomLuoc = false;         // tóm lược dựng ngay trong lượt này → bài mới
   try {
     if (!state.doc.brief) {
+      vuaTomLuoc = true;
       // Đồng hồ chạy ngay: một thanh trạng thái đứng im không phân biệt được
       // "đang chạy" với "đã treo", và đó đúng là thứ người dùng gặp.
       dongHo("Đang đọc toàn bài để dựng tóm lược và chốt bảng thuật ngữ");
@@ -3637,6 +3728,10 @@ async function runTranslate() {
       status(`Đang dịch phần ${dau + 1}/${state.chunks}${soat} — mẻ đầu chạy một mình `
         + "để nạp bài vào cache, các mẻ sau sẽ chạy song song…");
       await chay1(dau);
+      // Bài mới: dựng phần phản biện NGAY SAU mẻ đầu, song song với các mẻ
+      // sau. Mẻ đầu vừa nạp prefix vào cache nên lượt này đọc lại gần như
+      // miễn phí. Không chờ nó — dịch không được chậm lại vì phần phụ.
+      if (vuaTomLuoc && !state.doc.brief?.phan_bien) dungPhanBien(true);
     }
 
     /* Một mẻ hỏng (mạng, model trả lỗi) thì THÔI NHẬN mẻ mới nhưng để các mẻ

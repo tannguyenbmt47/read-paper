@@ -951,6 +951,33 @@ chiếu biểu đồ granularity. Hai nguyên nhân độc lập:
 Ảnh trên slide mang `?v=` (`anh_ver`, từ `figure_rect`) — đổi khung mà URL giữ
 nguyên thì trình duyệt chiếu tiếp ảnh cũ, và mọi phép đo phía server nói "đã sửa".
 
+### Gap phản biện (`pipeline.run_phan_bien`) — tóm lược theo lời tác giả chưa đủ
+
+Tóm lược kể bài theo lời TÁC GIẢ: khoảng trống bài nêu, giới hạn bài tự nhận.
+Người dùng muốn thêm phía người phản biện: khoảng trống ấy có đứng vững không
+(`gap_bai_neu.muc`: vững / một phần / hở), 3–6 điểm chất vấn được, mỗi điểm một
+loại (`prompts.PHAN_BIEN_LOAI`), một mã khối neo vào bài và một câu hỏi gửi tác
+giả, cộng 1–3 câu hỏi còn bỏ ngỏ sau bài.
+
+**Lượt riêng, không nhét vào lượt dựng tóm lược.** Lượt ấy đã đọc toàn văn, ra
+tới 20.000 token và có trần thời gian riêng (`tran_brief`). Phản biện đi sau
+`cached_prefix`, task ở phần thay đổi theo request (`PHAN_BIEN_TASK`), và lưu
+vào `brief["phan_bien"]`. Lưu ở đó an toàn vì `cached_prefix` chỉ đọc các khoá
+đã kê tên của `brief` — có test so prefix trước và sau, từng byte. Dựng lại tóm
+lược thì phần phản biện cũ đi theo, đúng như nên thế.
+
+**Bài mới tự chạy ngay SAU mẻ dịch đầu**, song song với các mẻ sau: mẻ đầu vừa
+nạp prefix vào cache nên lượt này gần như chỉ trả tiền phần viết ra. Bài cũ chỉ
+chạy khi bấm — "Dịch tiếp" không được tự tiêu tiền vào việc khác (cùng bài học
+với lượt đánh dấu câu đáng nhớ). Đo trên World Models khi cache nguội: 18 giây,
+$0,0037, 5 điểm, không điểm nào bị bỏ.
+
+`chuan_hoa_phan_bien`: mã khối bịa bị bỏ; điểm nào mang con số không có ở đâu
+trong bài (`_so_toan_bai`) thì BỎ CẢ ĐIỂM và ghi vào `bo` — phản biện dựa trên số
+bịa nghe rất có lý nên tệ hơn không có. Hiện ở cột trái (`phanBienHtml`) và
+trong cả hai bản xuất (`_phan_bien_html`, Markdown); ba chỗ dựng cùng một nội
+dung, sửa một chỗ phải soát hai chỗ kia.
+
 ### Bản xuất bài dịch (`?fmt=html|pdf`) — đọc như một báo cáo
 
 `_export_html` dựng bìa (tên Việt, tên gốc, tác giả, nơi đăng từ `db.get_meta`)

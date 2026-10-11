@@ -1567,6 +1567,30 @@ async def brief(doc_id: str):
         raise HTTPException(502, f"{type(e).__name__}: {e}")
 
 
+@app.get("/api/doc/{doc_id}/phan-bien/gia")
+async def phan_bien_gia(doc_id: str):
+    """Ước giá lượt gap phản biện. Không gọi model."""
+    if not store.exists(doc_id):
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    doc = store.load(doc_id)
+    return {"usd": pipeline.gia_phan_bien(doc, await llm.gia_model(doc["model"])),
+            "model": doc["model"]}
+
+
+@app.post("/api/doc/{doc_id}/phan-bien")
+async def phan_bien(doc_id: str):
+    """Dựng phần gap phản biện. **Tốn tiền** — một lượt đi sau prefix của bài."""
+    try:
+        pb, run, total = await pipeline.run_phan_bien(doc_id)
+        return {"phan_bien": pb, "run": run, "total": total}
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy tài liệu")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"{type(e).__name__}: {e}")
+
+
 # ------------------------------------------------------------------- dịch
 
 
@@ -1981,6 +2005,20 @@ async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md"):
         ):
             if brief.get(k):
                 out.append(f"- **{label}:** {brief[k]}")
+        pb = brief.get("phan_bien") or {}
+        if pb.get("diem") or (pb.get("gap_bai_neu") or {}).get("danh_gia"):
+            out.append("\n### Gap phản biện\n")
+            g = pb.get("gap_bai_neu") or {}
+            if g.get("danh_gia"):
+                muc = _PB_MUC.get(g.get("muc") or "", "")
+                out.append(f"**Khoảng trống bài nêu{' — ' + muc if muc else ''}.** {g['danh_gia']}\n")
+            for i, x in enumerate(pb.get("diem") or [], 1):
+                loai = f"*({x['loai']})* " if x.get("loai") else ""
+                out.append(f"{i}. {loai}**{x.get('diem', '')}** {x.get('vi_sao', '')}"
+                           + (f" *Hỏi lại:* {x['cau_hoi']}" if x.get("cau_hoi") else ""))
+            if pb.get("con_bo_ngo"):
+                out.append("\n**Còn bỏ ngỏ sau bài này**\n")
+                out += [f"- **{x.get('cau_hoi', '')}** {x.get('vi_sao', '')}" for x in pb["con_bo_ngo"]]
         for key, label in (("argument_diagram", "Mạch lập luận"), ("method_diagram", "Cơ chế đề xuất")):
             if brief.get(key):
                 out.append(f"\n### {label}\n")
@@ -2153,6 +2191,13 @@ padding:1rem 1.2rem;margin:.7rem 0 .3rem;font-family:var(--than);font-size:.93re
 .li-mk{position:absolute;left:0;color:var(--mo)}
 .mermaid{text-align:center}
 .cuoi{margin-top:3rem;padding-top:1rem;border-top:1.5px dashed var(--chi);font-family:var(--tay);color:var(--mo);text-align:center}
+.pb-gap{border:1.5px solid var(--muc);border-radius:8px;padding:.6rem .9rem;margin:.4rem 0 1rem;background:var(--giay)}
+.pb-gap[data-muc=vung]{background:#e4f5e8}.pb-gap[data-muc=mot_phan]{background:#fff4c2}.pb-gap[data-muc=ho]{background:#fde3ee}
+.pb-gap p{margin:.2rem 0}.pb-nhan{font-size:.88rem;color:var(--mo)}
+.pb-ds{padding-left:1.4rem}.pb-ds li{margin-bottom:.8rem}.pb-ds p{margin:.2rem 0}
+.pb-loai{display:inline-block;font-size:.8rem;padding:0 .5rem;border:1px solid var(--chi);border-radius:999px;color:var(--mo)}
+.pb-hoi i{font-family:var(--tay);font-style:normal;color:var(--xanh);font-size:1.05rem}
+.pb-con{font-family:var(--tay);color:var(--xanh);font-size:1.15rem;margin:1rem 0 .2rem}
 @media(max-width:820px){main{padding:2rem 1.2rem 3rem}main::before{display:none}
 .pair,.cot{grid-template-columns:minmax(0,1fr)}.cot{display:none}.pair:has(>.en){background:none}
 .en{padding-bottom:.4rem;border-bottom:1px dashed var(--chi);margin-bottom:.4rem}
@@ -2167,6 +2212,37 @@ figure,.so-do{box-shadow:none}}
 
 # Mạch tóm lược theo đúng chuỗi lập luận của skill viết tài liệu kỹ thuật: vấn
 # đề → khoảng trống → ý tưởng cốt lõi → cơ chế → bằng chứng → giới hạn.
+_PB_MUC = {"vung": "đứng vững", "mot_phan": "đứng vững một phần", "ho": "còn hở"}
+
+
+def _phan_bien_html(pb: dict | None, rich, esc) -> str:
+    """Gap phản biện trong bản báo cáo — cùng nội dung với cột trái của app
+    (`phanBienHtml`), nhưng không có nút nhảy tới đoạn vì file đứng một mình."""
+    if not pb or not (pb.get("diem") or (pb.get("gap_bai_neu") or {}).get("danh_gia")):
+        return ""
+    out = ["<h3>Gap phản biện</h3>"]
+    g = pb.get("gap_bai_neu") or {}
+    if g.get("danh_gia"):
+        muc = _PB_MUC.get(g.get("muc") or "", "")
+        out.append(f"<div class='pb-gap' data-muc='{esc(g.get('muc') or '')}'>"
+                   f"<p class='pb-nhan'>Khoảng trống bài nêu{(' · <b>' + muc + '</b>') if muc else ''}</p>"
+                   f"<p>{rich(g['danh_gia'])}</p></div>")
+    if pb.get("diem"):
+        dong = []
+        for x in pb["diem"]:
+            loai = f"<span class='pb-loai'>{esc(x['loai'])}</span> " if x.get("loai") else ""
+            hoi = (f"<p class='pb-hoi'><i>Hỏi lại.</i> {rich(x['cau_hoi'])}</p>"
+                   if x.get("cau_hoi") else "")
+            dong.append(f"<li>{loai}<b>{rich(x.get('diem', ''))}</b>"
+                        f"<p>{rich(x.get('vi_sao', ''))}</p>{hoi}</li>")
+        out.append("<ol class='pb-ds'>" + "".join(dong) + "</ol>")
+    if pb.get("con_bo_ngo"):
+        out.append("<p class='pb-con'>Còn bỏ ngỏ sau bài này</p><ul>" + "".join(
+            f"<li><b>{rich(x.get('cau_hoi', ''))}</b> {rich(x.get('vi_sao', ''))}</li>"
+            for x in pb["con_bo_ngo"]) + "</ul>")
+    return "".join(out)
+
+
 _MACH = (("problem", "Vấn đề"), ("gap", "Khoảng trống"), ("idea", "Ý tưởng cốt lõi"),
          ("method", "Cách làm"), ("evidence", "Bằng chứng"), ("limits", "Giới hạn"))
 _NHAN_GHI_CHU = (("gist", "Ý chính"), ("role", "Vai trò trong bài"),
@@ -2265,6 +2341,7 @@ def _export_html(doc: dict, mode: str, *, for_print: bool = False) -> Response:
         for key, nhan in (("argument_diagram", "Mạch lập luận của bài"),
                           ("method_diagram", "Cơ chế bài đề xuất")):
             out.append(so_do(brief.get(key, ""), nhan))
+        out.append(_phan_bien_html(brief.get("phan_bien"), rich, esc))
         if brief.get("glossary"):
             out.append("<h3>Bảng thuật ngữ</h3><table class='tn'>"
                        "<tr><th>Tiếng Anh</th><th>Tiếng Việt</th><th>Nghĩa</th></tr>")

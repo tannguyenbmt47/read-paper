@@ -1536,3 +1536,62 @@ def test_slide_model_tra_rong_thi_bao_ro_va_van_ghi_chi_phi(app_client, monkeypa
     assert r.status_code == 502 and "rỗng" in r.json()["detail"]
     assert len(goi) == 2 and all(x == {"enabled": False} for x in goi)
     assert abs(store.load(did)["usage"]["cost"] - 0.016) < 1e-9
+
+
+def test_gap_phan_bien_neo_vao_bai_va_khong_doi_prefix(app_client, monkeypatch):
+    """Gap phản biện là lượt riêng đi sau prefix, lưu ở `brief.phan_bien`.
+
+    Ba chỗ phải giữ: (1) thêm khoá này vào `brief` KHÔNG đổi `cached_prefix` —
+    đổi là hỏng cache của mọi bài đã dịch; (2) mã khối bịa bị bỏ; (3) điểm nào
+    mang con số không có trong bài thì bỏ cả điểm, và nói ra là đã bỏ."""
+    import json
+    from server import llm, pipeline, store
+
+    r = app_client.post("/api/import", data={
+        "text": "Bài phản biện giả\n\nMô hình đạt 42,5 điểm F1 trên một tập dữ liệu, "
+                "cao hơn baseline 3,1 điểm.\n\nChúng tôi chỉ chạy một seed.",
+        "model": "test/pb", "force": "1"})
+    did = r.json()["id"]
+    d = store.load(did)
+    d["brief"] = {"title_vi": "Bài phản biện giả", "gap": "Cách cũ thiếu X.", "glossary": []}
+    store.save(d)
+    truoc = pipeline.cached_prefix(store.load(did))
+    ids = [b["id"] for b in d["blocks"]]
+
+    goi = []
+
+    async def gia(messages, **kw):
+        goi.append(kw.get("session_id"))
+        assert truoc in messages[0]["content"] if isinstance(messages[0]["content"], str) \
+            else truoc in json.dumps(messages[0]["content"], ensure_ascii=False)
+        return json.dumps({
+            "gap_bai_neu": {"muc": "mot_phan", "danh_gia": "Bài chỉ so với một baseline.",
+                            "nguon": [ids[1], "b999"]},
+            "diem": [
+                {"loai": "khái quát quá", "diem": "Kết luận rộng hơn thí nghiệm",
+                 "vi_sao": "Chỉ một tập dữ liệu và một seed.", "nguon": [ids[-1]],
+                 "cau_hoi": "Kết quả có giữ khi chạy năm seed không?"},
+                {"loai": "loại bịa", "diem": "Hơn 17,8 điểm trên tập khác",
+                 "vi_sao": "Số này không có trong bài.", "nguon": [ids[1]], "cau_hoi": "?"},
+            ],
+            "con_bo_ngo": [{"cau_hoi": "Có khái quát sang miền khác không?", "vi_sao": "Chưa thử."}],
+        }), llm.Usage(cost=0.002)
+
+    monkeypatch.setattr(llm, "complete", gia)
+    r = app_client.post(f"/api/doc/{did}/phan-bien")
+    assert r.status_code == 200, r.text
+    pb = r.json()["phan_bien"]
+    assert pb["gap_bai_neu"]["nguon"] == [ids[1]]                 # bỏ mã bịa b999
+    assert [x["diem"] for x in pb["diem"]] == ["Kết luận rộng hơn thí nghiệm"]
+    assert len(pb["bo"]) == 1 and "17,8" in pb["bo"][0]           # nói ra đã bỏ gì
+    assert goi == [did]                                            # session_id cho sticky routing
+
+    sau = store.load(did)
+    assert sau["brief"]["phan_bien"]["diem"]
+    assert pipeline.cached_prefix(sau) == truoc                    # prefix không đổi một byte
+    assert sau["usage"]["cost"] >= 0.002                           # chi phí cộng vào bài
+
+    md = app_client.get(f"/api/doc/{did}/export?fmt=md").text
+    html = app_client.get(f"/api/doc/{did}/export?fmt=html").text
+    assert "Gap phản biện" in md and "Hỏi lại" in md
+    assert "Gap phản biện" in html and "pb-ds" in html

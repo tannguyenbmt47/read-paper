@@ -741,6 +741,51 @@ body { padding-left: var(--rail-w); }
 .warns li { position: relative; padding-left: 1.2rem; margin-bottom: .4rem; color: var(--warn); }
 .warns li::before { content: "⚠"; position: absolute; left: 0; }
 
+/* Gap phản biện — phía người phản biện, đặt ngay sau phần tóm lược theo lời
+   tác giả. Khác tóm lược ở chất liệu: viền đứt bút chì như một tờ ghi chú phản
+   biện kẹp vào sổ, không phải giấy nhớ dán. Mức đứng vững của khoảng trống tô
+   bằng màu bôi có sẵn (xanh / vàng / hồng), không đẻ thêm màu mới. */
+.pb { margin: 1.1rem 0 1rem; padding-top: .8rem; border-top: 2px dashed var(--line); }
+.pb-gap {
+  border: 1.5px solid var(--muc); border-radius: 8px; padding: .55rem .7rem; margin: .2rem 0 .9rem;
+  background: var(--surface);
+}
+.pb-gap[data-muc="vung"] { background: color-mix(in srgb, var(--c-g) 45%, var(--surface)); }
+.pb-gap[data-muc="mot_phan"] { background: color-mix(in srgb, var(--c-y) 45%, var(--surface)); }
+.pb-gap[data-muc="ho"] { background: color-mix(in srgb, var(--c-p) 45%, var(--surface)); }
+.pb-gap p { margin: .25rem 0 .3rem; }
+.pb-nhan { font-size: .85em; color: var(--ink-2); }
+.pb-ds { list-style: none; margin: 0; padding: 0; counter-reset: pb; }
+.pb-ds li {
+  counter-increment: pb; position: relative; padding: 0 0 .85rem 1.7rem; margin-bottom: .2rem;
+  border-bottom: 1px solid var(--line);
+}
+.pb-ds li::before {
+  content: counter(pb); position: absolute; left: 0; top: .05rem; width: 1.25rem; height: 1.25rem;
+  display: grid; place-items: center; border: 1.5px solid var(--muc); border-radius: 50%;
+  font-family: var(--display); font-size: .8em; background: var(--surface);
+}
+.pb-ds p { margin: .25rem 0; }
+.pb-loai {
+  display: inline-block; font-size: .78em; padding: 0 .45rem; margin-bottom: .2rem;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: var(--surface-2);
+}
+.pb-diem { display: block; }
+.pb-hoi span {
+  font-family: var(--hand); font-size: 1.08em; color: var(--accent); margin-right: .25rem;
+}
+.pb-go {
+  display: inline-block; font: inherit; font-size: .82em; color: var(--accent); background: none;
+  border: 0; padding: 0; margin-right: .5rem; cursor: pointer; text-align: left;
+}
+.pb-go:hover { text-decoration: underline; }
+.pb-con { font-family: var(--hand); font-size: 1.12rem; color: var(--accent); margin: .9rem 0 .2rem; }
+.pb-mo { margin: 0; padding-left: 1.1rem; }
+.pb-mo li { margin-bottom: .4rem; }
+.pb-bo { font-size: .82em; }
+.pb-lai { font-size: .82em; margin-top: .3rem; }
+.pb-moi p.muted { margin: 0 0 .5rem; }
+
 .chain { list-style: none; margin: 0; padding: 0; counter-reset: step; }
 .chain li { position: relative; padding: 0 0 .9rem 1.7rem; border-left: 2px solid var(--line); margin-left: .5rem; }
 .chain li:last-child { border-left-color: transparent; padding-bottom: 0; }

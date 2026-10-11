@@ -629,6 +629,118 @@ async def run_brief(doc_id: str) -> tuple[dict, dict, dict]:
     return brief, usage.dict(), total.dict()
 
 
+# ------------------------------------------------- pass 1b: gap phản biện
+
+# Đầu ra đo được: 3–6 điểm × ~150 chữ + phần đánh giá gap, chừng 1.500–2.500
+# token. Trần là mức CHẶN chứ không phải mức tính tiền, nên rộng tay.
+PHAN_BIEN_RA = 2500
+
+
+def gia_phan_bien(doc: dict, gia: tuple[float, float] | None) -> float:
+    """Ước giá MỘT lượt phản biện khi prefix CHƯA nằm trong cache — mức trần.
+    Chạy ngay sau mẻ dịch đầu thì phần đọc vào gần như miễn phí."""
+    vao = len(cached_prefix(doc)) / 3.6 + 1500
+    if not gia:
+        return 0.01
+    return round(vao * gia[0] + PHAN_BIEN_RA * gia[1], 4)
+
+
+def chuan_hoa_phan_bien(doc: dict, d: dict) -> dict:
+    """Soát phần phản biện trước khi lưu. Cùng tinh thần `slide.chuan_hoa`:
+
+    - mã khối khai ra phải có thật — mã bịa thì người đọc bấm vào không tới đâu,
+      và phản biện mất đúng thứ làm nó khác một lời chê chung chung;
+    - điểm nào mang con số không có ở đâu trong bài thì BỎ cả điểm: một phản
+      biện dựa trên số bịa còn tệ hơn không phản biện, vì nó nghe rất có lý;
+    - loại lạ quy về rỗng chứ không để model tự đặt nhãn mới mỗi bài một kiểu.
+    """
+    ids = {b["id"] for b in doc.get("blocks") or []}
+    ca_bai = _so_toan_bai(doc)
+
+    def ds(x):
+        return x if isinstance(x, list) else []
+
+    def nguon(x):
+        x = [x] if isinstance(x, str) else ds(x)
+        return [str(i).strip() for i in x if str(i).strip() in ids][:4]
+
+    def so_la(*parts):
+        txt = _URLISH.sub(" ", " ".join(p or "" for p in parts))
+        return [n for n in _NUM.findall(txt)
+                if _norm_num(n) not in ca_bai and not (n.isdigit() and int(n) <= 12)]
+
+    def s(x):
+        return str(x or "").strip()
+
+    g = d.get("gap_bai_neu") if isinstance(d.get("gap_bai_neu"), dict) else {}
+    out = {
+        "gap_bai_neu": {"muc": s(g.get("muc")) if s(g.get("muc")) in ("vung", "mot_phan", "ho") else "",
+                        "danh_gia": s(g.get("danh_gia")), "nguon": nguon(g.get("nguon"))},
+        "diem": [], "con_bo_ngo": [], "bo": [],
+    }
+    if so_la(out["gap_bai_neu"]["danh_gia"]):
+        out["bo"].append("đánh giá khoảng trống mang số không có trong bài")
+        out["gap_bai_neu"]["danh_gia"] = ""
+    for it in ds(d.get("diem"))[:6]:
+        if not isinstance(it, dict):
+            continue
+        x = {"loai": s(it.get("loai")) if s(it.get("loai")) in prompts.PHAN_BIEN_LOAI else "",
+             "diem": s(it.get("diem")), "vi_sao": s(it.get("vi_sao")),
+             "nguon": nguon(it.get("nguon")), "cau_hoi": s(it.get("cau_hoi"))}
+        if not x["diem"] or not x["vi_sao"]:
+            continue
+        la = so_la(x["diem"], x["vi_sao"], x["cau_hoi"])
+        if la:
+            out["bo"].append(f"“{x['diem'][:60]}” mang số không có trong bài ({', '.join(la[:3])})")
+            continue
+        out["diem"].append(x)
+    for it in ds(d.get("con_bo_ngo"))[:3]:
+        if isinstance(it, dict) and s(it.get("cau_hoi")) and not so_la(it.get("cau_hoi"), it.get("vi_sao")):
+            out["con_bo_ngo"].append({"cau_hoi": s(it.get("cau_hoi")), "vi_sao": s(it.get("vi_sao"))})
+    return out
+
+
+async def run_phan_bien(doc_id: str) -> tuple[dict, dict, dict]:
+    """Dựng phần gap phản biện. Trả (phần phản biện, chi phí lượt này, cộng dồn).
+
+    Đi sau `cached_prefix` nên cần tóm lược đã có. Lưu vào `brief["phan_bien"]`:
+    `cached_prefix` chỉ đọc các khoá đã kê tên của `brief`, nên khoá mới này
+    KHÔNG đổi prefix của bài; và dựng lại tóm lược thì phần phản biện cũ (viết
+    theo tóm lược cũ) đi theo luôn, đúng như nên thế.
+    """
+    import time
+
+    doc = store.load(doc_id)
+    if not doc.get("brief"):
+        raise ValueError("Bài chưa có tóm lược — dịch hoặc dựng tóm lược trước.")
+    raw, usage = await llm.complete(
+        [llm.system_message(cached_prefix(doc), prompts.PHAN_BIEN_TASK, model=doc["model"]),
+         {"role": "user", "content": "Viết phần gap phản biện cho bài báo này."}],
+        model=doc["model"], session_id=doc_id, max_tokens=PHAN_BIEN_RA + 3000,
+        temperature=0.3,
+        # Độ sâu đến từ cấu trúc bắt buộc (gap → điểm có loại, nguồn, câu hỏi),
+        # không từ nghĩ thầm — cùng lý do với `explain_block`: để `effort: low`
+        # thì V4 Flash tiêu sạch trần vào phần nghĩ rồi trả chuỗi rỗng.
+        reasoning=NO_REASONING)
+    try:
+        data = llm.extract_json(raw)
+    except Exception:                       # noqa: BLE001
+        data = None
+    doc = store.load(doc_id)                # tải lại: lượt dịch song song có thể vừa ghi
+    total = llm.Usage(**doc.get("usage", {}))
+    total.add(usage)
+    doc["usage"] = total.dict()
+    if not isinstance(data, dict):
+        store.save(doc)                     # vẫn ghi chi phí: lượt hỏng cũng đã trả tiền
+        raise ValueError("Model không trả về JSON đọc được — thử lại.")
+    pb = chuan_hoa_phan_bien(doc, data)
+    pb.update(model=doc["model"], luc=time.time(), chi_phi=round(usage.cost, 5))
+    if doc.get("brief"):
+        doc["brief"]["phan_bien"] = pb
+    store.save(doc)
+    return pb, usage.dict(), total.dict()
+
+
 # ------------------------------------------------------------- pass 2: dịch
 
 
