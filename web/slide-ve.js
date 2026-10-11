@@ -54,6 +54,36 @@
     bang_chung: "Bằng chứng", so_lieu: "Con số chính", gioi_han: "Giới hạn", dong_lai: "Đúc kết",
   };
 
+  /* Hình vẽ minh họa (`s.ve`, do người minh họa ở `server/slide_minh_hoa.py`
+     dựng từ chính chữ của slide). Bốn dạng, vẽ bằng HTML + CSS chứ không SVG:
+     chữ tự xuống dòng, và vòng co chữ `vuaKhung` đo được `scrollHeight` của nó
+     như mọi khối khác. Chất sổ tay: khung mực, bóng cứng, nhãn viết tay. */
+  function veHinh(v) {
+    if (!v || !v.kieu) return "";
+    const the = (n, m, lop = "") => `<div class="vx-the ${lop}"><b>${chu(n)}</b>${m ? `<span>${chu(m)}</span>` : ""}</div>`;
+    switch (v.kieu) {
+      case "luong":
+        return `<div class="vx vx-luong">${(v.buoc || []).map((b, i) =>
+          (i ? '<i class="vx-mui" aria-hidden="true"></i>' : "") + the(b.nhan, b.phu)).join("")}</div>`;
+      case "doi_chieu": {
+        const phia = (p, lop) => `<div class="vx-phia ${lop}"><b class="vx-tay">${chu(p.nhan)}</b><ul>${
+          (p.y || []).map((y) => `<li>${chu(y)}</li>`).join("")}</ul></div>`;
+        return `<div class="vx vx-dc">${phia(v.trai, "trai")}<i class="vx-vs" aria-hidden="true">⇄</i>${phia(v.phai, "phai")}</div>`;
+      }
+      case "truc":
+        return `<div class="vx vx-truc">${v.ten ? `<b class="vx-tay vx-ten">${chu(v.ten)}</b>` : ""}
+          <div class="vx-thuoc"><span>${chu(v.dau || "")}</span><i aria-hidden="true"></i><span>${chu(v.cuoi || "")}</span></div>
+          <div class="vx-vung" style="--n:${(v.vung || []).length}">${(v.vung || []).map((z, i) =>
+            the(z.nhan, z.mo_ta, `m${i}`)).join("")}</div></div>`;
+      case "trung_tam":
+        return `<div class="vx vx-tt"><div class="vx-giua">${chu(v.giua)}</div>
+          <div class="vx-nhanh" style="--n:${(v.nhanh || []).length}">${(v.nhanh || []).map((z) =>
+            the(z.nhan, z.mo_ta)).join("")}</div></div>`;
+      default:
+        return "";
+    }
+  }
+
   /** Số đầu tiên trong chuỗi ("906 ± 21" → 906, "61,4" → 61.4) — để vẽ cột. */
   function soDau(t) {
     const m = String(t || "").replace(/(\d)[.,](\d{3})(?!\d)/g, "$1$2").match(/-?\d+(?:[.,]\d+)?/);
@@ -93,13 +123,21 @@
           + `<span class="bang-keo"></span><img src="${esc(url)}" alt="">`
           + (s.nhan_hinh ? `<figcaption>${esc(s.nhan_hinh)}</figcaption>` : "") + `</figure>`;
       }
+      // Không có hình thật thì dùng hình VẼ của người minh họa (nếu có). Hình
+      // thật luôn thắng: hình trong bài là bằng chứng, hình vẽ chỉ là minh họa.
+      if (s.ve && s.ve.kieu) {
+        return `<figure class="sld-hinh sld-ve ${lop}">${veHinh(s.ve)}`
+          + (sua ? `<button type="button" class="sld-bo-ve" data-bo-ve="1" title="Gỡ hình vẽ minh họa">✕ gỡ hình vẽ</button>`
+            + `<button type="button" class="sld-them-hinh" data-chon-hinh="1">＋ hình trong bài</button>` : "")
+          + `<figcaption>Hình vẽ minh họa</figcaption></figure>`;
+      }
       // Ô chờ hình CHỈ hiện ở màn sửa — trình chiếu/file tải về không bao giờ
       // thấy lời nhắn cho người soạn (S2 của báo cáo test).
       if (!sua) return "";
       return bat_buoc ? `<figure class="sld-hinh trong ${lop}" data-chon-hinh="1"><span>＋ Bấm để chọn hình trong bài</span></figure>`
         : `<button type="button" class="sld-them-hinh" data-chon-hinh="1">＋ hình</button>`;
     };
-    const coHinh = !!(s.hinh && ctx.anh && ctx.anh(s));
+    const coHinh = !!(s.hinh && ctx.anh && ctx.anh(s)) || !!(s.ve && s.ve.kieu);
     // Lần thứ mấy vai này xuất hiện trong bộ — vai lặp lại thì đổi dáng (yêu cầu
     // "tránh dùng đi dùng lại"): cùng vai mà cùng khuôn thì mắt thấy lặp ngay.
     const lanThu = bo.slice(0, Math.max(0, bo.indexOf(s))).filter((x) => x.vai === s.vai).length;
@@ -297,6 +335,17 @@
         }).join("");
         const anh = hinh();
         const yc = s.y_chinh || sua ? `<p class="sld-dd-yc">${o("y_chinh", s.y_chinh, "span", "", "Điều cần nhớ từ đoạn này")}</p>` : "";
+        if (s.de_hieu) {
+          // Có lời dễ hiểu: lời ấy thành chữ CHÍNH (cỡ to), hình đi cùng nó, còn
+          // nguyên văn bản dịch lui về cột bên chữ nhỏ — vẫn đó để đối chiếu, vì
+          // người dùng từng chê bản tóm tắt làm mất ý (xem slide_minh_hoa.py).
+          const de = `<div class="sld-note sld-dehieu"><span class="bang-keo"></span><b class="sld-tay">Nói dễ hiểu</b>${
+            o("de_hieu", s.de_hieu, "p", "", "Kể lại đoạn này bằng lời thường")}</div>`;
+          than = `${dau}${tieuDe}${yc}<div class="sld-dd2 ${coHinh ? "co-hinh" : ""}">
+            <div class="sld-dd2-chinh">${de}${anh}</div>
+            <aside class="sld-dd2-goc"><b class="sld-tay">Nguyên văn bản dịch${s.muc ? ` · ${chu(s.muc)}` : ""}</b>${doan}</aside></div>`;
+          break;
+        }
         than = `${dau}${tieuDe}${yc}<div class="sld-dd ${coHinh ? "co-hinh" : ""}">
           <div class="sld-dd-chu">${doan}${s.muc ? `<p class="sld-dd-muc">Trích bản dịch · ${chu(s.muc)}</p>` : ""}</div>${anh}</div>`;
         break;

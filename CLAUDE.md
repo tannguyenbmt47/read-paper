@@ -960,6 +960,46 @@ slide được viết lại, 5 kết luận đối chiếu xong không cái nào
 vấp: `trich` của slide trích đoạn là danh sách object `{id, chu, anh}`, không
 phải chuỗi.
 
+### Người minh họa (`server/slide_minh_hoa.py`) — slide dày chữ và câu khó hiểu
+
+Hai lời chê trên cùng một slide trích đoạn (Distilling the Knowledge, mục 2.1):
+*"dày thông tin"* và *"câu từ còn gây khó hiểu"*. Slide chép nguyên văn bản
+dịch ~800 ký tự, giữ lối câu của bài gốc, thuật ngữ không ai giải nghĩa
+("cumbersome model", "zero-mean hóa"). Ban biên tập không sửa được vì trích
+đoạn là nguyên văn — cố ý, người dùng từng chê bản tóm tắt làm mất ý.
+
+Vai thứ năm của ban biên tập slide, chạy sau biên tập viên:
+
+- **Tách lại** trích đoạn dài ở `TRAN_TRICH_HINH` (`_tach_trich(tran_ep=…)`),
+  mã mới cho phần mới — KHÔNG `_danh_ma` lại cả bộ, vì biên bản của các vai
+  trước trỏ slide theo mã.
+- **"Nói dễ hiểu"** (`de_hieu`) cho mọi trích đoạn: kể lại đúng ý bằng lời
+  thường, thuật ngữ giải nghĩa tại chỗ, không thêm số. Nó thành chữ CHÍNH; nguyên
+  văn lui về cột phải chữ nhỏ ghi "Nguyên văn bản dịch".
+- **Hình vẽ** (`ve`, bốn dạng: `luong` · `doi_chieu` · `truc` · `trung_tam`),
+  vẽ bằng HTML/CSS trong `veHinh` của `slide-ve.js` — một bộ vẽ cho cả ba nơi,
+  chữ tự xuống dòng nên `vuaKhung` đo được. Hình thật trong bài luôn thắng hình vẽ.
+  `chuan_hoa_ve` bỏ hình lệch khuôn; lời hay hình mang số không có trong bài
+  (`so_bia`) bị trả về.
+
+Không cào ảnh trên mạng (người dùng hỏi thẳng): không biết giấy phép mà slide là
+thứ đem đi chiếu; ảnh tìm theo từ khoá hay lệch ý, hình đẹp mà sai ý tệ hơn
+không có; file tải về phải chiếu được offline.
+
+Bốn chỗ đã vấp, đều lộ ra lúc NHÌN ảnh chụp:
+
+- **Phần tách ra mất ngữ cảnh.** Phần 2 của đoạn "nhiệt độ" chỉ còn hai câu
+  cuối, hình vẽ ghi cả hai đầu trục "kém hiệu quả" — bài không nói vậy.
+  `_toan_doan` đưa kèm cả đoạn; lời dễ hiểu vẫn chỉ kể phần của slide đó.
+- **Vai đã có cấu trúc không được vẽ thêm** (`VE_VAI` chỉ gồm vai văn xuôi):
+  slide cơ chế bốn bước nhận sơ đồ lặp lại đúng bốn bước, không thêm gì mà tràn.
+- **Dòng chảy xếp dọc dưới ô "Nói dễ hiểu" làm tràn** (4/43 slide): chỗ ấy rộng
+  mà thấp, nên trong `.sld-dd2-chinh` dòng chảy chạy ngang.
+- **Nút chỉ có ở màn sửa treo dưới đáy khung hình** làm vòng đo báo tràn oan.
+
+Đo trên bộ Distilling (V4 Flash): cả ban biên tập 23 giây, $0,0128; 23 slide
+được minh họa, bộ 35 → 43 slide sau khi tách; soát cả bộ: 0/43 slide tràn.
+
 ### Hình gắn nhầm: hai lỗi ở tầng BÓC chứ không ở slide
 
 Báo cáo 9-10 (S1/S2/S16): slide nói Recall mà chiếu bảng ablation, nói độ trễ mà

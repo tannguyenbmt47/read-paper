@@ -265,7 +265,15 @@ async def soat(doc_id: str):
                         "viec": "viết lại slide" if not loi else f"không viết lại được: {loi[:80]}",
                         "can": " ".join(viec[sid])[:200]})
 
-    # ---- 5. soát lần cuối: slide nào vẫn trống thì gắn cảnh báo, đừng im lặng
+    # ---- 5. người minh họa: lời dễ hiểu + hình vẽ cho slide dày chữ
+    from . import slide_minh_hoa
+    async for kind, payload in slide_minh_hoa.minh_hoa(doc_id, model, usage):
+        if kind == "stage":
+            yield kind, payload
+        else:
+            log += payload["log"]
+
+    # ---- 6. soát lần cuối: slide nào vẫn trống thì gắn cảnh báo, đừng im lặng
     doc = store.load(doc_id)
     deck = sl.lay(doc)
     con_lai = []
@@ -283,7 +291,7 @@ async def soat(doc_id: str):
                                    + " ".join(viec[s["id"]])[:160]})
     dem: dict[str, int] = {}
     for x in log:
-        if x["vai"] in ("kiem_chung", "bien_tap") and not re.search(r"không viết lại|trả về", x["viec"]):
+        if x["vai"] in ("kiem_chung", "bien_tap", "minh_hoa") and not re.search(r"không viết lại|trả về", x["viec"]):
             dem[x["vai"]] = dem.get(x["vai"], 0) + 1
     # Thư ký chỉ PHÁT HIỆN slide trống; slide được sửa thật là việc của hai vai sau.
     ca = llm.Usage(**usage.dict())

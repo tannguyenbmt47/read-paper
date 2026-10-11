@@ -1680,3 +1680,62 @@ def test_ban_bien_tap_slide_lap_slide_trong_va_soat_ket_luan(app_client, monkeyp
     assert bt["con_lai"] == [] and bt["theo_vai"]["bien_tap"] == 1 and bt["theo_vai"]["kiem_chung"] == 1
     assert any("trả về" in x["viec"] for x in bt["nhat_ky"])
     assert app_client.get(f"/api/doc/{did}/slides").json()["bien_tap"]["sua"] == bt["sua"]
+
+
+def test_nguoi_minh_hoa_viet_loi_de_hieu_va_ve_hinh(app_client, monkeypatch):
+    """Slide trích đoạn dày chữ và khó hiểu (lời chê có thật: "dày thông tin",
+    "câu từ còn gây khó hiểu"). Người minh họa phải: tách lại trích đoạn dài ở
+    `TRAN_TRICH_HINH`, viết "Nói dễ hiểu" cho từng phần, vẽ hình đúng khuôn; lời
+    hay hình mang số không có trong bài thì bị trả về; hình lệch khuôn bị bỏ."""
+    import json
+    from server import llm, slide, slide_minh_hoa as mh, store
+
+    cau = ("Ở nhiệt độ cao, distillation tương đương với việc khớp logits của hai mô hình. "
+           "Ở nhiệt độ thấp, nó ít chú ý tới các logit âm hơn nhiều so với trung bình. ")
+    r = app_client.post("/api/import", data={
+        "text": "Bài minh họa\n\n" + cau * 4, "model": "test/mh", "force": "1"})
+    did = r.json()["id"]
+    d = store.load(did)
+    bid = d["blocks"][-1]["id"]
+    d["brief"] = {"title_vi": "Bài minh họa", "glossary": []}
+    d["slides"] = {"v": 2, "phut": 30, "model": "test/mh", "bo": [
+        {"id": "s1", "vai": "doan_dich", "tieu_de": "Nhiệt độ quyết định khớp gì",
+         "y_chinh": "Nhiệt độ đổi thứ mô hình nhỏ học.", "trich": [{"id": bid, "chu": cau * 4}],
+         "nhan_manh": [], "loi_noi": "", "nguon": [bid], "canh_bao": []}]}
+    store.save(d)
+    assert len(cau * 4) > slide.TRAN_TRICH_HINH
+
+    async def gia(messages, **kw):
+        if "người minh họa" not in messages[0]["content"]:
+            return json.dumps({"van_de": [], "ket_qua": []}), llm.Usage()
+        ids = [l.split(" ")[1] for l in messages[1]["content"].split("\n") if l.startswith("### ")]
+        out = []
+        for i, sid in enumerate(ids):
+            if i == 0:
+                out.append({"id": sid, "de_hieu": "Nhiệt độ cao thì mô hình nhỏ chép đúng mọi điểm số. "
+                                                   "Nhiệt độ thấp thì nó bỏ qua các điểm âm lớn.",
+                            "ve": {"kieu": "truc", "ten": "Nhiệt độ", "dau": "thấp", "cuoi": "cao",
+                                   "vung": [{"nhan": "Bỏ qua logit âm", "mo_ta": "chỉ nhìn lớp gần đúng"},
+                                            {"nhan": "Khớp logits", "mo_ta": "chép đủ mọi lớp"}]}})
+            else:
+                out.append({"id": sid, "de_hieu": "Giảm 37,5 lần lỗi.",          # số bịa → trả về
+                            "ve": {"kieu": "luong", "buoc": [{"nhan": "một bước"}]}})  # lệch khuôn → bỏ
+        return json.dumps({"slides": out}), llm.Usage(cost=0.001)
+
+    monkeypatch.setattr(llm, "complete", gia)
+    body = app_client.get(f"/api/doc/{did}/slides/soat").text
+    assert "event: done" in body, body[-400:]
+
+    bo = store.load(did)["slides"]["bo"]
+    assert len(bo) >= 2 and [s["tiep"][1] for s in bo] == [len(bo)] * len(bo)   # đã tách lại
+    assert all(len(mh._chu_trich(s)) <= slide.TRAN_TRICH_HINH + 200 for s in bo)
+    assert len({s["id"] for s in bo}) == len(bo) and all(s["id"].isalnum() for s in bo)
+    assert bo[0]["de_hieu"].startswith("Nhiệt độ cao") and bo[0]["ve"]["kieu"] == "truc"
+    assert not bo[1].get("de_hieu") and not bo[1].get("ve")
+    bt = store.load(did)["slides"]["bien_tap"]
+    assert any("trả về" in x["viec"] for x in bt["nhat_ky"] if x["vai"] == "minh_hoa")
+
+    # gỡ hình vẽ bằng tay; gửi hình lệch khuôn thì cũng thành không có hình
+    app_client.patch(f"/api/doc/{did}/slides/{bo[0]['id']}", json={"ve": None})
+    assert not store.load(did)["slides"]["bo"][0].get("ve")
+    assert mh.chuan_hoa_ve({"kieu": "doi_chieu", "trai": {"nhan": "A", "y": ["x"]}}) is None

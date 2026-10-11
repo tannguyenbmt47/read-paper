@@ -550,6 +550,11 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
         out["nhan_manh"] = [p for p in (" ".join(str(x).split()) for x in (s.get("nhan_manh") or []))
                             if 2 < len(p) <= 140 and unicodedata.normalize("NFC", p) in toan][:3]
     out["loi_noi"] = " ".join(str(s.get("loi_noi") or "").split())
+    # Do người minh họa dựng (`slide_minh_hoa`), đã soát ở đó — chỉ chuyển tiếp.
+    if s.get("de_hieu"):
+        out["de_hieu"] = _sach(s["de_hieu"])
+    if isinstance(s.get("ve"), dict):
+        out["ve"] = s["ve"]
 
     by_id = {b["id"]: b for b in doc["blocks"]}
     by_anh = {b.get("figure"): b["id"] for b in doc["blocks"] if b.get("figure")}
@@ -723,7 +728,7 @@ def _giai_nghia_viet_tat(doc: dict) -> dict[str, str]:
 
 # Trường KHÔNG được chèn vào: trích đoạn là nguyên văn bản dịch, còn mã/ảnh là dữ liệu.
 _KHONG_CHEN = {"id", "vai", "hinh", "nguon", "trich", "anh", "anh_ver", "canh_bao", "tieu_de",
-               "loi_noi", "tiep", "nhan_manh", "minh_hoa", "sua_tay"}
+               "loi_noi", "tiep", "nhan_manh", "minh_hoa", "sua_tay", "ve"}
 
 
 def _chen_ten_day_du(s: dict, vt: str, day_du: str) -> bool:
@@ -834,20 +839,23 @@ CHO_CONG_THUC = 160
 _CAU = re.compile(r"(?<=[.!?…])(?<!\bal\.)(?<!\bet\.)\s+(?=\S)")
 
 
-def _tach_trich(bo: list[dict]) -> list[dict]:
+def _tach_trich(bo: list[dict], tran_ep: int | None = None) -> list[dict]:
     """Trích đoạn quá dài thì tách sang slide kế tiếp ở RANH GIỚI CÂU ("phần 1/2").
 
     Tách chứ không cắt: cắt là bỏ mất đúng phần ý mà vai này sinh ra để giữ.
     Hình, ý chính và lời nói ở lại phần đầu; cụm tô sáng đi theo phần chứa nó.
     Công thức là một khối không tách, chiếm chỗ bằng ~`CHO_CONG_THUC` ký tự và
     đi cùng câu dẫn vào nó.
+
+    `tran_ep`: một trần cho MỌI phần — người minh họa dùng khi slide trích đoạn
+    nhận thêm ô "Nói dễ hiểu" và hình vẽ, nguyên văn lui về cột hẹp bên cạnh.
     """
     def dai(t):
         return CHO_CONG_THUC if t.get("cong_thuc") else len(t["chu"])
 
     out = []
     for s in bo:
-        tran = TRAN_TRICH_HINH if s.get("hinh") else TRAN_TRICH
+        tran = tran_ep or (TRAN_TRICH_HINH if s.get("hinh") else TRAN_TRICH)
         if s["vai"] != "doan_dich" or sum(dai(t) for t in s["trich"]) <= tran:
             out.append(s)
             continue
@@ -861,7 +869,7 @@ def _tach_trich(bo: list[dict]) -> list[dict]:
         for bid, c, ct in don:
             w = CHO_CONG_THUC if ct else len(c)
             # công thức không mở đầu một phần mới: nó đi theo câu dẫn vào nó
-            if cur and not ct and n + w > (tran if not phan else TRAN_TRICH):
+            if cur and not ct and n + w > (tran if not phan or tran_ep else TRAN_TRICH):
                 phan.append(cur)
                 cur, n = [], 0
             cur.append((bid, c, ct))
@@ -1398,6 +1406,11 @@ async def viet_lai(doc_id: str, sid: str, goi_y: str = "") -> tuple[dict, dict, 
         # Trích đoạn là nguyên văn bản dịch — viết lại chỉ đổi ý chính, tô sáng, lời nói.
         giu.update(trich=cu.get("trich") or [], tiep=cu.get("tiep"), hinh=cu.get("hinh", ""),
                    nguon=cu.get("nguon") or [])
+    # Ô "Nói dễ hiểu" và hình vẽ do người minh họa dựng — viết lại phần chữ của
+    # slide không được xoá mất chúng.
+    for k in ("de_hieu", "ve"):
+        if cu.get(k):
+            giu[k] = cu[k]
     s = chuan_hoa(doc, {**(moi[0] if moi else {}), **giu}) if moi else None
     if not s:
         raise ValueError("Model không trả về slide dùng được. Thử lại.")
@@ -1424,7 +1437,7 @@ def lay(doc: dict) -> dict:
 # Trường người dùng được sửa tay. KHÔNG có `nguon`: sửa được nguồn thì phép soát
 # số liệu thành vô nghĩa (cùng lý do bản cũ cấm sửa `source_block_ids`).
 _SUA_DUOC = {"tieu_de", "loi_noi", "hinh", "minh_hoa", "du_lieu", "do_do", "thanh_phan", "dai_dien",
-             "trich", "nhan_manh",
+             "trich", "nhan_manh", "de_hieu", "ve",
              "so_sanh", "doi_chung", "cot", "hang", "ten_goc", "tac_gia", "noi_dang", "nguoi_noi",
              "y", "tieu_chi", "buoc", "muc", "so"} | {k for ks in _CHU.values() for k in ks}
 
@@ -1440,6 +1453,10 @@ def sua(doc: dict, sid: str, patch: dict) -> dict:
     for k, v in patch.items():
         if k in _SUA_DUOC:
             s[k] = v
+    if "ve" in patch:
+        # Hình vẽ đi qua đúng bộ soát của người minh họa; `null` là gỡ hình.
+        from .slide_minh_hoa import chuan_hoa_ve
+        s["ve"] = chuan_hoa_ve(patch["ve"]) if patch["ve"] else None
     if "hinh" in patch:
         h = str(patch["hinh"] or "")
         b = next((x for x in doc["blocks"] if x["id"] == h), None)

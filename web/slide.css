@@ -398,3 +398,97 @@
 /* căn cứ của một tiêu chí: chữ nhỏ màu chì, nhãn viết tay — đọc như chú thích nguồn */
 .sld-cancu { font-size: .82em; color: var(--mo); margin-top: .3cqw !important; }
 .sld-cancu .sld-tay { margin-right: .5cqw; font-size: 1em; }
+
+/* ------------------------------------------------- hình vẽ minh họa (`veHinh`)
+   Do người minh họa dựng từ chính chữ của slide. Không có ảnh nên khung dán
+   trắng của `.sld-hinh` đổi sang giấy ngà, và hình tự dàn trong khung bằng
+   flex/grid — chữ xuống dòng được, vòng co chữ đo được như mọi khối khác. */
+.sld-hinh.sld-ve { background: var(--giay); padding: 1.4cqw; justify-content: center; }
+.sld-hinh.sld-ve figcaption { margin-top: .8cqw; }
+.sld-bo-ve {
+  position: absolute; top: -1.4cqw; right: 1cqw; z-index: 2; font: inherit; font-family: var(--tay);
+  font-size: 1.1cqw; color: var(--do); background: var(--giay); border: .14cqw dashed var(--do);
+  border-radius: 99px; padding: .1cqw .9cqw; cursor: pointer;
+}
+.sld-ve .sld-them-hinh { top: -1.4cqw; bottom: auto; right: auto; left: 1cqw; font-size: 1.1cqw; padding: .1cqw .9cqw; }
+.vx { font-size: .82em; line-height: 1.3; width: 100%; }
+.vx-tay { font-family: var(--tay); font-weight: 400; color: var(--xanh); font-size: 1.15em; }
+.vx-the {
+  background: #fff; border: .14cqw solid var(--muc); border-radius: .6cqw;
+  box-shadow: .22cqw .22cqw 0 var(--muc); padding: .7cqw 1cqw; display: flex; flex-direction: column; gap: .2cqw;
+}
+.vx-the b { font-family: var(--tieu-de); font-weight: 700; line-height: 1.2; }
+.vx-the span { color: var(--muc-2); font-size: .9em; }
+
+/* dòng chảy: thẻ xếp dọc, mũi tên mực giữa các thẻ */
+.vx-luong { display: flex; flex-direction: column; align-items: stretch; }
+.vx-luong .vx-the:first-child { background: color-mix(in srgb, var(--da-quang) 55%, #fff); }
+.vx-mui { display: block; height: 1.8cqw; position: relative; }
+.vx-mui::before { content: ""; position: absolute; left: 50%; top: .1cqw; bottom: .5cqw; border-left: .2cqw solid var(--muc); }
+.vx-mui::after {
+  content: ""; position: absolute; left: calc(50% - .55cqw); bottom: .05cqw;
+  border: .55cqw solid transparent; border-top: .7cqw solid var(--muc); border-bottom: 0;
+}
+
+/* hai phía: hai thẻ cạnh nhau, dấu ⇄ ở giữa */
+.vx-dc { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: .8cqw; }
+.vx-phia { border: .14cqw solid var(--muc); border-radius: .6cqw; padding: .9cqw 1cqw; box-shadow: .22cqw .22cqw 0 var(--muc); }
+.vx-phia.trai { background: color-mix(in srgb, #a8d5f7 45%, #fff); }
+.vx-phia.phai { background: color-mix(in srgb, #f9b8d4 40%, #fff); }
+.vx-phia ul { margin: .4cqw 0 0; padding-left: 1.2em; }
+.vx-phia li { margin: .25cqw 0; }
+.vx-vs { align-self: center; font-style: normal; font-family: var(--tieu-de); font-weight: 800; font-size: 1.4em; }
+
+/* trục: thước có mũi tên, các vùng xếp theo thứ tự từ thấp tới cao, đậm dần */
+.vx-ten { display: block; margin-bottom: .4cqw; }
+.vx-thuoc { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6cqw;
+  font-family: var(--tay); color: var(--mo); }
+.vx-thuoc i { height: .9cqw; position: relative; background: linear-gradient(90deg, #fff, var(--da-quang));
+  border: .14cqw solid var(--muc); border-right: 0; }
+.vx-thuoc i::after { content: ""; position: absolute; right: -1.1cqw; top: -.65cqw;
+  border: 1cqw solid transparent; border-left: 1.1cqw solid var(--muc); border-right: 0; }
+.vx-vung { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .7cqw; margin-top: 1cqw; }
+.vx-vung .m0 { background: #fff; }
+.vx-vung .m1 { background: color-mix(in srgb, var(--da-quang) 25%, #fff); }
+.vx-vung .m2 { background: color-mix(in srgb, var(--da-quang) 50%, #fff); }
+.vx-vung .m3 { background: color-mix(in srgb, var(--da-quang) 75%, #fff); }
+
+/* một ý ở giữa, các nhánh tỏa xuống */
+.vx-tt { display: flex; flex-direction: column; align-items: center; }
+.vx-giua {
+  font-family: var(--tieu-de); font-weight: 800; background: var(--da-quang); border: .18cqw solid var(--muc);
+  border-radius: 99px; padding: .6cqw 1.6cqw; box-shadow: .25cqw .25cqw 0 var(--muc); position: relative;
+}
+.vx-giua::after { content: ""; position: absolute; left: 50%; top: 100%; height: 1.4cqw; border-left: .2cqw solid var(--muc); }
+.vx-nhanh {
+  display: grid; grid-template-columns: repeat(min(var(--n), 3), minmax(0, 1fr)); gap: .8cqw;
+  margin-top: 1.4cqw; padding-top: .8cqw; border-top: .2cqw solid var(--muc); width: 100%;
+}
+
+/* ------------------------------------------- trích đoạn có lời dễ hiểu
+   Lời dễ hiểu là chữ CHÍNH (giấy nhớ, cỡ to) đi cùng hình; nguyên văn bản dịch
+   lui về cột phải chữ nhỏ, viền đứt bút chì — vẫn đó để đối chiếu. */
+.sld-dd2 { flex: 1 1 0; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.6cqw; align-items: stretch; }
+.sld-dd2-chinh { display: flex; flex-direction: column; gap: 2cqw; justify-content: center; }
+.sld-dehieu { transform: rotate(-.6deg); }
+.sld-dehieu p { font-size: 1.04em; line-height: 1.45; margin-top: .4cqw; }
+.sld-dd2-chinh .sld-hinh { flex: 0 1 auto; }
+.sld-dd2-goc {
+  border-left: .2cqw dashed var(--chi); padding-left: 2cqw; display: flex; flex-direction: column;
+  gap: .8cqw; justify-content: center; color: var(--muc-2);
+}
+.sld-dd2-goc > b { font-size: .78em; color: var(--mo); }
+.sld-dd2-goc p { font-family: var(--doc); font-size: .72em; line-height: 1.5; margin: 0; }
+.sld-dd2-goc mark { background: color-mix(in srgb, var(--da-quang) 70%, transparent); padding: 0 .1em; }
+.sld-dd2-goc .sld-dd-ct img { max-height: 9cqw; }
+/* Dưới ô "Nói dễ hiểu" chỗ còn RỘNG mà THẤP — dòng chảy xếp dọc ở đó đẩy slide
+   tràn (đo: 4/43 slide trích đoạn tràn). Cho nó chạy ngang, mũi tên quay phải. */
+.sld-dd2-chinh .vx-luong { flex-direction: row; align-items: stretch; }
+.sld-dd2-chinh .vx-luong .vx-the { flex: 1 1 0; min-width: 0; }
+.sld-dd2-chinh .vx-mui { width: 2cqw; height: auto; flex: none; }
+.sld-dd2-chinh .vx-mui::before { left: .1cqw; right: .6cqw; top: 50%; bottom: auto; border-left: 0; border-top: .2cqw solid var(--muc); }
+.sld-dd2-chinh .vx-mui::after {
+  left: auto; right: 0; top: calc(50% - .55cqw); bottom: auto;
+  border: .55cqw solid transparent; border-left: .7cqw solid var(--muc); border-right: 0;
+}
+.sld-dd2-chinh .vx-nhanh { grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }

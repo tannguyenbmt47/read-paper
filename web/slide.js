@@ -110,6 +110,7 @@ const SLD_VAI = [
   ["doc_thu", "Người xem thử", "đọc cả bộ như khán giả: không lời nói, không bài gốc"],
   ["kiem_chung", "Người kiểm chứng", "đặt kết luận cạnh số liệu thật trong bài"],
   ["bien_tap", "Biên tập viên", "viết lại đúng slide bị chỉ ra"],
+  ["minh_hoa", "Người minh họa", "slide dày chữ: lời dễ hiểu và hình vẽ từ chính nội dung slide"],
 ];
 
 function sldBtTram(vai) {
@@ -346,7 +347,14 @@ function sldSan() {
       sldLuu(o.dataset.p, moi);
     };
   });
-  $$("#slSan [data-chon-hinh]").forEach((f) => (f.onclick = sldMoHinh));
+  $$("#slSan [data-chon-hinh]").forEach((f) => (f.onclick = (e) => { e.stopPropagation(); sldMoHinh(e); }));
+  // Gỡ hình VẼ minh họa (không phải hình trong bài) — người minh họa vẽ sai ý thì
+  // người trình bày phải bỏ được bằng một cú bấm.
+  $$("#slSan [data-bo-ve]").forEach((b) => (b.onclick = async (e) => {
+    e.stopPropagation();
+    const s = sldHienTai();
+    if (s) await sldGui(`/slides/${s.id}`, "PATCH", { ve: null }, "Đã gỡ hình vẽ.");
+  }));
 }
 
 /** Ghi một trường theo đường dẫn `buoc.1.mo_ta` — gửi cả trường gốc (`buoc`). */
