@@ -480,13 +480,31 @@ function sldDongChieu() {
   document.addEventListener("keydown", (e) => {
     const chieu = !$("#present").classList.contains("hidden");
     if (chieu) {
-      if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); sldChieu(sldChieuI + 1); }
-      else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); sldChieu(sldChieuI - 1); }
+      if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(e.key)) { e.preventDefault(); sldChieu(sldChieuI + 1); }
+      else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key)) { e.preventDefault(); sldChieu(sldChieuI - 1); }
       else if (e.key === "Escape") sldDongChieu();
       else if (e.key.toLowerCase() === "s") $("#presentNotes").classList.toggle("hidden");
       return;
     }
     if (!$("#slides").classList.contains("hidden") && e.key === "F5") { e.preventDefault(); sldMoChieu(); }
+    // Màn sửa: ↓/↑ (và PageDown/PageUp) chuyển slide ở bất cứ đâu trên màn, không
+    // chỉ khi đang trỏ vào dải thu nhỏ. Trừ lúc đang gõ: trong ô chữ trên slide,
+    // ô lời nói, ô gợi ý thì mũi tên là di con trỏ chữ. Dải thu nhỏ tự xử lý phím
+    // của nó (`defaultPrevented`) — bắt thêm ở đây là nhảy hai slide một lần bấm.
+    if (!$("#slides").classList.contains("hidden") && !e.defaultPrevented
+        && ["ArrowDown", "ArrowUp", "PageDown", "PageUp"].includes(e.key)
+        && $("#slHinh").classList.contains("hidden") && !document.querySelector(".dlg-veil:not(.hidden)")) {
+      const t = e.target;
+      if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      const i = SLD.bo.findIndex((x) => x.id === SLD.chon);
+      const nx = SLD.bo[i + (["ArrowDown", "PageDown"].includes(e.key) ? 1 : -1)];
+      if (!nx) return;
+      e.preventDefault();
+      SLD.chon = nx.id;
+      sldDai();
+      sldSan();
+      $(`#slDai [data-id="${nx.id}"]`)?.scrollIntoView({ block: "nearest" });
+    }
     if (e.key === "Escape" && !$("#slHinh").classList.contains("hidden")) $("#slHinh").classList.add("hidden");
   });
   $("#present").addEventListener("click", (e) => {
