@@ -951,32 +951,46 @@ chiếu biểu đồ granularity. Hai nguyên nhân độc lập:
 Ảnh trên slide mang `?v=` (`anh_ver`, từ `figure_rect`) — đổi khung mà URL giữ
 nguyên thì trình duyệt chiếu tiếp ảnh cũ, và mọi phép đo phía server nói "đã sửa".
 
-### Gap phản biện (`pipeline.run_phan_bien`) — tóm lược theo lời tác giả chưa đủ
+### Phản biện theo tầng (`pipeline.run_phan_bien`) — dấu hiệu chưa phải phản biện
 
-Tóm lược kể bài theo lời TÁC GIẢ: khoảng trống bài nêu, giới hạn bài tự nhận.
-Người dùng muốn thêm phía người phản biện: khoảng trống ấy có đứng vững không
-(`gap_bai_neu.muc`: vững / một phần / hở), 3–6 điểm chất vấn được, mỗi điểm một
-loại (`prompts.PHAN_BIEN_LOAI`), một mã khối neo vào bài và một câu hỏi gửi tác
-giả, cộng 1–3 câu hỏi còn bỏ ngỏ sau bài.
+Tóm lược kể bài theo lời TÁC GIẢ. Người dùng muốn thêm phía người phản biện.
+Bản đầu ra 3–6 điểm kiểu "chỉ chạy một seed", "thiếu ablation", "so sánh chưa
+công bằng" — và bị chê đúng chỗ: *"chỉ là dấu hiệu, chưa rút ra được các tầng
+suy nghĩ sâu hơn"*. Một danh sách kiểm của reviewer không nói dấu hiệu ấy che
+giấu điều gì.
 
-**Lượt riêng, không nhét vào lượt dựng tóm lược.** Lượt ấy đã đọc toàn văn, ra
-tới 20.000 token và có trần thời gian riêng (`tran_brief`). Phản biện đi sau
-`cached_prefix`, task ở phần thay đổi theo request (`PHAN_BIEN_TASK`), và lưu
-vào `brief["phan_bien"]`. Lưu ở đó an toàn vì `cached_prefix` chỉ đọc các khoá
-đã kê tên của `brief` — có test so prefix trước và sau, từng byte. Dựng lại tóm
-lược thì phần phản biện cũ đi theo, đúng như nên thế.
+Giờ (`v: 2`) gồm giả định nền (niềm tin cả bài đặt cược vào, tách phần đã có
+bằng chứng với phần chỉ được giả định), khoảng trống bài nêu (cách bài đặt bài
+toán, đặt khác đi thì sao), và 2–4 **mạch**, mỗi mạch đi đủ năm tầng
+(`TANG_PHAN_BIEN`): dấu hiệu (neo mã khối) → giả định ẩn sau → **cách giải thích
+khác** (một cơ chế khác cũng cho ra đúng kết quả) → nếu giả định sai thì sụp gì
+→ **phép thử phân xử** có HAI nhánh dự đoán. Tầng giải thích khác và phép thử là
+hai tầng làm nên độ sâu; thiếu chúng thì vẫn chỉ là dấu hiệu.
 
-**Bài mới tự chạy ngay SAU mẻ dịch đầu**, song song với các mẻ sau: mẻ đầu vừa
-nạp prefix vào cache nên lượt này gần như chỉ trả tiền phần viết ra. Bài cũ chỉ
-chạy khi bấm — "Dịch tiếp" không được tự tiêu tiền vào việc khác (cùng bài học
-với lượt đánh dấu câu đáng nhớ). Đo trên World Models khi cache nguội: 18 giây,
-$0,0037, 5 điểm, không điểm nào bị bỏ.
+**Vòng đào sâu** (`phan_bien_nong`): mạch thiếu tầng, giải thích khác trùng từ
+với giả định (phủ định suông), phép thử một nhánh, hay tầng nói chung chung thì
+bị gửi lại KÈM đúng lời chê, một lượt. Bẫy đã vấp trong chính bộ chấm: dùng
+`depth.check_text` cho tầng giả định là kêu oan — giả định là MỆNH ĐỀ, không cần
+"vì… nên…", nên `missing_mechanism` chỉ áp cho tầng giải thích khác, nơi nó PHẢI
+nói cơ chế. Prompt có một mẫu nông/sâu về một bài GIẢ ĐỊNH (không số thật, cùng
+bài học với ví dụ trong prompt slide).
 
-`chuan_hoa_phan_bien`: mã khối bịa bị bỏ; điểm nào mang con số không có ở đâu
-trong bài (`_so_toan_bai`) thì BỎ CẢ ĐIỂM và ghi vào `bo` — phản biện dựa trên số
-bịa nghe rất có lý nên tệ hơn không có. Hiện ở cột trái (`phanBienHtml`) và
-trong cả hai bản xuất (`_phan_bien_html`, Markdown); ba chỗ dựng cùng một nội
-dung, sửa một chỗ phải soát hai chỗ kia.
+Đo trên World Models: 26 giây, $0,0041, ba mạch đủ năm tầng ngay lượt đầu. Mạch
+tốt nhất bắt được điều một danh sách dấu hiệu không bao giờ thấy: hidden state
+*h* giúp controller vì nó là BỘ NHỚ lịch sử (ước lượng vận tốc) chứ chưa chắc vì
+nó DỰ ĐOÁN tương lai, kèm phép thử thay MDN-RNN bằng LSTM thường.
+
+**Lượt riêng, không nhét vào lượt dựng tóm lược** — lượt ấy đã ra tới 20.000
+token và có trần thời gian riêng. Task ở phần thay đổi theo request
+(`PHAN_BIEN_TASK`), lưu ở `brief["phan_bien"]`; an toàn vì `cached_prefix` chỉ
+đọc các khoá đã kê tên của `brief` — có test so prefix trước và sau từng byte.
+Bài mới tự chạy ngay SAU mẻ dịch đầu (prefix đã ấm); bài cũ chỉ chạy khi bấm.
+Bản `v` cũ (chỉ dấu hiệu) vẫn hiện và mời dựng lại; bản xuất chỉ đưa bản `v: 2`.
+
+`chuan_hoa_phan_bien`: mã khối bịa bị bỏ; mạch mang con số không có ở đâu trong
+bài bị BỎ CẢ MẠCH và ghi vào `bo`. Hiện ở cột trái (`phanBienHtml`, mỗi tầng thụt
+thêm một nấc) và trong cả hai bản xuất (`_phan_bien_html`, Markdown); ba chỗ dựng
+cùng một nội dung, sửa một chỗ phải soát hai chỗ kia.
 
 ### Bản xuất bài dịch (`?fmt=html|pdf`) — đọc như một báo cáo
 

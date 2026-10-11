@@ -779,6 +779,40 @@ body { padding-left: var(--rail-w); }
   border: 0; padding: 0; margin-right: .5rem; cursor: pointer; text-align: left;
 }
 .pb-go:hover { text-decoration: underline; }
+/* Phản biện theo tầng: giả định nền là một thẻ riêng ở trên cùng, rồi mỗi mạch
+   là một cái THANG — mỗi tầng thụt vào thêm một nấc theo `--t`, nối nhau bằng
+   nét bút chì, để mắt thấy mình đang đào xuống chứ không đọc một danh sách phẳng. */
+.pb-nen {
+  border: 2px solid var(--muc); border-radius: 8px; padding: .55rem .7rem; margin: .2rem 0 .9rem;
+  background: var(--note-bg); box-shadow: 2px 2px 0 var(--bong);
+}
+.pb-nen p { margin: .3rem 0; }
+.pb-niem { font-weight: 600; color: var(--ink); }
+.pb-k {
+  font-family: var(--hand); font-size: 1.05em; color: var(--accent); margin-right: .2rem;
+}
+.pb-k-do { color: var(--warn); }
+.pb-ds2 { list-style: none; margin: 0; padding: 0; }
+.pb-mach { padding: .4rem 0 .9rem; border-bottom: 1px solid var(--line); }
+.pb-dau { display: flex; align-items: center; gap: .4rem; margin-bottom: .3rem; }
+.pb-so {
+  width: 1.35rem; height: 1.35rem; display: grid; place-items: center; flex: none;
+  border: 1.5px solid var(--muc); border-radius: 50%; font-family: var(--display); font-size: .8em;
+  background: var(--surface);
+}
+.pb-thang { list-style: none; margin: 0; padding: 0; }
+.pb-t {
+  position: relative; margin-left: calc(var(--t) * .55rem); padding: .1rem 0 .45rem .8rem;
+  border-left: 2px dotted var(--line);
+}
+.pb-t::before {
+  content: ""; position: absolute; left: -5px; top: .45rem; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--surface); border: 1.5px solid var(--muc);
+}
+.pb-t:last-child { border-left-color: transparent; }
+.pb-t:last-child::before { background: var(--c-g); }
+.pb-ten { font-family: var(--hand); font-size: 1.06em; color: var(--accent); }
+.pb-t p { margin: .05rem 0 .15rem; }
 .pb-con { font-family: var(--hand); font-size: 1.12rem; color: var(--accent); margin: .9rem 0 .2rem; }
 .pb-mo { margin: 0; padding-left: 1.1rem; }
 .pb-mo li { margin-bottom: .4rem; }

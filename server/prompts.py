@@ -599,61 +599,87 @@ def reflect_user(items: list[dict], draft: dict[str, str]) -> str:
 # thời gian riêng; thêm một khối phải nghĩ kỹ vào đó là kéo cả hai cùng hỏng.
 
 PHAN_BIEN_TASK = LANGUAGE_RULE + """\
-## Nhiệm vụ: dựng phần GAP PHẢN BIỆN cho bài báo ở trên
+## Nhiệm vụ: phản biện bài báo ở trên THEO TẦNG
 
-Bạn là người phản biện (reviewer) khó tính nhưng công bằng của một hội nghị hàng
-đầu. Phần tóm lược đã nêu khoảng trống mà TÁC GIẢ tuyên bố và giới hạn tác giả
-tự nhận. Việc của bạn khác hẳn: chỉ ra những chỗ một người đọc kỹ CÓ THỂ chất vấn
-bài này, để người đọc biết bài đứng vững tới đâu và hỏi lại điều gì.
+Bạn là người phản biện giỏi nhất mà tác giả từng gặp: không bắt lỗi vặt, mà đào
+tới tầng niềm tin bên dưới bài. Một danh sách kiểu "chỉ chạy một seed", "thiếu
+ablation", "so sánh chưa công bằng" mới là DẤU HIỆU trên bề mặt. Người đọc cần
+biết dấu hiệu ấy che giấu điều gì.
 
-Ba phần, theo đúng thứ tự:
+### Phần 1. `gia_dinh_nen` — niềm tin cả bài đặt cược vào
+Một câu: điều phải ĐÚNG thì toàn bộ bài mới có giá trị. Không phải tóm tắt
+phương pháp, mà là niềm tin về thế giới hay về bài toán đứng sau nó. Rồi tách
+bạch: phần nào của niềm tin ấy bài THẬT SỰ có bằng chứng (thí nghiệm nào), phần
+nào bài chỉ giả định mà không kiểm.
 
-1. `gap_bai_neu` — Khoảng trống mà bài tuyên bố có ĐỨNG VỮNG không? Cách làm
-   trước đó có thật sự thất bại đúng như bài nói, hay bài chọn đối thủ yếu, định
-   nghĩa bài toán hẹp cho vừa phương pháp của mình, hoặc bỏ qua một hướng đã giải
-   quyết một phần? Kết luận một trong ba mức: "vung" (đứng vững), "mot_phan",
-   "ho" (còn hở), kèm lý do.
+### Phần 2. `gap_bai_neu` — khoảng trống bài nêu có thật không
+Khoảng trống luôn là hệ quả của một CÁCH ĐẶT BÀI TOÁN. Nói rõ bài đặt bài toán
+thế nào (đo bằng gì, so với ai, trong phạm vi nào), và nếu đặt khác đi một cách
+hợp lý thì khoảng trống ấy còn hay mất. Mức: "vung", "mot_phan", "ho".
 
-2. `diem` — 3 đến 6 điểm phản biện, điểm nặng nhất trước. Mỗi điểm thuộc MỘT loại:
-   - "giả định ngầm": bài dựa vào một điều chưa nói ra hoặc chưa kiểm chứng.
-   - "thí nghiệm thiếu": thiếu ablation, thiếu đối chứng, thiếu tập dữ liệu khó.
-   - "so sánh chưa công bằng": khác ngân sách tính toán, khác dữ liệu, baseline
-     cấu hình yếu, chạy lại baseline không đúng cài đặt gốc.
-   - "khái quát quá": kết luận rộng hơn phạm vi thí nghiệm (ít tác vụ, ít seed,
-     một miền dữ liệu, một mô hình nền).
-   - "độ đo lệch": độ đo không bắt đúng điều bài muốn chứng minh.
-   - "chi phí ẩn": độ trễ, bộ nhớ, dữ liệu, công gán nhãn mà bài không tính.
-   - "tái lập": thiếu chi tiết để người khác làm lại được.
+### Phần 3. `mach` — 2 đến 4 mạch phản biện, mạch sâu nhất trước
+Mỗi mạch đi qua ĐỦ năm tầng, tầng sau đào xuống từ tầng trước:
 
-3. `con_bo_ngo` — 1 đến 3 câu hỏi nghiên cứu còn bỏ ngỏ SAU bài này: hướng làm
-   tiếp mà chính những điểm phản biện ở trên mở ra.
+1. `dau_hieu` — điều nhìn thấy trong bài (kèm `nguon` là mã khối dạng b12).
+2. `gia_dinh` — tác giả phải TIN điều gì thì dấu hiệu ấy mới không phải vấn đề
+   với họ. Viết thành một mệnh đề có thể đúng hoặc sai.
+3. `giai_thich_khac` — một CƠ CHẾ khác, cụ thể, cũng sinh ra đúng kết quả bài đã
+   quan sát. Không được là phủ định suông của giả định ("có thể không đúng").
+   Phải nói nó vận hành thế nào.
+4. `neu_sai` — nếu giả định sai thì phần nào của kết luận sụp, phần nào vẫn
+   đứng; và ý tưởng gãy ở điều kiện nào (miền dữ liệu, quy mô, loại tác vụ).
+5. `phep_thu` — một thí nghiệm mà hai cách giải thích dự đoán ra KẾT QUẢ KHÁC
+   NHAU. Viết đủ hai nhánh: "Nếu giả định của tác giả đúng thì … Còn nếu cách
+   giải thích khác đúng thì …".
 
-Luật cứng, quyết định phần này có giá trị hay không:
+Mẫu, cho một bài GIẢ ĐỊNH về truy hồi (không phải bài trên, đừng chép nội dung):
+- Nông: "Chỉ đánh giá trên hai tập dữ liệu."
+- Sâu:
+  - dau_hieu: Cả hai tập đều là câu hỏi bắc cầu mà thực thể trung gian xuất
+    hiện nguyên văn trong câu hỏi gốc.
+  - gia_dinh: Phương pháp hơn baseline vì nó suy luận được mắt xích còn thiếu,
+    chứ không vì nó khớp chữ tốt hơn.
+  - giai_thich_khac: Bộ viết lại truy vấn của phương pháp chép thực thể trung
+    gian từ câu hỏi vào truy vấn chặng hai, nên nó thắng nhờ khớp chữ, đúng loại
+    câu hỏi hai tập này ưu ái.
+  - neu_sai: Luận điểm "suy luận nhiều chặng" sụp, chỉ còn "viết lại truy vấn
+    tốt hơn". Ý tưởng gãy ở câu hỏi mà thực thể trung gian không có trong câu hỏi.
+  - phep_thu: Lọc riêng những câu hỏi mà thực thể trung gian không xuất hiện
+    trong câu hỏi gốc. Nếu giả định của tác giả đúng thì khoảng cách với
+    baseline giữ nguyên. Còn nếu cách giải thích khác đúng thì khoảng cách co về gần 0.
 
-- **Mỗi điểm phải neo vào bài.** `nguon` là mã khối (dạng b12) cho thấy chỗ hở:
-  khối mô tả thiết lập thí nghiệm thiếu X, khối đưa ra khẳng định rộng, bảng kết
-  quả chỉ có một seed. Phản biện không neo được vào đâu là phản biện chung chung,
-  áp vào bài nào cũng được, nên bỏ.
-- **Không bịa số và không bịa công trình.** Con số nào cũng phải có trong bài.
-  Không nêu tên bài báo khác mà bài không nhắc tới.
-- **Phân biệt với giới hạn tác giả đã tự nhận.** Điều tác giả đã thừa nhận thì
-  chỉ đưa vào nếu bạn thấy hệ quả của nó nặng hơn mức tác giả nói, và nói rõ vì sao.
-- **Công bằng.** Nếu bài đã làm đúng một thí nghiệm để chặn một câu chất vấn
-  hiển nhiên thì không đưa câu chất vấn đó vào.
-- `cau_hoi` là câu hỏi cụ thể gửi tác giả, hoặc thí nghiệm cụ thể sẽ phân xử
-  được điểm ấy. Không viết "cần thêm thí nghiệm" chung chung.
+### Phần 4. `con_bo_ngo` — 1 đến 3 câu hỏi nghiên cứu sinh ra TỪ các giả định ở trên
+
+Luật cứng:
+- Mỗi mạch neo vào bài bằng `nguon`. Mạch không neo được vào đâu là phản biện
+  chung chung, áp vào bài nào cũng được, nên bỏ.
+- Không bịa số, không nêu tên bài báo mà bài không nhắc tới.
+- Công bằng: nếu bài đã có thí nghiệm chặn đúng giải thích khác ấy thì không đưa
+  mạch đó vào, hoặc chỉ ra vì sao thí nghiệm đó chưa đủ chặn.
+- Ít mà sâu. Hai mạch đi tới tầng năm có giá trị hơn sáu dấu hiệu.
 
 """ + VAN_PHONG + """
 Trả về DUY NHẤT một object JSON hợp lệ, không lời dẫn, không bọc trong ```:
 {
-  "gap_bai_neu": {"muc": "vung|mot_phan|ho", "danh_gia": "2-4 câu", "nguon": ["b12"]},
-  "diem": [
-    {"loai": "một trong bảy loại ở trên", "diem": "điều bị chất vấn, ≤20 chữ",
-     "vi_sao": "vì sao đáng ngờ, nói cơ chế, 2-3 câu", "nguon": ["b45"],
-     "cau_hoi": "câu hỏi gửi tác giả hoặc thí nghiệm phân xử, 1-2 câu"}
+  "gia_dinh_nen": {"niem_tin": "1 câu", "da_chung_minh": "phần có bằng chứng, nói thí nghiệm nào",
+                   "chi_gia_dinh": "phần chỉ được giả định", "nguon": ["b12"]},
+  "gap_bai_neu": {"muc": "vung|mot_phan|ho", "cach_dat": "bài đặt bài toán thế nào, 1-2 câu",
+                  "danh_gia": "đặt khác đi thì sao, 2-3 câu", "nguon": ["b12"]},
+  "mach": [
+    {"loai": "giả định ngầm|thí nghiệm thiếu|so sánh chưa công bằng|khái quát quá|độ đo lệch|chi phí ẩn|tái lập",
+     "dau_hieu": "…", "nguon": ["b45"], "gia_dinh": "…", "giai_thich_khac": "…",
+     "neu_sai": "…", "phep_thu": "Nếu … thì … Còn nếu … thì …"}
   ],
-  "con_bo_ngo": [{"cau_hoi": "câu hỏi nghiên cứu", "vi_sao": "vì sao nó đáng làm, 1-2 câu"}]
+  "con_bo_ngo": [{"cau_hoi": "câu hỏi nghiên cứu", "vi_sao": "nó sinh ra từ giả định nào, 1-2 câu"}]
 }
+"""
+
+PHAN_BIEN_DAO_SAU = """\
+## Viết lại những mạch phản biện còn nông
+
+Bản phản biện dưới đây có những mạch chưa đi tới tầng dưới. Giữ nguyên các
+phần đã tốt, viết lại ĐÚNG những mạch bị chê cho đủ năm tầng, theo đúng lời chê.
+Trả về toàn bộ object JSON theo khuôn cũ.
 """
 
 PHAN_BIEN_LOAI = ("giả định ngầm", "thí nghiệm thiếu", "so sánh chưa công bằng",

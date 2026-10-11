@@ -3417,13 +3417,15 @@ function renderSide() {
   $$("#outlineBox [data-go]").forEach((el) => (el.onclick = () => jumpToBlock(el.dataset.go)));
 }
 
-/* ------------------------------------------------- gap phản biện
+/* ------------------------------------------------- phản biện theo tầng
 
-   Tóm lược kể lại bài theo lời TÁC GIẢ: khoảng trống bài nêu, giới hạn bài tự
-   nhận. Phần này đứng ở phía người phản biện — khoảng trống ấy có đứng vững
-   không, chỗ nào chất vấn được, hỏi lại tác giả điều gì. Mỗi điểm neo vào một
-   đoạn của bài (bấm để nhảy tới) để người đọc tự kiểm, không phải tin suông.
-   Dựng ở `pipeline.run_phan_bien`, lưu trong `brief.phan_bien`. */
+   Tóm lược kể lại bài theo lời TÁC GIẢ. Phần này đứng ở phía người phản biện,
+   và đi THEO TẦNG: bản đầu chỉ liệt kê dấu hiệu ("một seed", "thiếu ablation"),
+   người dùng chê đúng chỗ là "chưa rút ra được các tầng suy nghĩ sâu hơn". Giờ
+   mỗi mạch đào từ dấu hiệu xuống giả định của tác giả, một cơ chế khác cũng cho
+   ra đúng kết quả ấy, hệ quả nếu giả định sai, và thí nghiệm phân xử được. Dấu
+   hiệu neo vào một đoạn của bài để người đọc tự kiểm. Dựng ở
+   `pipeline.run_phan_bien`, lưu trong `brief.phan_bien` (`v: 2`). */
 const PB_MUC = { vung: "đứng vững", mot_phan: "đứng vững một phần", ho: "còn hở" };
 
 function doanNgan(id) {
@@ -3432,33 +3434,58 @@ function doanNgan(id) {
   return w ? `“${w}…”` : id;
 }
 
+/* Năm tầng của một mạch phản biện — khớp `pipeline.TANG_PHAN_BIEN`. Mỗi tầng
+   thụt vào thêm một nấc: người đọc THẤY mình đang đào xuống, từ điều nhìn thấy
+   trong bài tới phép thử phân xử được nó. */
+const PB_TANG = [
+  ["dau_hieu", "Dấu hiệu", "điều nhìn thấy trong bài"],
+  ["gia_dinh", "Giả định ẩn sau", "tác giả phải tin điều này"],
+  ["giai_thich_khac", "Cách giải thích khác", "cơ chế khác cũng cho ra đúng kết quả ấy"],
+  ["neu_sai", "Nếu giả định sai", "phần nào của kết luận sụp"],
+  ["phep_thu", "Phép thử phân xử", "hai cách giải thích dự đoán khác nhau"],
+];
+
 function phanBienHtml(b) {
   const pb = b.phan_bien;
+  const nut = (lai) => `<button id="pbBtn" class="${lai ? "sv-link pb-lai" : "btn btn-sm"}">${
+    lai ? "Dựng lại phần phản biện" : "Dựng phản biện theo tầng"}</button>`;
   if (!pb) {
-    return `<div class="pb pb-moi"><p class="brief-line"><b>Gap phản biện</b></p>
-      <p class="muted">Khoảng trống bài nêu có đứng vững không, chỗ nào chất vấn được, nên
-        hỏi lại tác giả điều gì. Mỗi điểm neo vào một đoạn của bài.</p>
-      <button id="pbBtn" class="btn btn-sm">Dựng gap phản biện</button></div>`;
+    return `<div class="pb pb-moi"><p class="brief-line"><b>Phản biện theo tầng</b></p>
+      <p class="muted">Đào từ dấu hiệu trong bài xuống giả định của tác giả, một cách giải thích
+        khác cho cùng kết quả, điều gì sụp nếu giả định sai, và thí nghiệm phân xử được.</p>${nut(false)}</div>`;
   }
   const nguon = (ids) => (ids || []).map((id) =>
-    `<button class="go pb-go" data-go="${esc(id)}" title="Nhảy tới đoạn này">→ ${esc(doanNgan(id))}</button>`).join("");
+    `<button class="go pb-go" data-go="${esc(id)}" title="Nhảy tới đoạn này">→ ${sci(doanNgan(id))}</button>`).join("");
+  if (pb.v !== 2) {
+    // Bản đầu chỉ liệt kê dấu hiệu. Giữ cho đọc được, và mời dựng lại theo tầng.
+    return `<div class="pb"><p class="brief-line"><b>Phản biện</b></p>
+      <p class="muted">Bản này dựng trước khi phản biện đi theo tầng, nên mới dừng ở dấu hiệu.</p>
+      <ol class="pb-ds">${(pb.diem || []).map((x) => `<li><b>${sci(x.diem)}</b><p>${sci(x.vi_sao)}</p></li>`).join("")}</ol>
+      ${nut(false)}</div>`;
+  }
+  const n = pb.gia_dinh_nen || {};
+  const nen = n.niem_tin ? `<div class="pb-nen"><span class="pb-nhan">Bài đặt cược vào</span>
+      <p class="pb-niem">${sci(n.niem_tin)}</p>
+      ${n.da_chung_minh ? `<p><span class="pb-k">Đã có bằng chứng</span> ${sci(n.da_chung_minh)}</p>` : ""}
+      ${n.chi_gia_dinh ? `<p><span class="pb-k pb-k-do">Chỉ được giả định</span> ${sci(n.chi_gia_dinh)}</p>` : ""}
+      ${nguon(n.nguon)}</div>` : "";
   const g = pb.gap_bai_neu || {};
-  const gap = g.danh_gia ? `<div class="pb-gap" data-muc="${esc(g.muc || "")}">
+  const gap = g.danh_gia || g.cach_dat ? `<div class="pb-gap" data-muc="${esc(g.muc || "")}">
       <span class="pb-nhan">Khoảng trống bài nêu${g.muc ? ` · <b>${esc(PB_MUC[g.muc] || g.muc)}</b>` : ""}</span>
-      <p>${sci(g.danh_gia)}</p>${nguon(g.nguon)}</div>` : "";
-  const diem = (pb.diem || []).length ? `<ol class="pb-ds">${pb.diem.map((x) => `<li>
-      ${x.loai ? `<span class="pb-loai">${esc(x.loai)}</span>` : ""}
-      <b class="pb-diem">${sci(x.diem)}</b>
-      <p>${sci(x.vi_sao)}</p>
-      ${x.cau_hoi ? `<p class="pb-hoi"><span>Hỏi lại</span> ${sci(x.cau_hoi)}</p>` : ""}
-      ${nguon(x.nguon)}</li>`).join("")}</ol>` : "";
+      ${g.cach_dat ? `<p><span class="pb-k">Cách bài đặt bài toán</span> ${sci(g.cach_dat)}</p>` : ""}
+      ${g.danh_gia ? `<p>${sci(g.danh_gia)}</p>` : ""}${nguon(g.nguon)}</div>` : "";
+  const mach = (pb.mach || []).map((m, i) => `<li class="pb-mach">
+      <div class="pb-dau"><span class="pb-so">${i + 1}</span>${m.loai ? `<span class="pb-loai">${esc(m.loai)}</span>` : ""}</div>
+      <ol class="pb-thang">${PB_TANG.filter(([k]) => m[k]).map(([k, ten, goi], t) =>
+        `<li class="pb-t" style="--t:${t}"><span class="pb-ten" title="${esc(goi)}">${esc(ten)}</span>
+          <p>${sci(m[k])}</p>${k === "dau_hieu" ? nguon(m.nguon) : ""}</li>`).join("")}</ol></li>`).join("");
   const mo = (pb.con_bo_ngo || []).length
     ? `<p class="pb-con">Còn bỏ ngỏ sau bài này</p><ul class="pb-mo">${pb.con_bo_ngo.map((x) =>
         `<li><b>${sci(x.cau_hoi)}</b>${x.vi_sao ? ` ${sci(x.vi_sao)}` : ""}</li>`).join("")}</ul>` : "";
   const bo = (pb.bo || []).length
-    ? `<p class="muted pb-bo" title="${esc(pb.bo.join("\n"))}">Đã bỏ ${pb.bo.length} điểm vì mang số không có trong bài.</p>` : "";
-  return `<div class="pb"><p class="brief-line"><b>Gap phản biện</b></p>${gap}${diem}${mo}${bo}
-    <button id="pbBtn" class="sv-link pb-lai">Dựng lại phần phản biện</button></div>`;
+    ? `<p class="muted pb-bo" title="${esc(pb.bo.join("\n"))}">Đã bỏ ${pb.bo.length} mạch vì mang số không có trong bài.</p>` : "";
+  return `<div class="pb"><p class="brief-line"><b>Phản biện theo tầng</b></p>${nen}${gap}
+    ${mach ? `<ol class="pb-ds2">${mach}</ol>` : ""}${mo}${bo}${nut(true)}</div>`;
 }
 
 async function giaPhanBien(btn) {
@@ -3468,7 +3495,7 @@ async function giaPhanBien(btn) {
     const d = await r.json();
     if (btn.isConnected && !btn.disabled) {
       btn.dataset.gia = d.usd;
-      btn.textContent = `${btn.classList.contains("pb-lai") ? "Dựng lại phần phản biện" : "Dựng gap phản biện"} · ~${money(d.usd)}`;
+      btn.textContent = `${btn.textContent.split(" · ")[0]} · ~${money(d.usd)}`;
     }
   } catch (_) { /* không ước được giá thì nút vẫn bấm được */ }
 }
@@ -3482,7 +3509,7 @@ async function dungPhanBien(tuDong) {
     "Dựng lại phần phản biện?",
     `Tốn một lượt gọi model${btn?.dataset.gia ? `, khoảng ${money(+btn.dataset.gia)}` : ""}. Bản hiện tại bị thay.`,
     { ok: "Dựng lại" })) return;
-  if (btn) { btn.disabled = true; btn.textContent = "Đang đọc bài như một người phản biện…"; }
+  if (btn) { btn.disabled = true; btn.textContent = "Đang đào từ dấu hiệu xuống giả định của tác giả…"; }
   const id = state.doc.id;
   try {
     const r = await fetch(`/api/doc/${id}/phan-bien`, { method: "POST" });
@@ -3491,7 +3518,7 @@ async function dungPhanBien(tuDong) {
     if (state.doc?.id !== id) return;          // người dùng đã mở bài khác
     state.doc.brief.phan_bien = res.phan_bien;
     renderSide();
-    if (!state.translating) reportCost("Đã dựng gap phản biện", res.run, res.total);
+    if (!state.translating) reportCost("Đã dựng phản biện theo tầng", res.run, res.total);
     else state.doc.usage = res.total;
   } catch (e) {
     if (state.doc?.id === id && !state.translating) status("Lỗi: " + e.message);

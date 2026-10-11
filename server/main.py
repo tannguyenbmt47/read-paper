@@ -2006,16 +2006,25 @@ async def export(doc_id: str, mode: str = "bilingual", fmt: str = "md"):
             if brief.get(k):
                 out.append(f"- **{label}:** {brief[k]}")
         pb = brief.get("phan_bien") or {}
-        if pb.get("diem") or (pb.get("gap_bai_neu") or {}).get("danh_gia"):
-            out.append("\n### Gap phản biện\n")
+        if pb.get("v") == 2 and (pb.get("mach") or (pb.get("gia_dinh_nen") or {}).get("niem_tin")):
+            out.append("\n### Phản biện theo tầng\n")
+            n = pb.get("gia_dinh_nen") or {}
+            if n.get("niem_tin"):
+                out.append(f"**Bài đặt cược vào.** {n['niem_tin']}")
+                if n.get("da_chung_minh"):
+                    out.append(f"- *Đã có bằng chứng:* {n['da_chung_minh']}")
+                if n.get("chi_gia_dinh"):
+                    out.append(f"- *Chỉ được giả định:* {n['chi_gia_dinh']}")
             g = pb.get("gap_bai_neu") or {}
-            if g.get("danh_gia"):
+            if g.get("danh_gia") or g.get("cach_dat"):
                 muc = _PB_MUC.get(g.get("muc") or "", "")
-                out.append(f"**Khoảng trống bài nêu{' — ' + muc if muc else ''}.** {g['danh_gia']}\n")
-            for i, x in enumerate(pb.get("diem") or [], 1):
-                loai = f"*({x['loai']})* " if x.get("loai") else ""
-                out.append(f"{i}. {loai}**{x.get('diem', '')}** {x.get('vi_sao', '')}"
-                           + (f" *Hỏi lại:* {x['cau_hoi']}" if x.get("cau_hoi") else ""))
+                out.append(f"\n**Khoảng trống bài nêu{' — ' + muc if muc else ''}.** "
+                           f"{g.get('cach_dat', '')} {g.get('danh_gia', '')}".rstrip())
+            for k, m in enumerate(pb.get("mach") or [], 1):
+                out.append(f"\n**Mạch {k}**" + (f" *({m['loai']})*" if m.get("loai") else ""))
+                for t, (key, ten) in enumerate(_PB_TANG):
+                    if m.get(key):
+                        out.append(f"{'  ' * t}- *{ten}:* {m[key]}")
             if pb.get("con_bo_ngo"):
                 out.append("\n**Còn bỏ ngỏ sau bài này**\n")
                 out += [f"- **{x.get('cau_hoi', '')}** {x.get('vi_sao', '')}" for x in pb["con_bo_ngo"]]
@@ -2198,6 +2207,10 @@ padding:1rem 1.2rem;margin:.7rem 0 .3rem;font-family:var(--than);font-size:.93re
 .pb-loai{display:inline-block;font-size:.8rem;padding:0 .5rem;border:1px solid var(--chi);border-radius:999px;color:var(--mo)}
 .pb-hoi i{font-family:var(--tay);font-style:normal;color:var(--xanh);font-size:1.05rem}
 .pb-con{font-family:var(--tay);color:var(--xanh);font-size:1.15rem;margin:1rem 0 .2rem}
+.pb-nen{border:2px solid var(--muc);border-radius:8px;padding:.6rem .9rem;margin:.4rem 0 1rem;background:var(--nho)}
+.pb-nen p{margin:.2rem 0}.pb-nen i,.pb-gap i,.pb-thang i{font-family:var(--tay);font-style:normal;color:var(--xanh);font-size:1.05rem}
+.pb-mach{margin:.6rem 0 1rem;break-inside:avoid}.pb-mach>p{margin:0 0 .3rem}
+.pb-thang{list-style:none;padding:0;margin:0}.pb-thang li{border-left:2px dotted var(--chi);padding:.1rem 0 .4rem .7rem}
 @media(max-width:820px){main{padding:2rem 1.2rem 3rem}main::before{display:none}
 .pair,.cot{grid-template-columns:minmax(0,1fr)}.cot{display:none}.pair:has(>.en){background:none}
 .en{padding-bottom:.4rem;border-bottom:1px dashed var(--chi);margin-bottom:.4rem}
@@ -2215,27 +2228,37 @@ figure,.so-do{box-shadow:none}}
 _PB_MUC = {"vung": "đứng vững", "mot_phan": "đứng vững một phần", "ho": "còn hở"}
 
 
+_PB_TANG = (("dau_hieu", "Dấu hiệu"), ("gia_dinh", "Giả định ẩn sau"),
+            ("giai_thich_khac", "Cách giải thích khác"), ("neu_sai", "Nếu giả định sai"),
+            ("phep_thu", "Phép thử phân xử"))
+
+
 def _phan_bien_html(pb: dict | None, rich, esc) -> str:
-    """Gap phản biện trong bản báo cáo — cùng nội dung với cột trái của app
-    (`phanBienHtml`), nhưng không có nút nhảy tới đoạn vì file đứng một mình."""
-    if not pb or not (pb.get("diem") or (pb.get("gap_bai_neu") or {}).get("danh_gia")):
+    """Phản biện theo tầng trong bản báo cáo — cùng nội dung với cột trái của
+    app (`phanBienHtml`), nhưng không có nút nhảy tới đoạn vì file đứng một mình.
+    Chỉ dựng bản `v: 2`; bản đầu (chỉ liệt kê dấu hiệu) không đưa vào báo cáo."""
+    if not pb or pb.get("v") != 2 or not (pb.get("mach") or (pb.get("gia_dinh_nen") or {}).get("niem_tin")):
         return ""
-    out = ["<h3>Gap phản biện</h3>"]
+    out = ["<h3>Phản biện theo tầng</h3>"]
+    n = pb.get("gia_dinh_nen") or {}
+    if n.get("niem_tin"):
+        out.append("<div class='pb-nen'><p class='pb-nhan'>Bài đặt cược vào</p>"
+                   f"<p><b>{rich(n['niem_tin'])}</b></p>"
+                   + (f"<p><i>Đã có bằng chứng.</i> {rich(n['da_chung_minh'])}</p>" if n.get("da_chung_minh") else "")
+                   + (f"<p><i>Chỉ được giả định.</i> {rich(n['chi_gia_dinh'])}</p>" if n.get("chi_gia_dinh") else "")
+                   + "</div>")
     g = pb.get("gap_bai_neu") or {}
-    if g.get("danh_gia"):
+    if g.get("danh_gia") or g.get("cach_dat"):
         muc = _PB_MUC.get(g.get("muc") or "", "")
         out.append(f"<div class='pb-gap' data-muc='{esc(g.get('muc') or '')}'>"
                    f"<p class='pb-nhan'>Khoảng trống bài nêu{(' · <b>' + muc + '</b>') if muc else ''}</p>"
-                   f"<p>{rich(g['danh_gia'])}</p></div>")
-    if pb.get("diem"):
-        dong = []
-        for x in pb["diem"]:
-            loai = f"<span class='pb-loai'>{esc(x['loai'])}</span> " if x.get("loai") else ""
-            hoi = (f"<p class='pb-hoi'><i>Hỏi lại.</i> {rich(x['cau_hoi'])}</p>"
-                   if x.get("cau_hoi") else "")
-            dong.append(f"<li>{loai}<b>{rich(x.get('diem', ''))}</b>"
-                        f"<p>{rich(x.get('vi_sao', ''))}</p>{hoi}</li>")
-        out.append("<ol class='pb-ds'>" + "".join(dong) + "</ol>")
+                   + (f"<p><i>Cách bài đặt bài toán.</i> {rich(g['cach_dat'])}</p>" if g.get("cach_dat") else "")
+                   + (f"<p>{rich(g['danh_gia'])}</p>" if g.get("danh_gia") else "") + "</div>")
+    for k, m in enumerate(pb.get("mach") or [], 1):
+        loai = f" <span class='pb-loai'>{esc(m['loai'])}</span>" if m.get("loai") else ""
+        tang = "".join(f"<li style='margin-left:{t * .9}rem'><i>{ten}.</i> {rich(m[key])}</li>"
+                       for t, (key, ten) in enumerate(_PB_TANG) if m.get(key))
+        out.append(f"<div class='pb-mach'><p><b>Mạch {k}</b>{loai}</p><ol class='pb-thang'>{tang}</ol></div>")
     if pb.get("con_bo_ngo"):
         out.append("<p class='pb-con'>Còn bỏ ngỏ sau bài này</p><ul>" + "".join(
             f"<li><b>{rich(x.get('cau_hoi', ''))}</b> {rich(x.get('vi_sao', ''))}</li>"

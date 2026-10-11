@@ -1538,12 +1538,14 @@ def test_slide_model_tra_rong_thi_bao_ro_va_van_ghi_chi_phi(app_client, monkeypa
     assert abs(store.load(did)["usage"]["cost"] - 0.016) < 1e-9
 
 
-def test_gap_phan_bien_neo_vao_bai_va_khong_doi_prefix(app_client, monkeypatch):
-    """Gap phản biện là lượt riêng đi sau prefix, lưu ở `brief.phan_bien`.
+def test_phan_bien_theo_tang_dao_sau_khi_mach_con_nong(app_client, monkeypatch):
+    """Phản biện đi theo tầng: dấu hiệu → giả định → giải thích khác → nếu sai →
+    phép thử. Bản đầu chỉ liệt kê dấu hiệu và người dùng chê đúng chỗ ấy.
 
-    Ba chỗ phải giữ: (1) thêm khoá này vào `brief` KHÔNG đổi `cached_prefix` —
-    đổi là hỏng cache của mọi bài đã dịch; (2) mã khối bịa bị bỏ; (3) điểm nào
-    mang con số không có trong bài thì bỏ cả điểm, và nói ra là đã bỏ."""
+    Canh bốn chỗ: (1) mạch nông (giải thích khác lặp lại giả định, phép thử một
+    nhánh) bị gửi lại KÈM lời chê, và bản sâu được nhận; (2) thêm khoá này vào
+    `brief` KHÔNG đổi `cached_prefix`; (3) mã khối bịa bị bỏ; (4) mạch mang con
+    số không có trong bài bị bỏ cả mạch và được nói ra."""
     import json
     from server import llm, pipeline, store
 
@@ -1558,40 +1560,52 @@ def test_gap_phan_bien_neo_vao_bai_va_khong_doi_prefix(app_client, monkeypatch):
     truoc = pipeline.cached_prefix(store.load(did))
     ids = [b["id"] for b in d["blocks"]]
 
+    nong = {"loai": "khái quát quá", "dau_hieu": "Kết quả chính chỉ có một lần chạy.",
+            "nguon": [ids[-1], "b999"],
+            "gia_dinh": "Tác giả tin kết quả ổn định giữa các lần chạy khác nhau.",
+            "giai_thich_khac": "Tác giả tin kết quả ổn định giữa các lần chạy.",
+            "neu_sai": "Kết luận về độ vượt trội của phương pháp chỉ còn đúng cho một lần chạy.",
+            "phep_thu": "Chạy thêm nhiều seed để xem kết quả thế nào."}
+    sau_sua = dict(nong,
+                   giai_thich_khac="Lần chạy này tình cờ rơi vào vùng siêu tham số thuận lợi, "
+                                   "nên điểm cao đến từ may mắn khởi tạo chứ không từ cơ chế.",
+                   phep_thu="Chạy năm seed. Nếu giả định của tác giả đúng thì điểm dao động hẹp "
+                            "quanh mức báo cáo. Còn nếu cách giải thích khác đúng thì điểm trải rộng.")
+    bia = dict(nong, dau_hieu="Hơn 17,8 điểm trên tập khác", nguon=[ids[1]])
+    khung = {"gia_dinh_nen": {"niem_tin": "Một mô hình nhỏ đủ để học tác vụ.",
+                              "da_chung_minh": "Bảng kết quả chính.", "chi_gia_dinh": "Độ ổn định.",
+                              "nguon": [ids[1]]},
+             "gap_bai_neu": {"muc": "mot_phan", "cach_dat": "Bài so với một baseline.",
+                             "danh_gia": "Đặt rộng hơn thì khoảng trống hẹp lại.", "nguon": [ids[1], "b999"]},
+             "con_bo_ngo": [{"cau_hoi": "Có khái quát sang miền khác không?", "vi_sao": "Từ giả định ổn định."}]}
     goi = []
 
     async def gia(messages, **kw):
-        goi.append(kw.get("session_id"))
-        assert truoc in messages[0]["content"] if isinstance(messages[0]["content"], str) \
-            else truoc in json.dumps(messages[0]["content"], ensure_ascii=False)
-        return json.dumps({
-            "gap_bai_neu": {"muc": "mot_phan", "danh_gia": "Bài chỉ so với một baseline.",
-                            "nguon": [ids[1], "b999"]},
-            "diem": [
-                {"loai": "khái quát quá", "diem": "Kết luận rộng hơn thí nghiệm",
-                 "vi_sao": "Chỉ một tập dữ liệu và một seed.", "nguon": [ids[-1]],
-                 "cau_hoi": "Kết quả có giữ khi chạy năm seed không?"},
-                {"loai": "loại bịa", "diem": "Hơn 17,8 điểm trên tập khác",
-                 "vi_sao": "Số này không có trong bài.", "nguon": [ids[1]], "cau_hoi": "?"},
-            ],
-            "con_bo_ngo": [{"cau_hoi": "Có khái quát sang miền khác không?", "vi_sao": "Chưa thử."}],
-        }), llm.Usage(cost=0.002)
+        goi.append(messages)
+        assert kw.get("session_id") == did                        # sticky routing
+        if len(goi) == 1:
+            return json.dumps({**khung, "mach": [nong, bia]}), llm.Usage(cost=0.002)
+        return json.dumps({**khung, "mach": [sau_sua, bia]}), llm.Usage(cost=0.001)
 
     monkeypatch.setattr(llm, "complete", gia)
     r = app_client.post(f"/api/doc/{did}/phan-bien")
     assert r.status_code == 200, r.text
     pb = r.json()["phan_bien"]
-    assert pb["gap_bai_neu"]["nguon"] == [ids[1]]                 # bỏ mã bịa b999
-    assert [x["diem"] for x in pb["diem"]] == ["Kết luận rộng hơn thí nghiệm"]
+
+    assert len(goi) == 2                                          # có vòng đào sâu
+    loi_che = goi[1][-1]["content"]
+    assert "lặp lại giả định" in loi_che and "hai nhánh" in loi_che
+    assert pb["v"] == 2 and pb["dao_sau"] == 1 and pb["con_nong"] == 0
+    assert [m["giai_thich_khac"][:20] for m in pb["mach"]] == [sau_sua["giai_thich_khac"][:20]]
+    assert pb["mach"][0]["nguon"] == [ids[-1]]                    # bỏ mã bịa b999
+    assert pb["gap_bai_neu"]["nguon"] == [ids[1]]
     assert len(pb["bo"]) == 1 and "17,8" in pb["bo"][0]           # nói ra đã bỏ gì
-    assert goi == [did]                                            # session_id cho sticky routing
 
     sau = store.load(did)
-    assert sau["brief"]["phan_bien"]["diem"]
     assert pipeline.cached_prefix(sau) == truoc                    # prefix không đổi một byte
-    assert sau["usage"]["cost"] >= 0.002                           # chi phí cộng vào bài
+    assert sau["usage"]["cost"] >= 0.003                           # cả hai lượt vào hoá đơn
 
     md = app_client.get(f"/api/doc/{did}/export?fmt=md").text
     html = app_client.get(f"/api/doc/{did}/export?fmt=html").text
-    assert "Gap phản biện" in md and "Hỏi lại" in md
-    assert "Gap phản biện" in html and "pb-ds" in html
+    for f in (md, html):
+        assert "Phản biện theo tầng" in f and "Cách giải thích khác" in f and "Phép thử phân xử" in f

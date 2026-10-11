@@ -631,9 +631,9 @@ async def run_brief(doc_id: str) -> tuple[dict, dict, dict]:
 
 # ------------------------------------------------- pass 1b: gap phản biện
 
-# Đầu ra đo được: 3–6 điểm × ~150 chữ + phần đánh giá gap, chừng 1.500–2.500
-# token. Trần là mức CHẶN chứ không phải mức tính tiền, nên rộng tay.
-PHAN_BIEN_RA = 2500
+# Đầu ra: 2–4 mạch × năm tầng + giả định nền + gap, chừng 2.000–3.000 token.
+# Trần là mức CHẶN chứ không phải mức tính tiền, nên rộng tay.
+PHAN_BIEN_RA = 3000
 
 
 def gia_phan_bien(doc: dict, gia: tuple[float, float] | None) -> float:
@@ -645,13 +645,20 @@ def gia_phan_bien(doc: dict, gia: tuple[float, float] | None) -> float:
     return round(vao * gia[0] + PHAN_BIEN_RA * gia[1], 4)
 
 
+# Năm tầng của một mạch phản biện, theo đúng thứ tự đào xuống. Giao diện, bản
+# xuất và phép chấm nông đều đọc từ đây — thêm tầng là thêm ở một chỗ.
+TANG_PHAN_BIEN = ("dau_hieu", "gia_dinh", "giai_thich_khac", "neu_sai", "phep_thu")
+
+_HAI_NHANH = re.compile(r"\b(còn nếu|ngược lại|trái lại|nếu không)\b", re.I)
+
+
 def chuan_hoa_phan_bien(doc: dict, d: dict) -> dict:
     """Soát phần phản biện trước khi lưu. Cùng tinh thần `slide.chuan_hoa`:
 
     - mã khối khai ra phải có thật — mã bịa thì người đọc bấm vào không tới đâu,
       và phản biện mất đúng thứ làm nó khác một lời chê chung chung;
-    - điểm nào mang con số không có ở đâu trong bài thì BỎ cả điểm: một phản
-      biện dựa trên số bịa còn tệ hơn không phản biện, vì nó nghe rất có lý;
+    - mạch nào mang con số không có ở đâu trong bài thì BỎ cả mạch: phản biện
+      dựa trên số bịa nghe rất có lý nên tệ hơn không có;
     - loại lạ quy về rỗng chứ không để model tự đặt nhãn mới mỗi bài một kiểu.
     """
     ids = {b["id"] for b in doc.get("blocks") or []}
@@ -665,38 +672,99 @@ def chuan_hoa_phan_bien(doc: dict, d: dict) -> dict:
         return [str(i).strip() for i in x if str(i).strip() in ids][:4]
 
     def so_la(*parts):
-        txt = _URLISH.sub(" ", " ".join(p or "" for p in parts))
+        txt = _URLISH.sub(" ", " ".join(str(p or "") for p in parts))
         return [n for n in _NUM.findall(txt)
                 if _norm_num(n) not in ca_bai and not (n.isdigit() and int(n) <= 12)]
 
     def s(x):
         return str(x or "").strip()
 
+    bo: list[str] = []
+    gn = d.get("gia_dinh_nen") if isinstance(d.get("gia_dinh_nen"), dict) else {}
+    nen = {"niem_tin": s(gn.get("niem_tin")), "da_chung_minh": s(gn.get("da_chung_minh")),
+           "chi_gia_dinh": s(gn.get("chi_gia_dinh")), "nguon": nguon(gn.get("nguon"))}
+    if so_la(nen["niem_tin"], nen["da_chung_minh"], nen["chi_gia_dinh"]):
+        bo.append("phần giả định nền mang số không có trong bài")
+        nen = {"niem_tin": "", "da_chung_minh": "", "chi_gia_dinh": "", "nguon": []}
+
     g = d.get("gap_bai_neu") if isinstance(d.get("gap_bai_neu"), dict) else {}
-    out = {
-        "gap_bai_neu": {"muc": s(g.get("muc")) if s(g.get("muc")) in ("vung", "mot_phan", "ho") else "",
-                        "danh_gia": s(g.get("danh_gia")), "nguon": nguon(g.get("nguon"))},
-        "diem": [], "con_bo_ngo": [], "bo": [],
-    }
-    if so_la(out["gap_bai_neu"]["danh_gia"]):
-        out["bo"].append("đánh giá khoảng trống mang số không có trong bài")
-        out["gap_bai_neu"]["danh_gia"] = ""
-    for it in ds(d.get("diem"))[:6]:
+    gap = {"muc": s(g.get("muc")) if s(g.get("muc")) in ("vung", "mot_phan", "ho") else "",
+           "cach_dat": s(g.get("cach_dat")), "danh_gia": s(g.get("danh_gia")),
+           "nguon": nguon(g.get("nguon"))}
+    if so_la(gap["cach_dat"], gap["danh_gia"]):
+        bo.append("đánh giá khoảng trống mang số không có trong bài")
+        gap.update(cach_dat="", danh_gia="")
+
+    mach = []
+    for it in ds(d.get("mach"))[:4]:
         if not isinstance(it, dict):
             continue
         x = {"loai": s(it.get("loai")) if s(it.get("loai")) in prompts.PHAN_BIEN_LOAI else "",
-             "diem": s(it.get("diem")), "vi_sao": s(it.get("vi_sao")),
-             "nguon": nguon(it.get("nguon")), "cau_hoi": s(it.get("cau_hoi"))}
-        if not x["diem"] or not x["vi_sao"]:
+             "nguon": nguon(it.get("nguon")),
+             **{k: s(it.get(k)) for k in TANG_PHAN_BIEN}}
+        if not x["dau_hieu"]:
             continue
-        la = so_la(x["diem"], x["vi_sao"], x["cau_hoi"])
+        la = so_la(*[x[k] for k in TANG_PHAN_BIEN])
         if la:
-            out["bo"].append(f"“{x['diem'][:60]}” mang số không có trong bài ({', '.join(la[:3])})")
+            bo.append(f"“{x['dau_hieu'][:60]}” mang số không có trong bài ({', '.join(la[:3])})")
             continue
-        out["diem"].append(x)
-    for it in ds(d.get("con_bo_ngo"))[:3]:
-        if isinstance(it, dict) and s(it.get("cau_hoi")) and not so_la(it.get("cau_hoi"), it.get("vi_sao")):
-            out["con_bo_ngo"].append({"cau_hoi": s(it.get("cau_hoi")), "vi_sao": s(it.get("vi_sao"))})
+        mach.append(x)
+
+    mo = [{"cau_hoi": s(it.get("cau_hoi")), "vi_sao": s(it.get("vi_sao"))}
+          for it in ds(d.get("con_bo_ngo"))[:3]
+          if isinstance(it, dict) and s(it.get("cau_hoi"))
+          and not so_la(it.get("cau_hoi"), it.get("vi_sao"))]
+    return {"v": 2, "gia_dinh_nen": nen, "gap_bai_neu": gap, "mach": mach,
+            "con_bo_ngo": mo, "bo": bo}
+
+
+def _tu(s: str) -> set[str]:
+    return {w for w in re.findall(r"\w+", (s or "").lower()) if len(w) > 2}
+
+
+def phan_bien_nong(pb: dict) -> dict[int, list[str]]:
+    """Mạch nào còn nông, kèm ĐÚNG lời chê — đưa nguyên văn vào vòng viết lại.
+
+    Bản đầu ra một danh sách dấu hiệu ("một seed", "thiếu ablation") và người
+    dùng gọi thẳng tên kiểu hỏng: "chỉ là dấu hiệu, chưa rút ra được các tầng suy
+    nghĩ sâu hơn". Bốn phép kiểm cơ học, mỗi phép bắt một cách một mạch dừng ở
+    bề mặt:
+
+    - thiếu tầng: có dấu hiệu mà không có giả định, giải thích khác, hệ quả,
+      phép thử;
+    - giải thích khác chỉ lặp lại giả định (trùng từ nhiều) — đó là phủ định
+      suông, không phải một cơ chế khác;
+    - phép thử không có hai nhánh dự đoán — không phân xử được gì;
+    - giả định hay hệ quả rỗng / chung chung; giải thích khác không nói cơ chế.
+
+    Chê chung chung ("viết sâu hơn") thì model viết DÀI hơn chứ không sâu hơn.
+    """
+    out: dict[int, list[str]] = {}
+    for i, m in enumerate(pb.get("mach") or []):
+        che = []
+        thieu = [k for k in TANG_PHAN_BIEN[1:] if len(m.get(k) or "") < 25]
+        if thieu:
+            che.append("thiếu hoặc quá ngắn ở tầng: " + ", ".join(thieu))
+        a, b = _tu(m.get("gia_dinh")), _tu(m.get("giai_thich_khac"))
+        if a and b and len(a & b) / max(1, min(len(a), len(b))) > 0.6:
+            che.append("giải thích khác gần như lặp lại giả định. Phải là MỘT CƠ CHẾ KHÁC "
+                       "cũng sinh ra đúng kết quả đã quan sát, nói nó vận hành thế nào")
+        pt = m.get("phep_thu") or ""
+        if pt and not (_HAI_NHANH.search(pt) or pt.lower().count("nếu") >= 2):
+            che.append("phép thử chưa có hai nhánh. Phải nói kết quả dự đoán khi giả định "
+                       "của tác giả đúng VÀ khi cách giải thích khác đúng")
+        # Giả định và hệ quả là MỆNH ĐỀ, không cần "vì… nên…" — chấm chúng bằng
+        # `missing_mechanism` là kêu oan (đã thấy trong test: cả hai tầng của
+        # một mạch tốt bị chê). Chỉ bắt cụm rỗng và lời nói chung chung. Tầng
+        # giải thích khác thì ngược lại: nó PHẢI nói một cơ chế.
+        for k in ("gia_dinh", "neu_sai"):
+            t = m.get(k) or ""
+            if depth.find_filler(t) or depth.vague_claim(t):
+                che.append(f"{k}: còn chung chung, nói cụ thể điều gì, đo bằng gì")
+        if m.get("giai_thich_khac") and depth.missing_mechanism(m["giai_thich_khac"]):
+            che.append("giải thích khác chưa nói cơ chế: vì sao nó cũng sinh ra đúng kết quả ấy")
+        if che:
+            out[i] = che
     return out
 
 
@@ -713,19 +781,42 @@ async def run_phan_bien(doc_id: str) -> tuple[dict, dict, dict]:
     doc = store.load(doc_id)
     if not doc.get("brief"):
         raise ValueError("Bài chưa có tóm lược — dịch hoặc dựng tóm lược trước.")
-    raw, usage = await llm.complete(
-        [llm.system_message(cached_prefix(doc), prompts.PHAN_BIEN_TASK, model=doc["model"]),
-         {"role": "user", "content": "Viết phần gap phản biện cho bài báo này."}],
-        model=doc["model"], session_id=doc_id, max_tokens=PHAN_BIEN_RA + 3000,
-        temperature=0.3,
-        # Độ sâu đến từ cấu trúc bắt buộc (gap → điểm có loại, nguồn, câu hỏi),
-        # không từ nghĩ thầm — cùng lý do với `explain_block`: để `effort: low`
-        # thì V4 Flash tiêu sạch trần vào phần nghĩ rồi trả chuỗi rỗng.
-        reasoning=NO_REASONING)
+    sysmsg = llm.system_message(cached_prefix(doc), prompts.PHAN_BIEN_TASK, model=doc["model"])
+    hoi = {"role": "user", "content": "Viết phần phản biện theo tầng cho bài báo này."}
+
+    async def goi(msgs):
+        return await llm.complete(
+            msgs, model=doc["model"], session_id=doc_id, max_tokens=PHAN_BIEN_RA + 3000,
+            temperature=0.3,
+            # Độ sâu đến từ cấu trúc năm tầng + vòng đào sâu có lời chê cụ thể,
+            # không từ nghĩ thầm — để `effort: low` thì V4 Flash tiêu sạch trần
+            # vào phần nghĩ rồi trả chuỗi rỗng (xem `explain_block`).
+            reasoning=NO_REASONING)
+
+    raw, usage = await goi([sysmsg, hoi])
     try:
         data = llm.extract_json(raw)
     except Exception:                       # noqa: BLE001
         data = None
+
+    # Vòng đào sâu: mạch nào nông thì viết lại KÈM đúng lời chê, một lượt. Prefix
+    # vừa được lượt trên làm ấm nên lượt này chủ yếu trả tiền phần viết ra.
+    dao_sau = 0
+    if isinstance(data, dict):
+        nong = phan_bien_nong(chuan_hoa_phan_bien(doc, data))
+        if nong:
+            dao_sau = len(nong)
+            che = "\n".join(f"- Mạch {i + 1}: " + "; ".join(c) for i, c in nong.items())
+            try:
+                raw2, u2 = await goi([sysmsg, hoi, {"role": "assistant", "content": raw},
+                                      {"role": "user", "content": prompts.PHAN_BIEN_DAO_SAU
+                                       + "\nLời chê:\n" + che}])
+                usage.add(u2)
+                d2 = llm.extract_json(raw2)
+                if isinstance(d2, dict) and (d2.get("mach") or []):
+                    data = d2
+            except Exception:               # noqa: BLE001 — giữ bản đầu
+                pass
     doc = store.load(doc_id)                # tải lại: lượt dịch song song có thể vừa ghi
     total = llm.Usage(**doc.get("usage", {}))
     total.add(usage)
@@ -734,7 +825,8 @@ async def run_phan_bien(doc_id: str) -> tuple[dict, dict, dict]:
         store.save(doc)                     # vẫn ghi chi phí: lượt hỏng cũng đã trả tiền
         raise ValueError("Model không trả về JSON đọc được — thử lại.")
     pb = chuan_hoa_phan_bien(doc, data)
-    pb.update(model=doc["model"], luc=time.time(), chi_phi=round(usage.cost, 5))
+    pb.update(model=doc["model"], luc=time.time(), chi_phi=round(usage.cost, 5),
+              dao_sau=dao_sau, con_nong=len(phan_bien_nong(pb)))
     if doc.get("brief"):
         doc["brief"]["phan_bien"] = pb
     store.save(doc)
