@@ -699,7 +699,9 @@ body { padding-left: var(--rail-w); }
 
 /* --------------------------------------------------------------- sidebar */
 .side {
-  width: 320px; flex: none; border-right: 2.5px solid var(--muc); background: var(--surface);
+  /* Bề ngang qua biến, cùng lý do với `--pdf-w`: ở màn hẹp `.side.open` thành
+     lớp phủ `width: 86vw`, và luật đó phải thắng được. */
+  width: var(--side-w, 320px); flex: none; position: relative; border-right: 2.5px solid var(--muc); background: var(--surface);
   display: flex; flex-direction: column; min-height: 0;
 }
 .side-tabs { display: flex; border-bottom: 2px solid var(--muc); flex: none; padding: 0 .2rem; }
@@ -1253,6 +1255,8 @@ sub { bottom: -.22em; }
 .pane-grip:hover, .pane-grip:focus-visible, .pane-grip.is-drag {
   background: var(--accent); outline: none;
 }
+/* Vách của cột trái nằm ở mép PHẢI, đè lên nét mực 2,5px của chính cột. */
+.side-grip { left: auto; right: -4px; }
 /* Trong lúc kéo phải tắt chọn chữ trên cả trang: con trỏ đi qua cột văn bản là
    bôi đen cả đoạn, và vùng chọn đó còn nằm lại sau khi thả. */
 body.is-resizing { user-select: none; cursor: col-resize; }

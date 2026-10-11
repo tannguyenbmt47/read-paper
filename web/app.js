@@ -523,6 +523,7 @@ async function init() {
   wireViewMenu();
   wireFind();
   wirePdfPane();
+  wireSideGrip();
   wireHighlights();
   wireFigPeek();
   wireHashNav();
@@ -2708,6 +2709,11 @@ async function togglePdf(open) {
   // xuống dưới mức tối thiểu.
   const luu = pref("pdfw", "");
   if (luu) pdfSetWidth(+luu, false);
+  // Rồi nhường chỗ từ cột TRÁI: khung PDF ở bề rộng mặc định 40% không đi qua
+  // `pdfClamp`, nên cột trái đang kéo rộng 700px thì cột đọc bị bóp còn 127px.
+  // Người dùng vừa bấm mở PDF, nên khung PDF được ưu tiên giữ bề rộng của nó.
+  const trai = pref("sidew", "");
+  if (trai) sideSetWidth(+trai, false);
   if (!pdfv.pages) {
     try {
       pdfv.pages = (await fetch(`/api/doc/${state.doc.id}/pdfinfo`).then((r) => r.json())).pages || 0;
@@ -2771,6 +2777,62 @@ function pdfResetWidth() {
   localStorage.removeItem(PREF + "pdfw");
 }
 
+/** Nối dây cho một vách kéo bề rộng. Dùng chung cho khung PDF (vách ở mép
+    TRÁI, kéo sang trái là nới ra) và cột trái (vách ở mép PHẢI, kéo sang phải
+    là nới ra) — `chieu` là dấu của phép kéo đó. Hai bản chép riêng thì sửa
+    một bẫy ở bên này là bên kia vẫn còn nguyên.
+
+    Kéo bằng Pointer Events chứ không phải mouse: `setPointerCapture` giữ được
+    sự kiện cả khi con trỏ chạy ra ngoài cửa sổ, nên kéo mạnh một cái không làm
+    vách tuột mất giữa chừng. Và nó nhận cả bút lẫn cảm ứng, miễn phí. */
+function noiVachKeo({ grip, khung, khoa, dat, veMacDinh, chieu }) {
+  const rongNay = () => khung().getBoundingClientRect().width;
+  let x0 = 0, w0 = 0;
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button) return;
+    x0 = e.clientX;
+    w0 = rongNay();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add("is-drag");
+    document.body.classList.add("is-resizing");
+    e.preventDefault();
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!grip.classList.contains("is-drag")) return;
+    dat(w0 + chieu * (e.clientX - x0), false);
+  });
+  const xong = (e) => {
+    if (!grip.classList.contains("is-drag")) return;
+    grip.classList.remove("is-drag");
+    document.body.classList.remove("is-resizing");
+    try { grip.releasePointerCapture(e.pointerId); } catch { /* đã nhả rồi */ }
+    setPref(khoa, Math.round(rongNay()));
+  };
+  grip.addEventListener("pointerup", xong);
+  grip.addEventListener("pointercancel", xong);
+  grip.ondblclick = veMacDinh;
+
+  // Bàn phím: vách là `role="separator"` có `tabindex`, nên phải kéo được bằng
+  // mũi tên — chuột không phải đường duy nhất vào một điều khiển.
+  grip.addEventListener("keydown", (e) => {
+    const buoc = e.shiftKey ? 64 : 16;
+    if (e.key === "ArrowRight") dat(rongNay() + chieu * buoc);
+    else if (e.key === "ArrowLeft") dat(rongNay() - chieu * buoc);
+    else if (e.key === "Home" || e.key === "Escape") veMacDinh();
+    else return;
+    e.preventDefault();
+  });
+
+  // Thu cửa sổ nhỏ lại thì bề rộng đã lưu có thể vượt chỗ còn. Ghim lại từ
+  // GIÁ TRỊ ĐÃ LƯU chứ không từ bề rộng hiện tại, và không ghi đè sở thích:
+  // đo lại từ hiện tại thì mỗi lần thu nhỏ là mất một ít, nới cửa sổ ra khung
+  // không bao giờ to lại như cũ.
+  window.addEventListener("resize", () => {
+    const luu = pref(khoa, "");
+    if (luu) dat(+luu, false);
+  });
+}
+
 function wirePdfPane() {
   $("#pdfBtn").onclick = () => togglePdf($("#pdfPane").classList.contains("hidden"));
   $("#pdfClose").onclick = () => togglePdf(false);
@@ -2782,53 +2844,50 @@ function wirePdfPane() {
   const luu = pref("pdfw", "");
   if (luu) pdfSetWidth(+luu, false);   // ghim lại: màn hình lần này có thể hẹp hơn
 
-  /* Kéo bằng Pointer Events chứ không phải mouse: `setPointerCapture` giữ được
-     sự kiện cả khi con trỏ chạy ra ngoài cửa sổ, nên kéo mạnh một cái không làm
-     vách tuột mất giữa chừng. Và nó nhận cả bút lẫn cảm ứng, miễn phí. */
-  const grip = $("#pdfGrip");
-  let x0 = 0, w0 = 0;
-  grip.addEventListener("pointerdown", (e) => {
-    if (e.button) return;
-    x0 = e.clientX;
-    w0 = $("#pdfPane").getBoundingClientRect().width;
-    grip.setPointerCapture(e.pointerId);
-    grip.classList.add("is-drag");
-    document.body.classList.add("is-resizing");
-    e.preventDefault();
+  noiVachKeo({
+    grip: $("#pdfGrip"), khung: () => $("#pdfPane"), khoa: "pdfw",
+    dat: pdfSetWidth, veMacDinh: pdfResetWidth, chieu: -1,
   });
-  grip.addEventListener("pointermove", (e) => {
-    if (!grip.classList.contains("is-drag")) return;
-    pdfSetWidth(w0 - (e.clientX - x0), false);   // kéo sang trái là nới rộng ra
-  });
-  const xong = (e) => {
-    if (!grip.classList.contains("is-drag")) return;
-    grip.classList.remove("is-drag");
-    document.body.classList.remove("is-resizing");
-    try { grip.releasePointerCapture(e.pointerId); } catch { /* đã nhả rồi */ }
-    setPref("pdfw", Math.round($("#pdfPane").getBoundingClientRect().width));
-  };
-  grip.addEventListener("pointerup", xong);
-  grip.addEventListener("pointercancel", xong);
-  grip.ondblclick = pdfResetWidth;
+}
 
-  // Bàn phím: vách là `role="separator"` có `tabindex`, nên phải kéo được bằng
-  // mũi tên — chuột không phải đường duy nhất vào một điều khiển.
-  grip.addEventListener("keydown", (e) => {
-    const buoc = e.shiftKey ? 64 : 16;
-    if (e.key === "ArrowLeft") pdfSetWidth($("#pdfPane").getBoundingClientRect().width + buoc);
-    else if (e.key === "ArrowRight") pdfSetWidth($("#pdfPane").getBoundingClientRect().width - buoc);
-    else if (e.key === "Home" || e.key === "Escape") pdfResetWidth();
-    else return;
-    e.preventDefault();
-  });
+/* Bề rộng cột trái (Tóm lược / Lập luận / Thuật ngữ / Mục lục). Tóm lược và
+   chuỗi phản biện là văn xuôi dài, 320px cố định thì mỗi dòng năm sáu từ; còn
+   lúc chỉ liếc mục lục thì 320px lại là chỗ cột đọc cần hơn. Không có một bề
+   rộng đúng cho mọi lúc, nên để người đọc kéo. */
+const SIDE_MIN = 240;
+const SIDE_MAX = 720;
 
-  // Thu cửa sổ nhỏ lại thì bề rộng đã lưu có thể vượt chỗ còn. Ghim lại từ
-  // GIÁ TRỊ ĐÃ LƯU chứ không từ bề rộng hiện tại, và không ghi đè sở thích:
-  // đo lại từ hiện tại thì mỗi lần thu nhỏ là mất một ít, nới cửa sổ ra khung
-  // không bao giờ to lại như cũ.
-  window.addEventListener("resize", () => {
-    const luu = pref("pdfw", "");
-    if (luu) pdfSetWidth(+luu, false);
+/** Ghim bề rộng cột trái theo chỗ CÒN LẠI: trừ khung PDF nếu đang mở, chừa
+    `DOC_MIN` cho cột đọc — cùng lý do với `pdfClamp`, đo mỗi lần vì khung
+    PDF đóng mở được. */
+function sideClamp(px) {
+  const trai = $("#side");
+  const hang = trai.parentElement;
+  const pdf = $("#pdfPane");
+  const rong = (hang ? hang.clientWidth : 0) || window.innerWidth;
+  const chiem = pdf && !pdf.classList.contains("hidden") ? pdf.getBoundingClientRect().width : 0;
+  const tran = Math.max(SIDE_MIN, Math.min(SIDE_MAX, rong - chiem - DOC_MIN));
+  return Math.round(Math.max(SIDE_MIN, Math.min(px, tran)));
+}
+
+function sideSetWidth(px, luu = true) {
+  const w = sideClamp(px);
+  $("#side").style.setProperty("--side-w", w + "px");
+  if (luu) setPref("sidew", w);
+  return w;
+}
+
+function sideResetWidth() {
+  $("#side").style.removeProperty("--side-w");
+  localStorage.removeItem(PREF + "sidew");
+}
+
+function wireSideGrip() {
+  const luu = pref("sidew", "");
+  if (luu) sideSetWidth(+luu, false);
+  noiVachKeo({
+    grip: $("#sideGrip"), khung: () => $("#side"), khoa: "sidew",
+    dat: sideSetWidth, veMacDinh: sideResetWidth, chieu: 1,
   });
 }
 
@@ -2888,6 +2947,10 @@ const narrow = () => matchMedia("(max-width: 1000px)").matches;
 function toggleSide(open) {
   $("#side").classList.toggle("open", open);
   setPref("side", open ? "1" : "0");
+  // Ghim lại lúc MỞ, như khung PDF: lúc đóng thì cột không chiếm chỗ, nên
+  // khung PDF có thể đã được nới ra phần chỗ ấy trong lúc cột trái vắng mặt.
+  const luu = pref("sidew", "");
+  if (open && luu) sideSetWidth(+luu, false);
   $(".side-veil")?.remove();
   if (!open || !narrow()) return;
   const veil = document.createElement("div");

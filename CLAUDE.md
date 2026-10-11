@@ -1154,6 +1154,15 @@ bước lớn, Home/Esc về mặc định): chuột không được là đườ
 khiển. Bề rộng lưu ở `localStorage` khoá `docdoc:pdfw` — thuộc về máy đang ngồi,
 không phải thuộc tính của bài.
 
+**Cột trái cũng kéo được** (`#sideGrip`, biến `--side-w`, khoá `docdoc:sidew`,
+240–720px). Hai vách đi qua MỘT hàm `noiVachKeo({…, chieu})` — vách PDF ở mép
+trái (`chieu: -1`), vách cột trái ở mép phải (`chieu: 1`); hai bản chép thì sửa
+bẫy bên này là bên kia còn nguyên. `sideClamp` trừ khung PDF như `pdfClamp` trừ
+cột trái, và **mở khung PDF phải ghim lại cả cột trái**: khung PDF ở bề rộng
+mặc định 40% không đi qua `pdfClamp`, nên cột trái đang rộng 700px mà mở PDF
+thì cột đọc còn **127px** (đã đo). Khung vừa được bấm mở thì giữ bề rộng của
+nó, cột trái nhường.
+
 ### Ô xem trước hình: kéo và phóng
 
 Bấm vào chữ *"Figure 3"* trong bài mở `#figPeek` — cửa sổ nhỏ cho biết chỗ đó
