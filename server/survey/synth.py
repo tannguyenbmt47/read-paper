@@ -33,7 +33,7 @@ import time
 
 from .. import depth, llm
 from . import db as sdb
-from . import prompts, verify
+from . import bientap, prompts, verify
 
 STRONG = os.getenv("SURVEY_MODEL") or llm.DEFAULT_MODEL
 LOW_REASONING = {"effort": "low"}
@@ -109,9 +109,10 @@ async def build(survey_id: str):
         yield "error", {"msg": f"Model trả về không phải JSON hợp lệ: {e}"}
         return
 
-    yield "stage", {"msg": "soát trích dẫn và số liệu", "pct": 85}
     data = _clean(survey_id, data, lin)
-    data["warns"] = check(survey_id, data)
+    async for kind, payload in ban_bien_tap(survey_id, data, strong, _fast, pct0=60):
+        yield kind, payload
+    usage.add(data.pop("_usage_bt"))
     data["created_at"] = time.time()
     data["cost"] = round(usage.cost, 5)
     data["papers"] = len(carded)
@@ -120,6 +121,75 @@ async def build(survey_id: str):
 
     yield "done", {"synth": data, "cost": round(usage.cost, 5),
                    "usage": usage.dict(), "secs": round(time.time() - t0, 1)}
+
+
+_NHAN = {"scope": "phạm vi", "problem": "bài toán", "statement": "phát biểu",
+         "why_hard": "khó ở đâu", "framings": "cách đặt vấn đề", "approaches": "hướng",
+         "idea": "ý tưởng", "mechanism": "cơ chế", "bet": "đặt cược", "cost": "cái giá",
+         "falsify": "điều sẽ bác bỏ", "evidence": "bằng chứng", "claim": "khẳng định",
+         "novelty": "cái mới", "new": "mới", "assembled": "ghép từ", "tensions": "chỗ nói ngược",
+         "about": "về", "why": "vì sao", "sides": "phía", "gaps": "khoảng trống",
+         "gap": "khoảng trống", "read_order": "thứ tự đọc", "name": "tên", "desc": "mô tả"}
+
+
+def nhan_muc(path: tuple) -> str:
+    """("approaches", 0, "mechanism") → "hướng 1 · cơ chế" — người đọc thử cần
+    biết ô đang đọc nằm ở đâu trong mạch, như người đọc thật lướt từ trên xuống."""
+    out = []
+    for k in path:
+        out.append(str(k + 1) if isinstance(k, int) else _NHAN.get(k, k))
+    return " · ".join(out)
+
+
+async def ban_bien_tap(survey_id: str, data: dict, strong: str, fast: str, pct0: int = 60):
+    """Cho bản tổng hợp qua ban biên tập (`bientap.soat`), rồi soát lại lần cuối.
+
+    Ghi `warns` (chỉ sạn nặng còn lại) và `bien_tap` (biên bản) vào `data`. Chi
+    phí để ở `data["_usage_bt"]` cho nơi gọi cộng dồn."""
+    truoc = len(check(survey_id, data))
+    usage = llm.Usage()
+    log: list[dict] = []
+    async for kind, payload in bientap.soat(survey_id, data, kieu="tong_hop",
+                                            strong=strong, fast=fast, nhan_muc=nhan_muc):
+        if kind == "stage":
+            pct0 = min(95, pct0 + 8)
+            yield "stage", {**payload, "pct": pct0}
+        else:
+            log, usage = payload["nhat_ky"], payload["usage"]
+    yield "stage", {"msg": "soát lại lần cuối", "pct": 96}
+    con_lai = bientap.nghiem_trong(check(survey_id, data))
+    data["warns"] = con_lai
+    data["bien_tap"] = bientap.tom_tat(log, con_lai, usage, truoc)
+    data["_usage_bt"] = usage
+
+
+async def soat_lai(survey_id: str):
+    """Chạy ban biên tập trên bản tổng hợp ĐÃ CÓ — không viết lại từ đầu.
+
+    Bản dựng trước khi có ban biên tập vẫn mang nguyên hộp sạn; dựng lại tốn
+    ~$0,09 cho phần viết, trong khi soát chỉ tốn vài phần mười xu."""
+    s = sdb.load_survey(survey_id)
+    data = s.get("synth") or {}
+    if not data.get("approaches") and not (data.get("problem") or {}).get("statement"):
+        yield "error", {"msg": "Chưa có bản tổng hợp để soát. Bấm Dựng trước."}
+        return
+    t0 = time.time()
+    strong, fast = sdb.models_of(survey_id)
+    async for kind, payload in ban_bien_tap(survey_id, data, strong, fast, pct0=5):
+        yield kind, payload
+    u = data.pop("_usage_bt")
+    data["cost"] = round((data.get("cost") or 0) + u.cost, 5)
+    # `save_synth` chốt vân tay HIỆN TẠI của kho. Bản đã cũ (kho đổi sau khi
+    # dựng) mà soát xong lại mang vân tay mới thì cờ "Kho đã đổi" biến mất —
+    # trong khi soát không đọc thêm bài nào. Giữ vân tay cũ cho bản cũ.
+    fp_cu = sdb.conn().execute("SELECT synth_fp FROM survey WHERE id = ?",
+                               (survey_id,)).fetchone()[0]
+    sdb.save_synth(survey_id, data)
+    if s.get("synth_stale"):
+        with sdb.conn() as c:
+            c.execute("UPDATE survey SET synth_fp = ? WHERE id = ?", (fp_cu, survey_id))
+    yield "done", {"synth": data, "cost": round(u.cost, 5), "usage": u.dict(),
+                   "secs": round(time.time() - t0, 1)}
 
 
 def _clean(survey_id: str, d: dict, lin: list[dict]) -> dict:
@@ -189,20 +259,25 @@ def _clean(survey_id: str, d: dict, lin: list[dict]) -> dict:
     return out
 
 
-def _cites(d: dict) -> list[tuple[str, str]]:
-    """Mọi (mã đoạn, câu chứa nó) trong bản tổng hợp, để đem đi soát."""
+def _cites(d: dict) -> list[tuple[str, str, list[str]]]:
+    """Mọi (mã đoạn, câu chứa nó, đoạn phụ) trong bản tổng hợp, để đem đi soát.
+
+    Đoạn phụ (`cite_them`) do ban biên tập gắn khi số của một câu rải ở hai
+    đoạn — "906±21, vượt 838±11" ở bảng, ngưỡng "900" ở đoạn mô tả. Luật vẫn
+    nguyên: mỗi con số phải có nguyên văn trong MỘT đoạn mà câu đã trích."""
     out = []
     for a in d.get("approaches", []):
         for e in a.get("evidence", []):
             if e.get("cite"):
-                out.append((e["cite"], e.get("claim", "")))
+                out.append((e["cite"], e.get("claim", ""), e.get("cite_them") or []))
     for n in d.get("novelty", []):
         if n.get("cite"):
-            out.append((n["cite"], f"{n.get('new','')} {n.get('assembled','')}"))
+            out.append((n["cite"], f"{n.get('new','')} {n.get('assembled','')}",
+                        n.get("cite_them") or []))
     for t in d.get("tensions", []):
         for s in t.get("sides", []):
             if s.get("cite"):
-                out.append((s["cite"], s.get("claim", "")))
+                out.append((s["cite"], s.get("claim", ""), s.get("cite_them") or []))
     return out
 
 
@@ -218,24 +293,25 @@ def check(survey_id: str, d: dict) -> list[dict]:
     cites = _cites(d)
     # Lọc theo kho: trích dẫn trỏ sang kho khác vẫn tra ra được nếu không lọc,
     # và tệ hơn là phép soát số dưới đây lấy chính đoạn ngoại lai làm chân lý.
-    rows = sdb.get_chunks([c for c, _ in cites], survey_id)
+    rows = sdb.get_chunks([c for c, _, them in cites for c in [c, *them]], survey_id)
 
     # 1) mã đoạn phải có thật
-    for cid, claim in cites:
+    for cid, claim, _them in cites:
         if cid not in rows:
             warns.append({"kind": "cite_lạ", "msg": f"trích dẫn [{cid}] không có trong kho",
                           "text": depth.cat_gon(claim, 140)})
 
     # 2) số trong câu phải có mặt nguyên văn trong đoạn đã trích
-    for cid, claim in cites:
+    for cid, claim, them in cites:
         row = rows.get(cid)
         if not row or not claim:
             continue
-        body = verify._URLISH.sub(" ", claim)
+        body = verify.tach_don_vi(verify._URLISH.sub(" ", claim))
         nums = verify._NUM.findall(body)
         if not nums:
             continue
-        have = verify.source_numbers(f"{row['text']} {row.get('vi') or ''}")
+        have = verify.source_numbers(" ".join(
+            f"{r['text']} {r.get('vi') or ''}" for r in (rows.get(c) for c in [cid, *them]) if r))
         miss = [n for n in nums if verify._norm(n) not in have]
         if miss:
             warns.append({"kind": "số_bịa",

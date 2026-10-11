@@ -1254,3 +1254,129 @@ def test_van_tay_kieu_cu_duoc_chuyen_khi_kho_khong_doi(client, sdb, kho):
         c.execute("UPDATE survey SET synth_fp = 'abc123kieucu' WHERE id = ?", (kho["sid"],))
     sdb.add_paper(kho["sid"], title="bài thêm sau", status="new", sha256="sMoi")
     assert sdb.load_survey(kho["sid"])["synth_stale"] is True
+
+
+# ------------------------------------------------------------- ban biên tập
+
+
+def test_ban_bien_tap_go_sac_truoc_khi_toi_nguoi_doc(client, sdb, kho, monkeypatch):
+    """Bản tổng hợp từng ra mắt kèm hộp "9 chỗ cần soát lại" — mà 9/9 là số CÓ
+    THẬT bị gắn nhầm đoạn. Ban biên tập phải: gắn lại trích dẫn (máy, $0), sửa
+    mã bài viết thừa đuôi, nhận bản viết lại hợp lệ, và TRẢ VỀ bản viết lại nào
+    đưa vào con số không có trong bài."""
+    import asyncio
+    import json as _json
+
+    from server import llm
+    from server.survey import synth
+
+    sid, p1 = kho["sid"], kho["p1"]
+    data = {
+        "title": "t", "scope": "",
+        "problem": {"statement": "", "why_hard": "Truy hồi nhiều chặng khó vì mỗi chặng phụ thuộc chặng trước.",
+                    "framings": []},
+        "approaches": [{
+            "name": "CIRAG", "idea": "", "bet": "", "cost": "", "falsify": "x",
+            "mechanism": "CIRAG cải thiện chất lượng truy hồi cho câu hỏi bắc cầu một cách đáng kể.",
+            "papers": [p1 + "b"],                               # thừa đuôi
+            "evidence": [{"claim": "CIRAG đạt 62.3 EM trên HotpotQA, hơn DPR 58.2 EM.",
+                          "cite": f"{p1}c1"}],                  # số nằm ở c2
+        }],
+        "novelty": [], "tensions": [], "gaps": [], "read_order": [], "lineage": [],
+    }
+
+    vai_da_goi = []
+
+    async def gia_model(messages, model, **kw):
+        sys_ = messages[0]["content"]
+        if "nghiên cứu sinh năm nhất" in sys_:
+            vai_da_goi.append("doc_thu")
+            # tìm ô cơ chế trong bản viết để chỉ ra chỗ mơ hồ
+            o = next(l.split("]")[0][1:] for l in messages[1]["content"].split("\n\n")
+                     if "cải thiện chất lượng" in l)
+            return _json.dumps({"van_de": [{"o": o, "cau": "cải thiện chất lượng truy hồi",
+                                            "loai": "mơ_hồ", "can": "cải thiện bằng cách nào"}]}), llm.Usage(cost=0.0001)
+        if "biên tập viên" in sys_:
+            vai_da_goi.append("bien_tap")
+            o = messages[1]["content"].split("### ")[1].split(" ")[0]
+            return _json.dumps({"sua": {o: "CIRAG dựng lại mạch suy luận sau mỗi chặng truy hồi, "
+                                           "nhờ đó chặng sau dùng đúng thực thể chặng trước tìm ra."}}), llm.Usage(cost=0.0002)
+        vai_da_goi.append("kiem_chung")
+        return _json.dumps({"ket_qua": []}), llm.Usage(cost=0.0001)
+
+    monkeypatch.setattr(llm, "complete", gia_model)
+
+    async def chay():
+        async for _k, _p in synth.ban_bien_tap(sid, data, "m", "m"):
+            pass
+    asyncio.run(chay())
+
+    ap = data["approaches"][0]
+    assert ap["papers"] == [p1]                                  # sửa mã bài
+    assert ap["evidence"][0]["cite"] == f"{p1}c2"                # gắn lại đúng đoạn chứa số
+    assert ap["mechanism"].startswith("CIRAG dựng lại mạch")      # nhận bản viết lại
+    bt = data["bien_tap"]
+    assert bt["sua"] >= 3 and bt["con_lai"] == [] and data["warns"] == []
+    assert "doc_thu" in vai_da_goi and "bien_tap" in vai_da_goi
+    assert bt["chi_phi"] > 0
+
+
+def test_bien_tap_vien_khong_duoc_them_so_la(sdb, kho, monkeypatch):
+    """Chốt cùng tinh thần `content_kept`: bản viết lại mang một con số không có
+    trong bài thì bị trả về bản cũ — cho model sửa tự do là đổi sạn lấy sạn."""
+    import asyncio
+    import json as _json
+
+    from server import llm
+    from server.survey import bientap
+
+    sid, p1 = kho["sid"], kho["p1"]
+    goc = "CIRAG cải thiện chất lượng truy hồi cho câu hỏi bắc cầu một cách đáng kể."
+    d = {"x": {"mechanism": goc}}
+
+    async def gia_model(messages, model, **kw):
+        if "biên tập viên" in messages[0]["content"]:
+            o = messages[1]["content"].split("### ")[1].split(" ")[0]
+            return _json.dumps({"sua": {o: "CIRAG tăng 17.4 điểm nhờ dựng lại mạch suy luận."}}), llm.Usage()
+        if "nghiên cứu sinh" in messages[0]["content"]:
+            return _json.dumps({"van_de": [{"o": "L1", "cau": "cải thiện", "loai": "mơ_hồ",
+                                            "can": "bằng cách nào"}]}), llm.Usage()
+        return "{}", llm.Usage()
+    monkeypatch.setattr(llm, "complete", gia_model)
+
+    async def chay():
+        out = None
+        async for k, p in bientap.soat(sid, d, kieu="bai_giang", paper_id=p1,
+                                       ids={f"{p1}c1"}, strong="m", fast="m"):
+            out = p if k == "xong" else out
+        return out
+    kq = asyncio.run(chay())
+    assert d["x"]["mechanism"] == goc
+    assert any("trả về" in x["viec"] for x in kq["nhat_ky"])
+
+
+def test_soat_so_khong_bao_oan_don_vi_dinh_lien_va_so_viet_bang_chu():
+    """Hai ca báo oan đo được trên kho thật: "25.7mm" bị bóc thành "25" (bài ghi
+    "25.7 mm"), và "5 tác vụ" trong khi bài viết "five tasks". Còn "Qwen2.5-7B"
+    vẫn KHÔNG được thành số liệu — chỉ tách đơn vị đo vật lý."""
+    from server.survey import verify
+    assert verify._NUM.findall(verify.tach_don_vi("MPJPE-L 25.7mm, Qwen2.5-7B")) == ["25.7"]
+    assert {"5", "3"} <= verify.source_numbers("evaluated on five tasks with three seeds")
+
+
+def test_bien_tap_khong_duoc_doi_ten_rieng_ma_nguon_khong_co():
+    from server.survey import bientap
+    assert bientap.ten_la("SONIC dùng GEM", "SONIC … We adopt GEM (Li et al.)") == []
+    assert bientap.ten_la("SONIC dùng GENMO", "SONIC … We adopt GEM") == ["GENMO"]
+
+
+def test_thu_ky_doi_ma_noi_bo_trong_chu_thanh_ten_bai(sdb, kho):
+    """"P5 là bài kinh điển…", "Bài thứ nhất (p50d58cb2d3b)" — nhãn ta đặt cho
+    model và mã DB lọt vào văn xuôi, người đọc không biết là bài nào. Mã đoạn
+    trong chữ thì gỡ hẳn cùng ngoặc (chỗ để bấm kiểm là trường `cite`)."""
+    from server.survey import bientap, prompts
+    papers = sdb.list_papers(kho["sid"])
+    nhan = prompts.paper_labels(papers)[kho["p1"]]
+    d = {"scope": f"Bài thứ nhất ({kho['p1']}b) mở đầu, {nhan} là bài nền [{kho['p1']}c2] của kho."}
+    bientap.doi_ma_trong_chu(d, papers, nhan_p=True)
+    assert d["scope"] == "Bài thứ nhất (CIRAG) mở đầu, CIRAG là bài nền của kho."

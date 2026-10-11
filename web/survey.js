@@ -690,7 +690,10 @@ function svPaperChip(id) {
 }
 
 const svPaperList = (ids) => (ids || []).map(svPaperChip).join(" ");
-const svCite = (c) => (c ? ` <a class="sv-cite" data-cite="${esc(c)}">[${esc(c)}]</a>` : "");
+/* `them`: đoạn phụ mà ban biên tập gắn thêm khi số của một câu rải ở hai đoạn
+   (bảng kết quả ở đoạn này, ngưỡng so sánh ở đoạn kia). */
+const svCite = (c, them) => [c, ...(them || [])].filter(Boolean)
+  .map((x) => ` <a class="sv-cite" data-cite="${esc(x)}">[${esc(x)}]</a>`).join("");
 
 function svRenderSynth(d, stale) {
   const el = $("#svSyn");
@@ -743,7 +746,7 @@ function svRenderSynth(d, stale) {
         (a.papers || []).length ? `<p class="sv-plist">${svPaperList(a.papers)}</p>` : "");
       if ((a.evidence || []).length) {
         parts.push("<ul>");
-        a.evidence.forEach((e) => parts.push(`<li>${esc(e.claim)}${svCite(e.cite)}</li>`));
+        a.evidence.forEach((e) => parts.push(`<li>${esc(e.claim)}${svCite(e.cite, e.cite_them)}</li>`));
         parts.push("</ul>");
       }
       parts.push("</div>");
@@ -754,7 +757,7 @@ function svRenderSynth(d, stale) {
     // Mỗi bài một mục — kho trăm bài thì phần này dài bằng cả phần còn lại.
     parts.push('<h3 class="sv-syn-h2">Tính mới</h3><ul class="sv-nov" id="svNovList">');
     d.novelty.slice(0, SV_PAGE).forEach((n) => parts.push(
-      `<li>${svPaperChip(n.paper)} ${esc(n.new)}${svCite(n.cite)}`
+      `<li>${svPaperChip(n.paper)} ${esc(n.new)}${svCite(n.cite, n.cite_them)}`
       + (n.assembled ? `<br><span class="muted small">Phần ghép sẵn: ${esc(n.assembled)}</span>` : "")
       + "</li>"));
     parts.push("</ul>");
@@ -768,7 +771,7 @@ function svRenderSynth(d, stale) {
     d.tensions.forEach((t) => {
       parts.push('<div class="sv-tension">', `<b>${esc(t.about)}</b><ul>`);
       (t.sides || []).forEach((s) => parts.push(
-        `<li>${svPaperList(s.papers)} ${esc(s.claim)}${svCite(s.cite)}</li>`));
+        `<li>${svPaperList(s.papers)} ${esc(s.claim)}${svCite(s.cite, s.cite_them)}</li>`));
       parts.push("</ul>",
         t.why ? `<p class="small muted">Vì sao khác nhau: ${esc(t.why)}</p>` : "", "</div>");
     });
@@ -818,7 +821,7 @@ function svLinRow(g) {
 }
 
 function svNovRow(n) {
-  return `<li>${svPaperChip(n.paper)} ${esc(n.new)}${svCite(n.cite)}`
+  return `<li>${svPaperChip(n.paper)} ${esc(n.new)}${svCite(n.cite, n.cite_them)}`
     + (n.assembled ? `<br><span class="muted small">Phần ghép sẵn: ${esc(n.assembled)}</span>` : "")
     + "</li>";
 }
@@ -833,20 +836,95 @@ function svMoreSyn(key, sel, btn, row) {
   btn.remove();
 }
 
-function svSynWarns(w) {
-  $("#svSynWarns").innerHTML = (w || []).length
-    ? `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b><ul>`
-      + w.map((x) => `<li><i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}`
-        + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "") + "</li>").join("")
-      + "</ul></div>"
-    : "";
+/* ------------------------------------------------------ ban biên tập
+
+   Bản tổng hợp và bài giảng đi qua bốn vai trước khi tới người đọc (xem
+   `server/survey/bientap.py`). Thứ hiện ra ở đây là BIÊN BẢN của họ, gập lại
+   thành một dòng: bản trước đặt hộp vàng "9 chỗ cần soát lại" ngay đầu trang,
+   tức đẩy việc kiểm sang đúng người chưa đủ nền để kiểm — người dùng gọi đó là
+   "sạn cần người đọc check". Ai muốn biết đã sửa gì thì mở ra xem. */
+const SV_VAI = [
+  ["thu_ky", "Thư ký", "gắn lại trích dẫn sai đoạn, sửa mã bài — máy làm, miễn phí"],
+  ["doc_thu", "Người đọc thử", "chỉ đọc bản viết, không có bài gốc, chỉ ra chỗ người mới vướng"],
+  ["kiem_chung", "Người kiểm chứng", "so từng khẳng định còn ngờ với đoạn gốc"],
+  ["bien_tap", "Biên tập viên", "viết lại đúng những đoạn bị chỉ ra"],
+];
+
+function svBtTienTrinh(box, vai) {
+  const i = SV_VAI.findIndex(([k]) => k === vai);
+  $(box).innerHTML = `<ol class="sv-bt-buoc">${SV_VAI.map(([k, ten, viec], j) =>
+    `<li class="${j < i ? "xong" : j === i ? "dang" : ""}" title="${esc(viec)}">${esc(ten)}</li>`).join("")}</ol>`;
+}
+
+function svBtDong(x) {
+  const truoc = x.truoc ? `<s>${esc(x.truoc)}</s>` : "";
+  const sau = x.sau ? ` → <span>${esc(x.sau)}</span>` : "";
+  const cau = x.cau ? `<div class="muted">“${esc(x.cau)}”</div>` : "";
+  const can = x.can ? `<div class="muted">cần: ${esc(x.can)}</div>` : "";
+  const o = x.o ? `<div class="muted">${esc(x.o)}</div>` : "";
+  return `<li><b>${esc(x.viec)}</b>${o}${x.vai === "bien_tap" ? `<div class="sv-bt-sau">${esc(x.sau || "")}</div>`
+    : `<div>${truoc}${sau}</div>`}${cau}${can}</li>`;
+}
+
+/* `duongSoat`: đường SSE chạy ban biên tập trên bản ĐÃ CÓ, `xong`: nạp lại. */
+function svBt(box, data, duongSoat, xong) {
+  const el = $(box);
+  if (!data) { el.innerHTML = ""; return; }
+  const bt = data.bien_tap;
+  const w = data.warns || [];
+  if (!bt) {
+    // Bản dựng trước khi có ban biên tập: mời soát, không bày hộp sạn ra trước.
+    el.innerHTML = w.length ? `<div class="sv-bt sv-bt-moi">
+        <p>Bản này dựng trước khi có <b>ban biên tập</b>, nên còn ${w.length} chỗ chưa ai soát.
+          Ban biên tập gắn lại trích dẫn, kiểm từng con số với đoạn gốc và viết lại chỗ khó hiểu.</p>
+        <button class="btn btn-primary xs" data-bt-soat>Cho ban biên tập soát · dưới 1 xu</button>
+        <details><summary class="muted small">Xem ${w.length} chỗ</summary><ul>${w.map((x) =>
+          `<li>${esc(tenCanhBao(x.kind))} · ${esc(x.msg)}</li>`).join("")}</ul></details></div>` : "";
+  } else {
+    const dem = SV_VAI.filter(([k]) => (bt.theo_vai || {})[k])
+      .map(([k, ten]) => `${ten.toLowerCase()} ${bt.theo_vai[k]}`).join(" · ");
+    const nk = bt.nhat_ky || [];
+    const nhom = SV_VAI.map(([k, ten, viec]) => {
+      const ds = nk.filter((x) => x.vai === k);
+      return ds.length ? `<section><h5>${esc(ten)} <span class="muted">· ${esc(viec)}</span></h5>
+        <ul>${ds.map(svBtDong).join("")}</ul></section>` : "";
+    }).join("");
+    const con = (bt.con_lai || []).length
+      ? `<section class="sv-bt-con"><h5>Chưa gỡ được · ${bt.con_lai.length}</h5><ul>${bt.con_lai.map((x) =>
+          `<li>${esc(tenCanhBao(x.kind))} · ${esc(x.msg)}</li>`).join("")}</ul></section>` : "";
+    el.innerHTML = `<details class="sv-bt">
+      <summary><span class="sv-bt-dau" aria-hidden="true">✓</span>
+        Đã qua ban biên tập · sửa ${bt.sua} chỗ${dem ? ` <span class="muted">(${esc(dem)})</span>` : ""}${
+        (bt.con_lai || []).length ? ` · <span class="sv-bt-canh">còn ${bt.con_lai.length} chỗ chưa kiểm được</span>` : ""}</summary>
+      ${nhom}${con}
+      <p class="muted small">Ban biên tập tốn ${money(bt.chi_phi || 0)}.
+        <button class="sv-link" data-bt-soat>Soát lại lần nữa</button></p></details>`;
+  }
+  el.querySelectorAll("[data-bt-soat]").forEach((b) => {
+    b.onclick = () => {
+      b.disabled = true;
+      svBtTienTrinh(box, "thu_ky");
+      const es = new EventSource(duongSoat);
+      es.addEventListener("stage", (e) => {
+        const d = JSON.parse(e.data);
+        if (d.vai) svBtTienTrinh(box, d.vai);
+      });
+      es.addEventListener("done", () => { es.close(); xong(); });
+      es.addEventListener("error", (e) => {
+        let msg = "mất kết nối";
+        try { msg = JSON.parse(e.data).msg; } catch (_) { /* lỗi mạng */ }
+        el.insertAdjacentHTML("beforeend", `<p class="muted small">Lỗi: ${esc(msg)}</p>`);
+        es.close();
+      });
+    };
+  });
 }
 
 async function svLoadSynth() {
   if (!await svNeedId()) return;
   const d = await svFetch(`/api/survey/${SV.id}/synthesis`);
   svRenderSynth(d.synth, d.stale);
-  svSynWarns(d.synth?.warns);
+  svBt("#svSynWarns", d.synth, `/api/survey/${SV.id}/synthesis/soat`, svLoadSynth);
   $("#svSynMd").href = `/api/survey/${SV.id}/synthesis?fmt=md`;
   $("#svSynMd").classList.toggle("hidden", !d.synth);
   $("#svSynDrop").classList.toggle("hidden", !d.synth);
@@ -867,11 +945,12 @@ function svBuildSynth() {
   es.addEventListener("stage", (e) => {
     const d = JSON.parse(e.data);
     $("#svSynProg").textContent = `${d.msg}… (${svShort((SV.models || {}).strong)})`;
+    if (d.vai) svBtTienTrinh("#svSynWarns", d.vai);
   });
   es.addEventListener("done", (e) => {
     const d = JSON.parse(e.data);
     svRenderSynth(d.synth, false);
-    svSynWarns(d.synth.warns);
+    svBt("#svSynWarns", d.synth, `/api/survey/${SV.id}/synthesis/soat`, svLoadSynth);
     $("#svSynProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
     $("#svSynMd").classList.remove("hidden");
     $("#svSynDrop").classList.remove("hidden");
@@ -1484,7 +1563,7 @@ async function svLoadLec() {
 
   const d = await svFetch(`/api/survey/${SV.id}/paper/${pid}/lecture`);
   svRenderLec(d.lecture, d.stale);
-  svLecWarns(d.lecture?.warns);
+  svBt("#svLecWarns", d.lecture, `/api/survey/${SV.id}/paper/${pid}/lecture/soat`, svLoadLec);
   $("#svLecMd").href = `/api/survey/${SV.id}/paper/${pid}/lecture?fmt=md`;
   $("#svLecMd").classList.toggle("hidden", !d.lecture?.sections);
   $("#svLecDrop").classList.toggle("hidden", !d.lecture?.sections);
@@ -1521,42 +1600,6 @@ async function svLecRefs(pid) {
       ${(r.why || []).map((w) =>
         `<p class="small sv-why">chỗ dẫn: “${esc(catGon(w, 300))}”</p>`).join("")}
     </div>`).join("");
-}
-
-/* Gom cảnh báo TRÙNG LOẠI TRONG CÙNG MỘT MỤC lại thành một dòng gập được.
-
-   Ba mươi hai dòng "số X không tìm thấy trong bài", khác nhau đúng con số, đẩy
-   mọi cảnh báo khác ra khỏi tầm mắt — và một danh sách dài như thế thì người
-   dùng thôi đọc, lúc đó cảnh báo THẬT cũng trôi theo. Đã thấy đúng vậy trên
-   một bài thật. Nguyên nhân gốc đã sửa ở `lecture.CLAIM_SECTIONS`; gom ở đây là
-   để lần sau có kêu nhiều thì cũng không nuốt mất phần còn lại. */
-const SV_WARN_GROUP = 3;   // từ ngần này trở lên thì gập lại
-
-function svLecWarns(w) {
-  const box = $("#svLecWarns");
-  if (!(w || []).length) { box.innerHTML = ""; return; }
-
-  const groups = new Map();
-  w.forEach((x) => {
-    const k = `${x.section}|${x.kind}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(x);
-  });
-
-  const one = (x) => `<i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}`
-    + (x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : "");
-
-  const rows = [...groups.values()].map((g) => {
-    if (g.length < SV_WARN_GROUP) return g.map((x) => `<li>${one(x)}</li>`).join("");
-    const tieu = SV_LEC_TITLE[g[0].section] || g[0].section;
-    return `<li><details><summary><i>${esc(tenCanhBao(g[0].kind))}</i> ${tieu} — `
-      + `${g.length} chỗ</summary><ul>`
-      + g.map((x) => `<li>${esc(x.msg)}</li>`).join("")
-      + "</ul></details></li>";
-  }).join("");
-
-  box.innerHTML = `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b>`
-    + `<ul>${rows}</ul></div>`;
 }
 
 /* Mỗi mục có hình dạng riêng nên phải dựng riêng — đổ chung một khuôn thì
@@ -1655,6 +1698,7 @@ function svBuildLec() {
   es.addEventListener("stage", (e) => {
     const d = JSON.parse(e.data);
     $("#svLecProg").textContent = `${d.msg}… (${svShort((SV.models || {}).strong)})`;
+    if (d.vai) svBtTienTrinh("#svLecWarns", d.vai);
   });
   es.addEventListener("section", (e) => {
     const d = JSON.parse(e.data);
@@ -1667,7 +1711,7 @@ function svBuildLec() {
   es.addEventListener("done", (e) => {
     const d = JSON.parse(e.data);
     svRenderLec(d.lecture, false);
-    svLecWarns(d.lecture.warns);
+    svBt("#svLecWarns", d.lecture, `/api/survey/${SV.id}/paper/${pid}/lecture/soat`, svLoadLec);
     $("#svLecProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
     $("#svLecMd").classList.remove("hidden");
     $("#svLecDrop").classList.remove("hidden");

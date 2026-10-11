@@ -399,6 +399,13 @@ async def build_synth(sid: str):
         "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@router.get("/{sid}/synthesis/soat")
+async def soat_synth(sid: str):
+    """Cho bản tổng hợp đã có qua ban biên tập, phát SSE. **Tốn tiền** (ít)."""
+    _need(sid)
+    return _sse_tu(synth.soat_lai(sid))
+
+
 # ------------------------------------------------------------- bài giảng
 #
 # Ba route, và ranh giới giữa chúng là ranh giới TIỀN — cùng lối với luồng
@@ -452,6 +459,28 @@ async def get_refs(sid: str, pid: str, force: bool = False):
     if force and (dos.get("refs") or dos.get("s2_id")):
         refs.save(pid, dos)
     return dos
+
+
+def _sse_tu(nguon):
+    """Bọc một async generator ("stage"|"done"|"error", payload) thành SSE."""
+    async def gen():
+        try:
+            async for kind, payload in nguon:
+                yield _sse(kind, payload)
+        except Exception as e:               # noqa: BLE001
+            yield _sse("error", {"msg": f"{type(e).__name__}: {e}"[:300]})
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/{sid}/paper/{pid}/lecture/soat")
+async def soat_lecture(sid: str, pid: str):
+    """Cho bài giảng đã có qua ban biên tập, phát SSE. **Tốn tiền**, nhưng chỉ
+    vài phần mười xu — rẻ hơn dựng lại nhiều."""
+    _need(sid)
+    _need_paper(sid, pid)
+    return _sse_tu(lecture.soat_lai(pid))
 
 
 @router.get("/{sid}/paper/{pid}/lecture/build")

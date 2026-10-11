@@ -48,7 +48,7 @@ from .. import db as maindb
 from .. import depth, llm
 from ..pipeline import _NUM, _URLISH, _norm_num
 from . import db as sdb
-from . import ingest, prompts, refs, verify
+from . import bientap, ingest, prompts, refs, verify
 
 # **Tắt hẳn nghĩ thầm.** Đã vấp thật, hai mẻ trên bốn: model chạy 76 giây rồi
 # trả về chuỗi RỖNG — `extract_json` ném "không tìm thấy JSON" vì trong phản hồi
@@ -163,7 +163,11 @@ async def build(paper_id: str, *, deepen: bool = True):
         except Exception:                  # noqa: BLE001 — giữ bản đầu, cảnh báo vẫn hiện
             pass
 
-    yield "stage", {"msg": "soát số liệu và độ sâu", "pct": 92}
+    async for kind, payload in ban_bien_tap(paper_id, out, ids, strong, fast, pct0=80):
+        yield kind, payload
+    usage.add(out.pop("_usage_bt"))
+    bt = out.pop("_bien_tap")
+    warns = bientap.nghiem_trong(check(out, ids, paper_id))
 
     # Mục thiếu phải nằm trong KẾT QUẢ, không chỉ thoáng qua một dòng tiến trình:
     # mở lại bài giảng ngày hôm sau thì dòng đó đã trôi mất, mà một bài giảng
@@ -175,9 +179,11 @@ async def build(paper_id: str, *, deepen: bool = True):
                           "msg": f"Mục “{prompts.SECTIONS[n]['title']}” không dựng "
                                  "được — bấm Dựng lại để viết nốt"})
 
+    bt["con_lai"] = warns
     lec = {
         "sections": out,
         "warns": warns,
+        "bien_tap": bt,
         "refs": dos.get("refs") or [],
         "s2_id": dos.get("s2_id") or "",
         "n_refs_total": dos.get("n_refs") or 0,
@@ -190,6 +196,60 @@ async def build(paper_id: str, *, deepen: bool = True):
                      lecture_fp=lec["fp"])
     yield "done", {"lecture": lec, "cost": round(usage.cost, 5),
                    "usage": usage.dict(), "secs": round(time.time() - t0, 1)}
+
+
+def _nhan_muc(path: tuple) -> str:
+    """("mechanism", "steps", 2, "why") → "Cơ chế… · bước 3 · why"."""
+    out = [prompts.SECTIONS.get(path[0], {}).get("title", str(path[0]))]
+    for k in path[1:]:
+        out.append(f"mục {k + 1}" if isinstance(k, int) else str(k))
+    return " · ".join(out)
+
+
+async def ban_bien_tap(paper_id: str, sections: dict, ids: set[str], strong: str,
+                       fast: str, pct0: int = 80):
+    """Cho bài giảng qua ban biên tập (`bientap.soat`). Sửa `sections` tại chỗ;
+    biên bản để ở `sections["_bien_tap"]`, chi phí ở `sections["_usage_bt"]`."""
+    sid = sdb.load_paper(paper_id, full=False)["survey_id"]
+    truoc = len(check(sections, ids, paper_id))
+    usage, log = llm.Usage(), []
+    async for kind, payload in bientap.soat(
+            sid, sections, kieu="bai_giang", paper_id=paper_id, ids=ids,
+            strong=strong, fast=fast, nhan_muc=_nhan_muc,
+            kiem_so=lambda p: p[0] in CLAIM_SECTIONS,
+            soat_sau=lambda p: p[0] != "check"):
+        if kind == "stage":
+            pct0 = min(95, pct0 + 4)
+            yield "stage", {**payload, "pct": pct0}
+        else:
+            log, usage = payload["nhat_ky"], payload["usage"]
+    sections["_bien_tap"] = bientap.tom_tat(log, [], usage, truoc)
+    sections["_usage_bt"] = usage
+
+
+async def soat_lai(paper_id: str):
+    """Ban biên tập trên bài giảng ĐÃ CÓ — không viết lại. Vân tay giữ nguyên:
+    soát không đọc lại hồ sơ đối chiếu nên không làm bài giảng cũ thành mới."""
+    p = sdb.load_paper(paper_id)
+    lec = json.loads(p.get("lecture") or "{}")
+    out = lec.get("sections") or {}
+    if not out:
+        yield "error", {"msg": "Bài này chưa có bài giảng để soát. Bấm Dựng trước."}
+        return
+    t0 = time.time()
+    strong, fast = sdb.models_of(p["survey_id"])
+    ids = {c["id"] for c in sdb.paper_chunks(paper_id, level=0)}
+    async for kind, payload in ban_bien_tap(paper_id, out, ids, strong, fast, pct0=5):
+        yield kind, payload
+    u = out.pop("_usage_bt")
+    bt = out.pop("_bien_tap")
+    warns = bientap.nghiem_trong(check(out, ids, paper_id))
+    bt["con_lai"] = warns
+    lec.update(sections=out, warns=warns, bien_tap=bt,
+               cost=round((lec.get("cost") or 0) + u.cost, 5))
+    sdb.update_paper(paper_id, lecture=json.dumps(lec, ensure_ascii=False))
+    yield "done", {"lecture": lec, "cost": round(u.cost, 5), "usage": u.dict(),
+                   "secs": round(time.time() - t0, 1)}
 
 
 async def _one(sysmsg, paper: dict, names: tuple[str, ...], dtext: str,
@@ -284,7 +344,7 @@ def _numbers(name: str, data) -> list[str]:
         blob += " " + (data.get("limits_of_evidence") or "")
     else:
         blob = " ".join(t for _, t in _texts(name, data))
-    blob = _TIMEISH.sub(" ", _URLISH.sub(" ", blob))
+    blob = verify.tach_don_vi(_TIMEISH.sub(" ", _URLISH.sub(" ", blob)))
     return [m.group(0) for m in _NUM.finditer(blob)]
 
 

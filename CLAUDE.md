@@ -1967,6 +1967,64 @@ Cột trái: tên bài là nút nhảy tới bài đó trên bản đồ; thao t
 ⋯ (bản trước hiện khi rê chuột — rê qua cột để bấm tên bài là cả cột nhảy). Bài
 từ phần Dịch mang chip "từ bản dịch" thay cho "đủ", và có nút Bơm nội dung.
 
+### Ban biên tập (`server/survey/bientap.py`) — sạn phải gỡ TRƯỚC khi tới người đọc
+
+Bản tổng hợp và bài giảng từng ra mắt kèm hộp vàng *"9 chỗ cần soát lại"* ngay
+đầu trang. Người dùng gọi đó là "sạn cần người đọc check": chốt chặn bắt đúng,
+nhưng đẩy việc kiểm sang đúng người chưa đủ nền để kiểm. Giờ sau bước viết là
+bốn vai, và người đọc chỉ thấy một dòng gập *"✓ Đã qua ban biên tập · sửa N
+chỗ"*:
+
+| Vai | Chạy bằng | Việc |
+|---|---|---|
+| Thư ký | máy, $0 | gắn lại trích dẫn, sửa mã bài, đổi mã nội bộ trong chữ thành tên bài |
+| Người đọc thử | model rẻ | CHỈ đọc bản viết (không bài gốc), chỉ chỗ người mới vướng |
+| Người kiểm chứng | model kho | so câu còn ngờ với đoạn gốc: đúng / sửa / bỏ, khai lại nguồn |
+| Biên tập viên | model kho | viết lại đúng những ô bị chỉ, tối đa 2 vòng kèm lý do bị trả |
+
+**Đọc dữ liệu thật trước khi thiết kế, vì phần lớn sạn KHÔNG phải bịa.** Kho
+thử: 9/9 cảnh báo "số bịa" là số có thật gắn nhầm đoạn (model trích đoạn tóm tắt
+`c1` cho số nằm ở bảng). Bài giảng SONIC: 109 cảnh báo, gần hết là mã đoạn của
+bài khác lọt vào `source`. Thư ký miễn phí đưa cả ba bản tổng hợp trong `data/`
+về 0 sạn nặng mà chưa gọi model nào. Đo một lượt soát đầy đủ: $0,0016–0,0034,
+13–80 giây.
+
+Năm chỗ đã vấp khi chạy thật, đều đo được trong biên bản:
+
+- **Số của một câu rải ở hai đoạn** ("906±21, vượt 838±11" ở bảng, ngưỡng "900"
+  ở đoạn mô tả; "49% so với 31%" ở bảng, "hơn 2 lần" ở tóm tắt). Đòi một đoạn
+  chứa đủ thì câu đúng vẫn bị báo. Giờ trích dẫn mang thêm `cite_them` (`phu_so`
+  chọn tối đa hai đoạn), `synth.check` đối chiếu số với cả hai, `svCite` hiện
+  cả hai. Luật không đổi: mỗi con số có nguyên văn trong MỘT đoạn đã trích.
+- **Chốt "số lạ" đối chiếu với cả kho là quá lỏng.** Đã lọt "cỡ mẫu nhỏ
+  (10-20…)" vì số nhỏ kho nào cũng có. Số mới chỉ được lấy từ CHÍNH các đoạn đã
+  đưa cho vai đó (hoặc có sẵn trong bản cũ — ví dụ giả định ở mục cơ chế).
+- **Biên tập viên đổi được tên riêng.** "GENMO" → "GEM": lần này đúng (bài ghi
+  GEM), nhưng đúng vì tình cờ có đoạn nguồn. `ten_la` trả về bản viết lại nào
+  đưa vào tên viết hoa mà nguồn không có.
+- **Biên tập viên có thể đặt sạn mới**: thêm "49%, 31%, 33%" từ đoạn nguồn vào
+  một câu vẫn trích đoạn tóm tắt. Thư ký chạy thêm một lượt CUỐI, sau biên tập.
+- **Mã nội bộ lọt vào văn xuôi** ("P5 là bài kinh điển…", "(p50d58cb2d3b)").
+  Chốt cũ chỉ soát trường `papers`, người đọc thử tưởng là ký hiệu của bài nên
+  cũng bỏ qua — lộ ra lúc chụp màn hình. `doi_ma_trong_chu` đổi thành tên ngắn.
+
+Vòng đầu biên tập viên bị trả 6/9 lần (đánh rơi số, thêm số, dài quá). Vòng hai
+gửi lại đúng những ô ấy kèm lý do và danh sách số phải giữ; không có vòng hai
+thì đúng những chỗ người đọc thử vướng nhất (NSVQ, SMPL, OOD là gì) vẫn nằm
+nguyên.
+
+Hai bẫy phía đo số, sửa ở `verify`: "25.7mm" bị `_NUM` bóc thành "25"
+(`tach_don_vi`, chỉ đơn vị đo vật lý — tách mọi chữ thì "Qwen2.5-7B" thành số
+liệu), và bài viết "five tasks" trong khi bản Việt viết "5 tác vụ" (số viết bằng
+chữ vào `source_numbers`, phía nguồn rộng tay như đã ghi).
+
+Bản dựng TRƯỚC khi có ban biên tập không mang `bien_tap`: giao diện mời "Cho ban
+biên tập soát" (`…/synthesis/soat`, `…/lecture/soat`) — soát trên bản đã có,
+không viết lại. `synth.soat_lai` giữ vân tay cũ nếu bản đang cũ, không thì soát
+xong cờ "Kho đã đổi" biến mất dù không đọc thêm bài nào. Với bài giảng,
+`kiem_so` chỉ soát số ở `CLAIM_SECTIONS` — mục cơ chế cố ý kể ví dụ giả định, và
+người kiểm chứng sẽ XOÁ câu ví dụ vì không đoạn nào đỡ nó.
+
 ### Trang giới thiệu và hướng dẫn (`docs/`)
 
 `docs/index.html` (giới thiệu) + `docs/huong-dan.html` (hướng dẫn từng bước), dùng

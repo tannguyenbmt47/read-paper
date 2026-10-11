@@ -616,7 +616,7 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
   #svPaneLec .sv-synbar .sv-inline { min-width: 0; }
 }
 
-/* Nhóm cảnh báo gập lại — xem `svLecWarns`. */
+/* Nhóm cảnh báo gập lại (ô cảnh báo của hỏi đáp). */
 .sv-warnbox details > summary { cursor: pointer; }
 .sv-warnbox details[open] > summary { margin-bottom: 4px; }
 .sv-warnbox details ul { margin: 2px 0 0; padding-left: 18px; }
@@ -773,3 +773,51 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
   .sv-pane-map { overflow-y: auto; }
   .bd-pan { border-left: 0; border-top: 1px solid var(--line); }
 }
+
+/* ================================================================ ban biên tập
+   Biên bản của bốn vai soát bản viết — xem `svBt` và `server/survey/bientap.py`.
+   Gập thành MỘT dòng có dấu ✓: biên bản là để ai muốn thì mở, không phải thứ
+   đứng chắn trước bài như hộp vàng "chỗ cần soát" của bản trước. */
+.sv-bt {
+  margin: 10px 0 18px; padding: 8px 12px; border: 1.5px solid var(--line);
+  border-radius: var(--radius); background: var(--surface); font-size: 13px;
+}
+.sv-bt > summary { cursor: pointer; color: var(--ink-2); list-style: none; }
+.sv-bt > summary::-webkit-details-marker { display: none; }
+.sv-bt-dau {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px;
+  border-radius: 50%; border: 1.5px solid var(--muc); background: var(--c-g);
+  color: var(--ink); font-size: 12px; font-weight: 700;
+}
+.sv-bt-canh { color: var(--warn, var(--ink-2)); }
+.sv-bt section { margin-top: 12px; }
+.sv-bt h5 { font-family: var(--display); font-size: 14px; margin: 0 0 4px; color: var(--ink); }
+.sv-bt ul { margin: 0; padding-left: 18px; }
+.sv-bt li { margin: 5px 0; line-height: 1.45; }
+.sv-bt li s { color: var(--muted); }
+.sv-bt-sau {
+  margin-top: 3px; padding: 6px 9px; background: var(--bg);
+  border-radius: var(--radius); border: 1px dashed var(--line);
+}
+.sv-bt-moi { border-style: dashed; border-color: var(--muc); }
+.sv-bt-moi p { margin: 0 0 8px; color: var(--ink-2); }
+.sv-bt-moi details { margin-top: 8px; }
+
+/* Tiến trình: bốn trạm nối nhau, trạm đang chạy tô dạ quang. Người dùng thấy
+   bản viết đang đi qua tay ai — chờ 30 giây mà biết đang có người đọc thử thì
+   khác hẳn chờ một dòng "đang soát…". */
+.sv-bt-buoc {
+  display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 10px 0 16px;
+  counter-reset: tram;
+}
+.sv-bt-buoc li {
+  counter-increment: tram; font-size: 12.5px; padding: 3px 10px 3px 6px; border-radius: 999px;
+  border: 1.5px solid var(--line); color: var(--muted); background: var(--surface);
+}
+.sv-bt-buoc li::before {
+  content: counter(tram); display: inline-grid; place-items: center; width: 18px; height: 18px;
+  margin-right: 5px; border-radius: 50%; background: var(--surface-2); font-size: 11px;
+}
+.sv-bt-buoc li.dang { border-color: var(--muc); color: var(--ink); background: var(--c-y); font-weight: 600; }
+.sv-bt-buoc li.xong { color: var(--ink-2); border-color: var(--muc); }
+.sv-bt-buoc li.xong::before { content: "✓"; background: var(--c-g); }

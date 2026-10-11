@@ -69,7 +69,27 @@ def source_numbers(text: str) -> set[str]:
     # hàng nghìn rồi thêm cả dạng đó vào, chứ đừng bắt hai bên viết giống nhau.
     out |= {_norm(m.group(1).replace(",", "").replace(".", ""))
             for m in _NUM_SRC.finditer(text or "") if "," in m.group(1) or "." in m.group(1)}
+    # Bài viết số đếm bằng chữ ("on five tasks", "three seeds"), bản tiếng Việt
+    # viết bằng số. Báo oan đúng ca này: "5 tác vụ" bị chấm là số không có nguồn.
+    # Phía nguồn bóc rộng tay chỉ giảm báo động giả, không làm lọt số bịa.
+    out |= {_SO_CHU[w] for w in _CHU_SO.findall((text or "").lower())}
     return out
+
+
+_SO_CHU = {w: str(i) for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve".split())}
+_SO_CHU.update(twenty="20", thirty="30", forty="40", fifty="50", hundred="100")
+_CHU_SO = re.compile(r"\b(" + "|".join(_SO_CHU) + r")\b")
+
+# Đơn vị đo dính liền sau số: "25.7mm" thì `_NUM` (cố ý chặt, xem trên) chỉ bóc
+# được "25", trong khi bài ghi "25.7 mm" — báo oan. Chỉ tách những đơn vị đo vật
+# lý: tách mọi chữ cái thì "Qwen2.5-7B" thành "7 B" và kích cỡ mô hình bị đếm là
+# số liệu, đúng thứ `_NUM` sinh ra để tránh.
+_DON_VI = re.compile(r"(\d)(mm|cm|km|ms|Hz|kHz|GHz|fps|FPS|ms|s|m|kg|g)\b")
+
+
+def tach_don_vi(text: str) -> str:
+    return _DON_VI.sub(r"\1 \2", text or "")
 
 
 def split_sentences(answer: str) -> list[dict]:
