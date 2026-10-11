@@ -2045,6 +2045,13 @@ a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: trans
 #slides .topbar-actions .btn { white-space: nowrap; }
 #slides .topbar-actions select { width: auto; }
 .sl2-trong { flex: 1; display: grid; place-items: center; padding: 2rem 1rem; }
+/* Thanh ban biên tập của bộ slide: một dòng gập, dùng lại `.sv-bt` của phần Tìm
+   hiểu để hai chỗ cùng một kiểu. Mở ra thì cuộn trong chính nó, không đẩy màn
+   sửa slide xuống khỏi khung nhìn. */
+.sl2-bt { flex: none; padding: .4rem 1rem 0; }
+.sl2-bt .sv-bt { margin: 0; max-height: 40vh; overflow-y: auto; }
+.sl2-bt .sv-bt-buoc { margin: .2rem 0 .3rem; }
+.sl2-bt-moi { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 .sl2-trong-hop {
   max-width: 36rem; text-align: center; background: var(--surface); border: 2px solid var(--muc);
   border-radius: 14px; box-shadow: 5px 5px 0 var(--bong); padding: 2rem 2rem 1.6rem;

@@ -17,7 +17,7 @@ from fastapi import Response  # noqa: E402
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from . import db, layout, llm, parser, pipeline, prompts, slide, store, thongtin  # noqa: E402
+from . import db, layout, llm, parser, pipeline, prompts, slide, slide_soat, store, thongtin  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
@@ -1921,6 +1921,32 @@ async def slides_xoa(doc_id: str, sid: str):
     doc["slides"] = s
     store.save(doc)
     return _slides_ra(doc)
+
+
+@app.get("/api/doc/{doc_id}/slides/soat")
+async def slides_soat(doc_id: str):
+    """Cho bộ slide qua ban biên tập (`slide_soat.soat`), phát SSE. **Tốn tiền**:
+    hai lượt đọc cả bộ (rẻ, không đi qua prefix) cộng `viet_lai` cho đúng những
+    slide bị chỉ ra (tối đa `slide_soat.TRAN_SUA`)."""
+    doc = _doc_slide(doc_id)
+    if not slide.lay(doc)["bo"]:
+        raise HTTPException(400, "Chưa có bộ slide để soát.")
+
+    async def gen():
+        try:
+            async for kind, payload in slide_soat.soat(doc_id):
+                if kind == "stage":
+                    yield _sse("stage", json.dumps(payload, ensure_ascii=False))
+                else:
+                    yield _sse("done", json.dumps({
+                        "slides": _slides_ra(store.load(doc_id)), "bien_tap": payload["bien_tap"],
+                        "run": payload["usage"].dict(), "total": payload["tong"].dict()},
+                        ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001
+            yield _sse("error", json.dumps({"message": f"{type(e).__name__}: {e}"}))
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/doc/{doc_id}/slides/{sid}/viet-lai")

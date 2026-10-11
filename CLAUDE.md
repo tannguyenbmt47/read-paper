@@ -930,6 +930,36 @@ nên thử sửa tại chỗ phải bật `Emulation.setFocusEmulationEnabled`. 
 tải về mang `Content-Disposition: attachment` — điều hướng thẳng tới URL đó trong
 headless là tải file chứ không hiện trang; lưu ra đĩa rồi mở bằng `file://`.
 
+### Ban biên tập slide (`server/slide_soat.py`) — slide trống không được lên màn chiếu
+
+Đã gặp thật ở bộ 30 phút: một mẻ viết chữ viết lời nói cho slide "Mong muốn"
+mà bỏ sót `tieu_chi`, slide chỉ còn tiêu đề — và KHÔNG một cảnh báo nào, vì
+`chuan_hoa` soát từng trường chứ không ai hỏi "slide này có nội dung không". Cùng
+khuôn với ban biên tập của kho survey, bốn vai chạy ngay sau `tao` (giao diện
+tự gọi `…/slides/soat`, SSE), và bộ cũ có nút "Cho ban biên tập soát":
+
+- **Thư ký** (`than_rong`, $0): vai thiếu danh sách chính (`LOI_VAI`: `yeu_cau`
+  cần ≥2 `tieu_chi`, `co_che` ≥2 `buoc`…) hoặc thân dưới 10 chữ mà không hình.
+- **Người xem thử**: đọc cả bộ như KHÁN GIẢ — chỉ chữ trên slide, KHÔNG lời
+  nói, không bài gốc (cùng lý do phép chấm subagent chỉ nhìn ảnh: có lời nói
+  thì nó tự lấp chỗ trống và báo ổn). Có test canh lời nói không lọt tới nó.
+- **Người kiểm chứng**: đặt kết luận của `bang_chung` / `so_sanh` / `so_lieu`
+  cạnh đoạn nguồn VÀ chữ trong bảng (`chu_vung_hinh`) — nhắm đúng lỗi lớn nhất
+  còn lại là kết luận nói quá so với chính bảng. Bản sửa mang số bịa
+  (`so_bia`) bị trả về; biên bản chỉ ghi "đã sửa" lúc bản sửa THẬT SỰ được nhận
+  (bản đầu ghi trước khi soát số, kể một lần sửa không hề có).
+- **Biên tập viên là `viet_lai` có sẵn**, lời chê làm gợi ý — không đẻ bộ viết
+  thứ hai. Tối đa `TRAN_SUA = 8` slide, song song 3; phần vượt trần vào
+  `con_lai` chứ không bị lờ đi; slide vẫn trống sau khi viết lại thì gắn
+  `canh_bao`.
+
+Đo trên bộ 35 slide (Distilling the Knowledge, V4 Flash): 15 giây, $0,0098 —
+slide "Mong muốn" có lại hai tiêu chí kèm căn cứ, người xem thử chỉ ra 10 chỗ
+khán giả vướng (logits, hard targets, dustbin class, WER chưa giải nghĩa…), 8
+slide được viết lại, 5 kết luận đối chiếu xong không cái nào nói quá. Bẫy đã
+vấp: `trich` của slide trích đoạn là danh sách object `{id, chu, anh}`, không
+phải chuỗi.
+
 ### Hình gắn nhầm: hai lỗi ở tầng BÓC chứ không ở slide
 
 Báo cáo 9-10 (S1/S2/S16): slide nói Recall mà chiếu bảng ablation, nói độ trễ mà

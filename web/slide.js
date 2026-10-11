@@ -9,7 +9,7 @@
    mỗi slide (báo cáo test S10, nhận xét chuyên gia D1). Sửa thì bấm thẳng vào
    chữ trên slide; đổi hình thì bấm vào hình. */
 
-const SLD = { bo: [], chon: null, phut: 15, dangTao: false };
+const SLD = { bo: [], chon: null, phut: 15, dangTao: false, bienTap: null, dangSoat: false };
 
 const sldAnh = (s) => (s.anh ? `/api/doc/${state.doc.id}/img/${s.anh}.png?v=${s.anh_ver || ""}` : "");
 const sldCtx = (sua = false) => ({
@@ -74,6 +74,7 @@ async function openSlides() {
   const d = r.ok ? await r.json() : { bo: [] };
   SLD.bo = d.bo || [];
   SLD.phut = d.phut || 15;
+  SLD.bienTap = d.bien_tap || null;
   $("#slPhut").value = String(SLD.phut);
   if (!SLD.bo.some((s) => s.id === SLD.chon)) SLD.chon = SLD.bo[0]?.id || null;
   sldVe();
@@ -89,9 +90,93 @@ function sldVe() {
   for (const id of ["#slPhut", "#slTao", "#slChieu"]) $(id).classList.toggle("hidden", !co);
   $("#slModel").classList.toggle("hidden", !co);
   $("#slTai").closest(".menu").classList.toggle("hidden", !co);
+  $("#slBt").classList.toggle("hidden", !co);
   if (!co) return sldTrong();
+  sldBt();
   sldDai();
   sldSan();
+}
+
+/* ------------------------------------------------------------ ban biên tập
+
+   Bốn vai soát bộ slide trước khi đem đi chiếu (`server/slide_soat.py`): thư
+   ký bắt slide trống thân, người xem thử đọc cả bộ như khán giả (không lời nói,
+   không bài gốc), người kiểm chứng đặt kết luận cạnh số liệu thật, biên tập
+   viên viết lại đúng slide bị chỉ ra. Đã gặp thật: slide "Mong muốn" chỉ còn
+   tiêu đề mà không một cảnh báo nào. Biên bản gập thành một dòng, cùng kiểu với
+   phần Tìm hiểu (`.sv-bt`). */
+const SLD_VAI = [
+  ["thu_ky", "Thư ký", "bắt slide trống thân — máy làm, miễn phí"],
+  ["doc_thu", "Người xem thử", "đọc cả bộ như khán giả: không lời nói, không bài gốc"],
+  ["kiem_chung", "Người kiểm chứng", "đặt kết luận cạnh số liệu thật trong bài"],
+  ["bien_tap", "Biên tập viên", "viết lại đúng slide bị chỉ ra"],
+];
+
+function sldBtTram(vai) {
+  const i = SLD_VAI.findIndex(([k]) => k === vai);
+  $("#slBt").innerHTML = `<ol class="sv-bt-buoc">${SLD_VAI.map(([k, ten, viec], j) =>
+    `<li class="${j < i ? "xong" : j === i ? "dang" : ""}" title="${esc(viec)}">${esc(ten)}</li>`).join("")}</ol>`;
+}
+
+function sldBt() {
+  const el = $("#slBt");
+  if (SLD.dangSoat) return;
+  const bt = SLD.bienTap;
+  const so = (id) => { const i = SLD.bo.findIndex((x) => x.id === id); return i < 0 ? id : `slide ${i + 1}`; };
+  if (!bt) {
+    el.innerHTML = `<div class="sv-bt sv-bt-moi sl2-bt-moi"><span>Bộ này chưa qua <b>ban biên tập</b>:
+      chưa ai soát slide trống, chỗ khán giả vướng, và kết luận so với số liệu.</span>
+      <button class="btn btn-primary xs" id="slBtGo">Cho ban biên tập soát · khoảng 1 xu</button></div>`;
+  } else {
+    const dem = SLD_VAI.filter(([k]) => (bt.theo_vai || {})[k])
+      .map(([k, ten]) => `${ten.toLowerCase()} ${bt.theo_vai[k]}`).join(" · ");
+    const nhom = SLD_VAI.map(([k, ten, viec]) => {
+      const ds = (bt.nhat_ky || []).filter((x) => x.vai === k);
+      return ds.length ? `<section><h5>${esc(ten)} <span class="muted">· ${esc(viec)}</span></h5><ul>${
+        ds.map((x) => `<li>${x.o ? `<button class="sv-link" data-sld="${esc(x.o)}">${esc(so(x.o))}</button> · ` : ""}<b>${esc(x.viec)}</b>${
+          x.sau ? ` — ${esc(x.sau)}` : ""}${x.can ? `<div class="muted">${esc(x.can)}</div>` : ""}</li>`).join("")}</ul></section>` : "";
+    }).join("");
+    const con = (bt.con_lai || []).length
+      ? `<section class="sv-bt-con"><h5>Chưa gỡ được · ${bt.con_lai.length}</h5><ul>${
+          bt.con_lai.map((x) => `<li>${esc(x.msg)}</li>`).join("")}</ul></section>` : "";
+    el.innerHTML = `<details class="sv-bt"><summary><span class="sv-bt-dau" aria-hidden="true">✓</span>
+        Đã qua ban biên tập · sửa ${bt.sua} chỗ${dem ? ` <span class="muted">(${esc(dem)})</span>` : ""}${
+        (bt.con_lai || []).length ? ` · <span class="sv-bt-canh">còn ${bt.con_lai.length} chỗ chưa gỡ</span>` : ""}</summary>
+      ${nhom}${con}<p class="muted small">Ban biên tập tốn ${money(bt.chi_phi || 0)}.
+        <button class="sv-link" id="slBtGo">Soát lại lần nữa</button></p></details>`;
+  }
+  $$("#slBt [data-sld]").forEach((b) => (b.onclick = () => { SLD.chon = b.dataset.sld; sldDai(); sldSan(); }));
+  const go = $("#slBtGo");
+  if (go) go.onclick = () => sldSoat();
+}
+
+function sldSoat() {
+  if (SLD.dangSoat) return;
+  SLD.dangSoat = true;
+  sldBtTram("thu_ky");
+  const es = new EventSource(`/api/doc/${state.doc.id}/slides/soat`);
+  const xong = () => { es.close(); SLD.dangSoat = false; };
+  es.addEventListener("stage", (e) => {
+    const d = JSON.parse(e.data);
+    if (d.vai) sldBtTram(d.vai);
+  });
+  es.addEventListener("done", (e) => {
+    const d = JSON.parse(e.data);
+    xong();
+    SLD.bo = d.slides.bo || [];
+    SLD.bienTap = d.bien_tap;
+    if (!SLD.bo.some((s) => s.id === SLD.chon)) SLD.chon = SLD.bo[0]?.id || null;
+    state.doc.usage = d.total;
+    sldVe();
+    baoNhanh(`Ban biên tập sửa ${d.bien_tap.sua} chỗ · ${money(d.bien_tap.chi_phi || 0)}`);
+  });
+  es.addEventListener("error", (e) => {
+    let msg = "mất kết nối";
+    try { msg = JSON.parse(e.data).message; } catch (_) { /* lỗi mạng */ }
+    xong();
+    sldBt();
+    baoNhanh("Ban biên tập dừng giữa chừng: " + msg);
+  });
 }
 
 /* ------------------------------------------------------------ màn trống */
@@ -171,9 +256,13 @@ async function sldTao() {
     const d = await r.json();
     SLD.bo = d.slides.bo || [];
     SLD.chon = SLD.bo[0]?.id || null;
+    SLD.bienTap = null;
     state.doc.usage = d.total;
     sldVe();
-    baoNhanh(`Đã soạn ${SLD.bo.length} slide · ${money(d.run.cost)}`);
+    baoNhanh(`Đã soạn ${SLD.bo.length} slide · ${money(d.run.cost)} · ban biên tập đang soát…`);
+    // Bộ mới đi thẳng qua ban biên tập: slide trống, chỗ khán giả vướng và kết
+    // luận nói quá phải được gỡ TRƯỚC khi người dùng đem đi chiếu.
+    sldSoat();
   } catch (e) {
     // Lỗi phải nói bằng lời và mời thử lại — không đẩy exception thô (S11).
     if (await xacNhan("Chưa soạn được slide", e.message, { ok: "Thử lại", cancel: "Để sau" })) {

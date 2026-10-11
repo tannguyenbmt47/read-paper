@@ -1609,3 +1609,74 @@ def test_phan_bien_theo_tang_dao_sau_khi_mach_con_nong(app_client, monkeypatch):
     html = app_client.get(f"/api/doc/{did}/export?fmt=html").text
     for f in (md, html):
         assert "Phản biện theo tầng" in f and "Cách giải thích khác" in f and "Phép thử phân xử" in f
+
+
+def test_ban_bien_tap_slide_lap_slide_trong_va_soat_ket_luan(app_client, monkeypatch):
+    """Đã gặp thật: slide "Mong muốn" chỉ còn tiêu đề — `tieu_chi` rỗng, không
+    một cảnh báo. Ban biên tập phải: (1) thư ký bắt slide trống và biên tập viên
+    (`viet_lai`) lấp nó, KÈM lời chê làm gợi ý; (2) người xem thử không thấy lời
+    nói; (3) kết luận nói quá được sửa, nhưng bản sửa mang số bịa thì bị trả về;
+    (4) mọi thứ vào biên bản `slides.bien_tap`."""
+    import json
+    from server import llm, store
+
+    r = app_client.post("/api/import", data={
+        "text": "Bài slide soát\n\nMô hình đạt 42,5 điểm F1, cao hơn baseline 3,1 điểm.\n\n"
+                "Mục tiêu là nén tri thức của mô hình lớn vào mô hình nhỏ.",
+        "model": "test/sld", "force": "1"})
+    did = r.json()["id"]
+    d = store.load(did)
+    bid = d["blocks"][-1]["id"]
+    so_id = d["blocks"][1]["id"]
+    d["brief"] = {"title_vi": "Bài slide soát", "glossary": [],
+                  "argument_chain": [{"role": "problem", "step": "x"}]}
+    d["slides"] = {"v": 2, "phut": 15, "model": "test/sld", "bo": [
+        {"id": "s1", "vai": "yeu_cau", "tieu_de": "Cần nén tri thức", "tieu_chi": [],
+         "loi_noi": "LỜI NÓI BÍ MẬT không được lọt tới khán giả", "nguon": [bid], "canh_bao": []},
+        {"id": "s2", "vai": "bang_chung", "tieu_de": "Kết quả F1",
+         "doc_hinh": "Bảng so sánh điểm F1 của mô hình với baseline trên tập chính.",
+         "ket_luan": "Mô hình luôn vượt mọi baseline trên mọi tập.", "so": [],
+         "loi_noi": "", "nguon": [so_id], "canh_bao": []},
+        {"id": "s3", "vai": "bang_chung", "tieu_de": "Kết quả phụ",
+         "doc_hinh": "Bảng so sánh điểm F1 của mô hình với baseline trên tập phụ.",
+         "ket_luan": "Mô hình hơn baseline trên tập chính.", "so": [],
+         "loi_noi": "", "nguon": [so_id], "canh_bao": []},
+    ]}
+    store.save(d)
+    goi = {"xem": [], "kiem": 0, "viet": []}
+
+    async def gia(messages, **kw):
+        he = json.dumps(messages[0], ensure_ascii=False)
+        if "khán giả" in he and "Bạn là khán giả" in he:
+            goi["xem"].append(messages[1]["content"])
+            return json.dumps({"van_de": [{"slide": "s1", "loai": "rong", "can": "nói tiêu chí cụ thể"}]}), llm.Usage(cost=0.001)
+        if "người kiểm chứng của ban biên tập" in he:
+            goi["kiem"] += 1
+            return json.dumps({"ket_qua": [
+                {"slide": "s2", "ket_luan": "sua", "cau_moi": "Mô hình hơn baseline 3,1 điểm F1.", "vi_sao": "nói quá"},
+                {"slide": "s3", "ket_luan": "sua", "cau_moi": "Mô hình hơn baseline 17,8 điểm.", "vi_sao": "bịa"},
+            ]}), llm.Usage(cost=0.001)
+        goi["viet"].append(messages[-1]["content"])
+        return json.dumps({"slides": [{"vai": "yeu_cau", "tieu_de": "Cần nén tri thức",
+                                       "tieu_chi": [{"ten": "Giữ khái quát", "vi_sao": "Mô hình nhỏ phải khái quát như mô hình lớn.",
+                                                     "can_cu": "Bài nói mục tiêu là nén tri thức.", "nguon": bid},
+                                                    {"ten": "Chạy nhanh", "vi_sao": "Triển khai cần mô hình nhỏ.",
+                                                     "can_cu": "Bài nói mục tiêu là nén tri thức.", "nguon": bid}],
+                                       "loi_noi": "x"}]}), llm.Usage(cost=0.002)
+
+    monkeypatch.setattr(llm, "complete", gia)
+    body = app_client.get(f"/api/doc/{did}/slides/soat").text
+    assert "event: done" in body, body[-500:]
+
+    assert goi["xem"] and "LỜI NÓI BÍ MẬT" not in goi["xem"][0]   # khán giả không nghe lời nói
+    assert len(goi["viet"]) == 1 and "Slide đang trống" in goi["viet"][0]   # gợi ý mang lời chê
+
+    deck = store.load(did)["slides"]
+    bo = {s["id"]: s for s in deck["bo"]}
+    assert len(bo["s1"]["tieu_chi"]) == 2                         # slide trống đã được lấp
+    assert bo["s2"]["ket_luan"] == "Mô hình hơn baseline 3,1 điểm F1."   # sửa nói quá
+    assert bo["s3"]["ket_luan"] == "Mô hình hơn baseline trên tập chính."  # số bịa → trả về
+    bt = deck["bien_tap"]
+    assert bt["con_lai"] == [] and bt["theo_vai"]["bien_tap"] == 1 and bt["theo_vai"]["kiem_chung"] == 1
+    assert any("trả về" in x["viec"] for x in bt["nhat_ky"])
+    assert app_client.get(f"/api/doc/{did}/slides").json()["bien_tap"]["sua"] == bt["sua"]
