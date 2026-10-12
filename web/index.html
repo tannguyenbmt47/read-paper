@@ -715,10 +715,12 @@
     <aside class="sv-left">
       <div class="sv-lhead">
         <h2 id="svCount">Tài liệu</h2>
+        <button id="svFromLib" class="btn btn-ghost xs" title="Chọn bài đã có trong Thư viện — miễn phí, mang theo cả bản dịch">📚 Từ Thư viện</button>
         <button id="svAddTog" class="btn btn-ghost xs">+ Thêm</button>
       </div>
 
       <div id="svAddBox" class="sv-addbox">
+        <button id="svFromLoupe" class="btn sv-tu-tv" title="Chọn bài đã có trong Thư viện — miễn phí, mang theo cả bản dịch">📚 Chọn bài từ Thư viện</button>
         <button id="svAddClose" class="sv-link" aria-label="Đóng phần thêm tài liệu">✕ Đóng</button>
         <label id="svDrop2" class="sv-drop">
           <input type="file" id="svFiles" accept=".pdf" multiple hidden>
@@ -733,7 +735,7 @@
           <input id="svFind" class="input" placeholder="Từ khoá tìm bài…" title="Tìm trên arXiv, OpenAlex và Crossref">
           <button id="svFindGo" class="btn">Tìm</button>
         </div>
-        <button id="svFromLoupe" class="sv-link">Lấy bài đã đọc trong phần Dịch →</button>
+
         <label class="check sv-enrich">
           <input type="checkbox" id="svEnrich">
           <span>Đọc kỹ toàn văn khi nạp
@@ -959,11 +961,17 @@
   <div id="svDocBox" class="modal hidden">
     <div class="modal-card">
       <header class="modal-head">
-        <b>Bài đã có trong Loupe</b>
+        <b>Chọn bài từ Thư viện</b>
         <span class="grow"></span>
-        <button id="svDocAdd" class="btn btn-primary">Kéo sang kho</button>
+        <button id="svDocAdd" class="btn btn-primary" disabled>Chọn bài để đưa vào kho</button>
         <button id="svDocClose" class="btn btn-ghost">Đóng</button>
       </header>
+      <div class="sv-docbar">
+        <input id="svDocQ" class="input" type="search" placeholder="Tìm tên bài, tác giả, năm…" aria-label="Tìm trong thư viện">
+        <select id="svDocFolder" class="input" aria-label="Lọc theo thư mục"></select>
+        <div class="fld"><input type="checkbox" id="svDocAll"><label for="svDocAll">Chọn hết</label></div>
+      </div>
+      <p class="small muted sv-docnote">Miễn phí: bài đã bóc sẵn ở phần Dịch, đưa vào kho kèm cả bản dịch.</p>
       <div id="svDocList" class="modal-body"></div>
     </div>
   </div>

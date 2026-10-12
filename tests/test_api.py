@@ -1789,3 +1789,21 @@ def test_tu_bai_sang_trang_thuat_ngu():
     assert 'id="hlTerm"' in html, "thanh bôi chọn thiếu nút Thuật ngữ"
     assert '$$("#doc .pair", host).forEach(danhDauTN)' in app, "renderDoc phải gạch thuật ngữ"
     assert 'classList.contains("heading")' in app.split("function danhDauTN", 1)[1][:400]
+
+
+def test_chon_bai_tu_thu_vien_dua_vao_tim_hieu():
+    """Hai lối đưa bài Thư viện sang Tìm hiểu: hộp chọn trong Tìm hiểu (tìm, lọc
+    thư mục, chọn hết, lựa chọn giữ qua mỗi lần lọc) với nút LUÔN hiện ở đầu cột
+    tài liệu — bản đầu giấu trong "+ Thêm", khung đó tự gập khi kho đã có bài —
+    và nút "Đưa vào Tìm hiểu…" ở Thư viện (chọn nhiều và khung chi tiết)."""
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    html = (web / "index.html").read_text()
+    sv = (web / "survey.js").read_text()
+    tv = (web / "thuvien.js").read_text()
+    lhead = html.split('<div class="sv-lhead">', 1)[1].split("</div>", 1)[0]
+    assert 'id="svFromLib"' in lhead, "nút chọn từ Thư viện phải ở đầu cột, không giấu trong + Thêm"
+    for o in ('id="svDocQ"', 'id="svDocFolder"', 'id="svDocAll"'):
+        assert o in html
+    assert "SV.tv.chon" in sv and "khongDau(" in sv.split("function svTvLoc", 1)[1][:300]
+    assert 'id="tvSelTH"' in tv and 'id="tvToTH"' in tv and "async function tvSangTimHieu" in tv

@@ -1484,17 +1484,82 @@ async function svAddFound() {
   } finally { es.close(); }
 }
 
+/* Chọn bài từ Thư viện đưa vào kho — miễn phí: bài đã bóc sẵn ở phần Dịch, mang
+   theo cả bản dịch. Bản đầu là một danh sách phẳng giấu trong "+ Thêm" (nhãn
+   "Lấy bài đã đọc trong phần Dịch →"): không tìm được, không lọc thư mục, không
+   có tác giả hay năm — tới bài thứ hai mươi là không chọn nổi. */
 async function svPickDocs() {
   if (!await svNeedId()) return;
   $("#svDocBox").classList.remove("hidden");
-  const d = await svFetch(`/api/survey/${SV.id}/loupe-docs`);
-  $("#svDocList").innerHTML = d.docs.length ? d.docs.map((x) => `
-    <label class="sv-found ${x.in_survey ? "is-have" : ""}">
-      <input type="checkbox" value="${esc(x.id)}" ${x.in_survey ? "disabled" : ""}>
-      <div><b>${esc(x.title)}</b>
-        <div class="sv-pmeta"><span>${x.translated}/${x.translatable} đoạn đã dịch</span>
+  $("#svDocList").innerHTML = '<p class="muted">đang nạp thư viện…</p>';
+  const [d, f] = await Promise.all([
+    svFetch(`/api/survey/${SV.id}/loupe-docs`),
+    fetch("/api/folders").then((r) => r.json()).catch(() => []),
+  ]);
+  SV.tv = { docs: d.docs, folders: Array.isArray(f) ? f : (f.folders || []), chon: new Set() };
+  $("#svDocFolder").innerHTML = '<option value="">Mọi thư mục</option><option value="__none">Chưa xếp</option>'
+    + SV.tv.folders.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+  $("#svDocQ").value = "";
+  svVeThuVien();
+  $("#svDocQ").focus();
+}
+
+function svTvLoc() {
+  const q = khongDau($("#svDocQ").value.trim());
+  const fo = $("#svDocFolder").value;
+  return SV.tv.docs.filter((x) => {
+    if (fo === "__none" ? x.folder_id : fo && x.folder_id !== fo) return false;
+    if (!q) return true;
+    const m = x.meta || {};
+    return khongDau([x.title, x.title_vi, m.title_goc, (m.authors || []).join(" "), m.year, x.source]
+      .filter(Boolean).join(" ")).includes(q);
+  });
+}
+
+function svVeThuVien() {
+  const ds = svTvLoc();
+  const ten = Object.fromEntries(SV.tv.folders.map((x) => [x.id, x.name]));
+  $("#svDocList").innerHTML = ds.length ? ds.map((x) => {
+    const m = x.meta || {};
+    const tg = (m.authors || []).slice(0, 2).join(", ") + ((m.authors || []).length > 2 ? " và cộng sự" : "");
+    const dich = x.translatable ? `${x.translated}/${x.translatable} đoạn đã dịch` : "chưa dịch";
+    return `<label class="sv-found ${x.in_survey ? "is-have" : ""}">
+      <input type="checkbox" value="${esc(x.id)}" ${x.in_survey ? "disabled" : ""} ${SV.tv.chon.has(x.id) ? "checked" : ""}>
+      <div><b>${esc(x.title || m.title_goc || "(không tiêu đề)")}</b>
+        ${x.title_vi && x.title_vi !== x.title ? `<div class="small muted">${esc(x.title_vi)}</div>` : ""}
+        <div class="sv-pmeta">${tg ? `<span>${esc(tg)}</span>` : ""}${m.year ? `<span>${m.year}</span>` : ""}
+          ${x.folder_id && ten[x.folder_id] ? `<span>📁 ${esc(ten[x.folder_id])}</span>` : ""}
+          <span>${dich}</span>
           ${x.in_survey ? '<i class="chip">đã có trong kho</i>' : ""}</div></div>
-    </label>`).join("") : '<p class="muted">Chưa có bài nào trong màn đọc.</p>';
+    </label>`;
+  }).join("") : '<p class="muted">Không có bài nào khớp.</p>';
+  const coThe = ds.filter((x) => !x.in_survey);
+  $("#svDocAll").checked = coThe.length > 0 && coThe.every((x) => SV.tv.chon.has(x.id));
+  $("#svDocAll").disabled = !coThe.length;
+  const n = SV.tv.chon.size;
+  $("#svDocAdd").disabled = !n;
+  $("#svDocAdd").textContent = n ? `Đưa ${n} bài vào kho · miễn phí` : "Chọn bài để đưa vào kho";
+}
+
+async function svDuaVaoKho() {
+  const ids = [...SV.tv.chon];
+  if (!ids.length) return;
+  $("#svDocBox").classList.add("hidden");
+  svProg(`đang đưa ${ids.length} bài vào kho…`, true);
+  try {
+    const r = await svFetch(`/api/survey/${SV.id}/papers/import`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ doc_ids: ids }),
+    });
+    const hong = r.papers.filter((x) => x.status === "failed");
+    const trung = r.papers.filter((x) => x.duplicate).length;
+    svProg(`đã đưa ${r.papers.length - hong.length - trung} bài vào kho`
+      + (trung ? ` · ${trung} bài đã có sẵn` : "") + (hong.length ? ` · ${hong.length} bài lỗi` : ""), true);
+    if (hong.length) await baoTin("Có bài không đưa vào được", hong.map((x) => `· ${x.err}`).join("\n"));
+  } catch (e) {
+    svProg("Lỗi: " + e.message, true);
+  }
+  await svLoad();
 }
 
 /* ------------------------------------------------------------- gắn sự kiện */
@@ -1663,18 +1728,23 @@ function svWire() {
   };
 
   $("#svFromLoupe").onclick = svPickDocs;
+  $("#svFromLib").onclick = svPickDocs;
   $("#svDocClose").onclick = () => $("#svDocBox").classList.add("hidden");
-  $("#svDocAdd").onclick = async () => {
-    const ids = $$("#svDocList input:checked").map((el) => el.value);
-    if (!ids.length) return;
-    $("#svDocBox").classList.add("hidden");
-    svProg("đang kéo sang…");
-    await svFetch(`/api/survey/${SV.id}/papers/import`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ doc_ids: ids }),
-    });
-    svProg("xong");
-    await svLoad();
+  $("#svDocAdd").onclick = svDuaVaoKho;
+  $("#svDocQ").oninput = svVeThuVien;
+  $("#svDocFolder").onchange = svVeThuVien;
+  // Lựa chọn giữ qua mỗi lần lọc: chọn ở thư mục này, sang thư mục khác chọn
+  // tiếp, rồi đưa vào một lượt.
+  $("#svDocList").onchange = (e) => {
+    const c = e.target.closest("input[type=checkbox]");
+    if (!c) return;
+    c.checked ? SV.tv.chon.add(c.value) : SV.tv.chon.delete(c.value);
+    svVeThuVien();
+  };
+  $("#svDocAll").onchange = (e) => {
+    svTvLoc().filter((x) => !x.in_survey).forEach((x) =>
+      e.target.checked ? SV.tv.chon.add(x.id) : SV.tv.chon.delete(x.id));
+    svVeThuVien();
   };
 
   // thao tác trên từng bài

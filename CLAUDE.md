@@ -1931,6 +1931,18 @@ mọi con số phải có mặt nguyên văn trong đoạn đã trích (dùng l�
 Cảnh báo neo theo **chỉ số câu** (`split_sentences` giữ `start`/`end`), để giao
 diện tô đúng câu chứ không tô cả bài.
 
+### Chọn bài từ Thư viện đưa vào kho
+
+Đường nạp có từ lâu (`POST …/papers/import` → `ingest_loupe_doc`, miễn phí, mang
+cả bản dịch), nhưng giao diện thì gần như không ai thấy: một liên kết "Lấy bài
+đã đọc trong phần Dịch →" trong khung "+ Thêm" — mà khung đó TỰ GẬP khi kho đã
+có bài — mở ra một danh sách phẳng không tìm được, không lọc thư mục. Giờ nút
+"📚 Từ Thư viện" luôn hiện ở đầu cột tài liệu; hộp chọn có ô tìm không dấu, lọc
+thư mục, chọn hết, và lựa chọn GIỮ qua mỗi lần lọc (`SV.tv.chon`) để gom bài từ
+nhiều thư mục trong một lượt. Chiều ngược: Thư viện có "Đưa vào Tìm hiểu…" (chọn
+nhiều và khung chi tiết), hỏi kho bằng `chonMot` — mỗi kho một lối, kèm "Tạo kho
+mới" — rồi hỏi có mở kho đó không.
+
 ### Chuyển bài sang kho khác — và vì sao đồ thị là chỗ dễ quên
 
 Nạp nhầm kho là chuyện thường, mà cách chữa hiển nhiên — bỏ đi rồi nạp lại — ném

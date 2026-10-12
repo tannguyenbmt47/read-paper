@@ -244,6 +244,7 @@ function tvSelBar() {
   bar.innerHTML = `<b>${n} bài đã chọn</b>
     <select id="tvSelMove" class="input input-sm" aria-label="Chuyển vào thư mục">
       <option value="">Chuyển vào thư mục…</option><option value="__none">Chưa xếp</option>${tm}</select>
+    <button class="btn btn-sm" id="tvSelTH" title="Đưa các bài này vào một kho của phần Tìm hiểu — miễn phí, kèm bản dịch">Đưa vào Tìm hiểu…</button>
     <button class="btn btn-sm" id="tvSelTag">Gắn nhãn</button>
     <button class="btn btn-sm" id="tvSelBib">BibTeX</button>
     <button class="btn btn-sm tv-xoa" id="tvSelDel">Xoá</button>
@@ -262,6 +263,7 @@ function tvSelBar() {
     tvLoad();
   };
   $("#tvSelBib").onclick = () => tvBib([...TV.chon]);
+  $("#tvSelTH").onclick = () => tvSangTimHieu([...TV.chon]);
   $("#tvSelDel").onclick = () => tvDelete([...TV.chon]);
   $("#tvSelNone").onclick = () => { TV.chon.clear(); tvRows(); };
 }
@@ -304,6 +306,7 @@ async function tvDetail() {
       ${m.title_goc && khongDau(m.title_goc) !== khongDau(ten) ? `<p class="tv-goc">${esc(m.title_goc)}</p>` : ""}
       <div class="tv-d-nut">
         <button class="btn btn-primary btn-sm" id="tvOpenDoc">Mở đọc →</button>
+        <button class="btn btn-sm" id="tvToTH" title="Đưa bài này vào một kho của phần Tìm hiểu — miễn phí, kèm bản dịch">Đưa vào Tìm hiểu…</button>
         <button class="btn btn-sm" id="tvRefetch" title="Tra lại từ Semantic Scholar / arXiv / Crossref. Trường đã sửa tay giữ nguyên.">Lấy lại thông tin</button>
       </div>
     </div>
@@ -337,6 +340,7 @@ async function tvDetail() {
     </div>`;
 
   $("#tvOpenDoc").onclick = () => openDoc(d.id);
+  $("#tvToTH").onclick = () => tvSangTimHieu([d.id]);
   $("#tvRefetch").onclick = async (e) => {
     e.target.disabled = true; e.target.textContent = "Đang tra…";
     const r = await fetch(`/api/doc/${d.id}/meta/fetch`, { method: "POST" });
@@ -385,6 +389,44 @@ async function tvPutTags(id, tags) {
   const r = await fetch(`/api/doc/${id}/tags`, { method: "PUT",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tags }) });
   if (!r.ok) baoTin("Không gắn được nhãn", await apiErr(r, "lỗi"));
+}
+
+/* Đưa bài sang phần Tìm hiểu. Chọn kho bằng hộp nhiều lối (`chonMot`): mỗi kho
+   một lối, kèm "Tạo kho mới" — đúng câu hỏi người dùng đang có ("vào kho
+   nào?"), không ép thành Đồng ý/Huỷ. Miễn phí: bài đã bóc sẵn, mang cả bản dịch. */
+async function tvSangTimHieu(ids) {
+  if (!ids.length) return;
+  let ds;
+  try { ds = (await (await fetch("/api/surveys")).json()).surveys || []; } catch { ds = []; }
+  const nut = ds.map((k) => ({ key: k.id, nhan: k.name,
+    giai: `${k.papers ?? k.n_papers ?? ""}${(k.papers ?? k.n_papers) != null ? " bài" : ""}` }));
+  nut.push({ key: "__moi", nhan: "＋ Tạo kho mới", giai: "đặt tên ở bước sau" });
+  let sid = await chonMot(`Đưa ${ids.length} bài vào kho nào?`,
+    "Miễn phí — bài đã bóc sẵn ở phần Dịch, đưa vào kho kèm cả bản dịch.", nut);
+  if (!sid) return;
+  if (sid === "__moi") {
+    const ten = await nhapChu("Tên kho mới", "Một chủ đề, ví dụ: Chưng cất tri thức", "");
+    if (!ten) return;
+    const r = await fetch("/api/survey", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: ten }) });
+    if (!r.ok) return baoTin("Không tạo được kho", await apiErr(r, "lỗi"));
+    sid = (await r.json()).id;
+  }
+  const r = await fetch(`/api/survey/${sid}/papers/import`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ doc_ids: ids }) });
+  if (!r.ok) return baoTin("Không đưa được", await apiErr(r, "lỗi"));
+  const kq = (await r.json()).papers || [];
+  const hong = kq.filter((x) => x.status === "failed");
+  const trung = kq.filter((x) => x.duplicate).length;
+  const ten = (ds.find((k) => k.id === sid) || {}).name || "kho mới";
+  baoNhanh(`Đã đưa ${kq.length - hong.length - trung} bài vào «${ten}»`
+    + (trung ? ` · ${trung} bài đã có sẵn` : "") + (hong.length ? ` · ${hong.length} bài lỗi` : ""));
+  if (hong.length) await baoTin("Có bài không đưa vào được", hong.map((x) => "· " + x.err).join("\n"));
+  if (await xacNhan("Mở kho vừa nhận bài?", `Sang phần Tìm hiểu, kho «${ten}».`, { ok: "Mở kho", cancel: "Ở lại" })) {
+    try { localStorage.setItem(SV_KEY, sid); } catch { /* bỏ qua */ }
+    SV.id = sid;
+    svOpen();
+  }
 }
 
 async function tvMove(ids, folderId) {
