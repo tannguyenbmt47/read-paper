@@ -1741,3 +1741,22 @@ def test_nguoi_minh_hoa_viet_loi_de_hieu_va_ve_hinh(app_client, monkeypatch):
     app_client.patch(f"/api/doc/{did}/slides/{bo[0]['id']}", json={"ve": None})
     assert not store.load(did)["slides"]["bo"][0].get("ve")
     assert mh.chuan_hoa_ve({"kieu": "doi_chieu", "trai": {"nhan": "A", "y": ["x"]}}) is None
+
+
+def test_thuat_ngu_bam_vao_xem_da_dich_the_nao():
+    """Bấm một thuật ngữ ở tab Thuật ngữ thì mở ra mọi chỗ bài dùng nó, câu gốc
+    cạnh câu dịch, chia ba mức (đúng bảng / giữ một phần / cách gọi khác).
+
+    Canh hai chỗ dễ trôi: thẻ phải bấm được bằng cả bàn phím, và nhảy tới đoạn
+    KHÔNG được đóng cột trái ở màn rộng — bản cũ đóng ở mọi khổ, nên xem lần
+    lượt từng chỗ là cứ phải mở lại cột sau mỗi lần bấm."""
+    import re
+    from pathlib import Path
+    app = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text()
+    for ten in ("function mauThuatNgu", "function choDungThuatNgu", "function moThuatNgu",
+                "function cauTuongUng"):
+        assert ten in app, f"thiếu {ten}"
+    assert 'class="term-dau" role="button" tabindex="0"' in app
+    assert re.search(r'addEventListener\("keydown".{0,200}term-cho, \.term-dau', app, re.S)
+    nhay = re.search(r"function jumpToBlock\(id\) \{.*?\n\}", app, re.S).group(0)
+    assert "if (narrow()) toggleSide(false)" in nhay, "màn rộng không được đóng cột trái khi nhảy"

@@ -846,6 +846,26 @@ body { padding-left: var(--rail-w); }
 .term .vi { color: var(--accent); }
 .term .keep { font-size: .75em; color: var(--muted); font-style: italic; }
 .term .gloss { display: block; color: var(--muted); font-size: .87em; }
+/* Thuật ngữ bấm được: mở ra mọi chỗ bài dùng nó, câu gốc cạnh câu dịch. */
+.term-dau { cursor: pointer; border-radius: 4px; }
+.term-dau:hover, .term-dau:focus-visible { background: var(--surface-2); outline: none; }
+.term-dau > b::before { content: "▸ "; color: var(--muted); font-size: .8em; }
+.term-dau[aria-expanded="true"] > b::before { content: "▾ "; }
+.term-dung { margin: .45rem 0 .2rem; display: grid; gap: .45rem; }
+.term-tom { margin: 0; font-size: .85em; color: var(--ink-2); }
+.term-khac { color: var(--warn); font-weight: 600; }
+.term-cho {
+  padding: .4rem .55rem; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); cursor: pointer; font-size: .86em; line-height: 1.45;
+}
+.term-cho:hover, .term-cho:focus-visible { border-color: var(--muc); outline: none; }
+.term-cho.is-khac { border-color: var(--warn); background: var(--warn-bg); }
+.term-goc { font-family: var(--sans); color: var(--muted); margin-bottom: .2rem; }
+.term-vi { font-family: var(--read); color: var(--ink); }
+.term-nhan { font-family: var(--sans); font-size: .9em; color: var(--warn); }
+.term-cho.is-mot { border-style: dashed; }
+.term-nhan-mot { font-family: var(--sans); font-size: .9em; color: var(--muted); }
+mark.term-hit { background: var(--c-y, #ffe866); color: inherit; padding: 0 .1em; border-radius: 2px; }
 
 .outline a { display: block; padding: .22rem 0; text-decoration: none; color: var(--ink-2); font-size: .92em; cursor: pointer; }
 .outline a:hover { color: var(--accent); }

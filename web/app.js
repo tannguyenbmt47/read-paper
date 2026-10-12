@@ -2063,9 +2063,26 @@ function wireReader() {
 
   $("#termSearch").oninput = (e) => {
     const q = e.target.value.toLowerCase();
+    // Lọc theo phần ĐẦU thẻ (tên + nghĩa), không theo cả phần đã mở ra — không
+    // thì gõ một chữ có trong câu ví dụ là thuật ngữ khác cũng lọt vào.
     $$("#termsBox .term").forEach((el) =>
-      el.classList.toggle("hidden", q && !el.textContent.toLowerCase().includes(q)));
+      el.classList.toggle("hidden", q && !$(".term-dau", el).textContent.toLowerCase().includes(q)));
   };
+  // Một bộ nghe cho cả hộp: thẻ dựng lại mỗi lần nạp bài.
+  const boxTN = $("#termsBox");
+  boxTN.addEventListener("click", (e) => {
+    const cho = e.target.closest(".term-cho");
+    if (cho) { jumpToBlock(cho.dataset.go); return; }
+    const dau = e.target.closest(".term-dau");
+    if (dau) moThuatNgu(dau.parentElement);
+  });
+  boxTN.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const el = e.target.closest(".term-cho, .term-dau");
+    if (!el) return;
+    e.preventDefault();
+    el.click();
+  });
 
   $("#exportBtn").onclick = (e) => { e.stopPropagation(); $("#exportMenu").classList.toggle("hidden"); };
   document.addEventListener("click", () => $("#exportMenu").classList.add("hidden"));
@@ -3463,12 +3480,15 @@ function renderSide() {
     $("#termsBox").innerHTML = b.glossary?.length
       // Thuật ngữ giữ tiếng Anh vẫn hiện nghĩa tiếng Việt để tra — chỉ là nghĩa
       // đó không được dùng thay cho thuật ngữ trong bản dịch.
-      ? b.glossary.map((g) => `<div class="term">
+      ? b.glossary.map((g, i) => `<div class="term" data-term="${i}">
+          <div class="term-dau" role="button" tabindex="0" aria-expanded="false"
+               title="Bấm để xem bài dịch thuật ngữ này thế nào ở từng chỗ">
           <b>${esc(g.en)}</b> ${g.keep_en
             ? `<span class="keep">giữ nguyên</span>${
                 g.vi ? ` <span class="vi">≈ ${esc(g.vi)}</span>` : ""}`
             : `→ <span class="vi">${esc(g.vi || "")}</span>`}
           ${g.gloss ? `<span class="gloss">${sci(g.gloss)}</span>` : ""}
+          </div>
         </div>`).join("")
       : `<p class="muted">Chưa có.</p>`;
   }
@@ -3601,7 +3621,147 @@ function jumpToBlock(id) {
   el.scrollIntoView({ block: "center" });
   $$("#doc .pair.is-on").forEach((x) => x.classList.remove("is-on"));
   el.classList.add("is-on");
-  toggleSide(false);          // ở chế độ hẹp, nhảy xong thì trả màn hình lại cho bài
+  // Ở màn hẹp cột trái PHỦ lên bài nên nhảy xong phải trả màn hình lại. Màn
+  // rộng thì giữ: bản cũ đóng ở mọi khổ, nên xem lần lượt từng chỗ một thuật
+  // ngữ được dịch ra sao là cứ phải mở lại cột sau mỗi lần bấm.
+  if (narrow()) toggleSide(false);
+}
+
+/* -------------------------------------------- thuật ngữ đã dịch thế nào
+
+   Bảng thuật ngữ nói bài ĐỊNH dịch thế nào; còn bản dịch thật có theo đúng
+   bảng không thì chỉ thấy được bằng cách đặt từng chỗ gốc cạnh câu dịch của
+   nó. Miễn phí: chỉ đọc bản dịch đã có, không gọi model. */
+
+/** Mẫu dò một thuật ngữ: cả cụm, phần trước ngoặc và phần trong ngoặc
+    ("VAE (Variational Autoencoder)" → VAE, Variational Autoencoder), theo ranh
+    giới từ, không phân biệt hoa thường, nhận cả số nhiều tiếng Anh. */
+function mauThuatNgu(cum, soNhieu = false) {
+  const t = String(cum || "").trim();
+  const m = t.match(/^(.+?)\s*\((.+?)\)\s*$/);
+  const ds = [t, ...(m ? [m[1], m[2]] : [])].map((x) => x.trim()).filter((x) => x.length >= 2);
+  return [...new Set(ds)].sort((a, b) => b.length - a.length).map((x) =>
+    new RegExp(`(?<![\\p{L}\\p{N}])${x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${soNhieu ? "(?:e?s)?" : ""}(?![\\p{L}\\p{N}])`, "iu"));
+}
+
+function timMau(chu, maus) {
+  for (const re of maus) {
+    const m = re.exec(chu);
+    if (m) return { at: m.index, len: m[0].length };
+  }
+  return null;
+}
+
+/** Đoạn chữ quanh chỗ khớp, chỗ khớp tô sáng. Cắt ở ranh giới câu nếu gần. */
+function quanhCho(chu, hit, rong = 110) {
+  if (!hit) return sci(catGonTho(chu, rong * 2));
+  let a = Math.max(0, hit.at - rong), b = Math.min(chu.length, hit.at + hit.len + rong);
+  const dauCau = chu.lastIndexOf(". ", hit.at);
+  if (dauCau >= a) a = dauCau + 2;
+  const cuoiCau = chu.indexOf(". ", hit.at + hit.len);
+  if (cuoiCau >= 0 && cuoiCau < b) b = cuoiCau + 1;
+  // Không cắt giữa chữ ("không g…"): lùi về khoảng trắng gần nhất.
+  else if (b < chu.length) { const sp = chu.lastIndexOf(" ", b); if (sp > hit.at + hit.len) b = sp; }
+  if (a > 0 && dauCau < a) { const sp = chu.indexOf(" ", a); if (sp >= 0 && sp < hit.at) a = sp + 1; }
+  return (a > 0 ? "…" : "") + sci(chu.slice(a, hit.at))
+    + `<mark class="term-hit">${sci(chu.slice(hit.at, hit.at + hit.len))}</mark>`
+    + sci(chu.slice(hit.at + hit.len, b)) + (b < chu.length ? "…" : "");
+}
+
+/** Câu dịch ở vị trí TƯƠNG ỨNG với chỗ thuật ngữ trong câu gốc (theo tỉ lệ độ
+    dài). Không căn câu được chính xác, nhưng đúng hơn hẳn việc hiện đầu đoạn —
+    bản đầu hiện "Các RNN lớn là…" trong khi thuật ngữ nằm ở câu thứ ba. */
+function cauTuongUng(x) {
+  const pos = Math.round(x.vi.length * (x.hg.at / Math.max(1, x.goc.length)));
+  const cau = x.vi.split(/(?<=[.!?…])\s+/);
+  let n = 0;
+  for (const c of cau) {
+    if (n + c.length >= pos) return sci(catGonTho(c, 260));
+    n += c.length + 1;
+  }
+  return sci(catGonTho(cau[cau.length - 1] || "", 260));
+}
+
+const catGonTho = (t, n) => (t.length <= n ? t : t.slice(0, n).replace(/\s+\S*$/, "") + "…");
+
+/** Mọi chỗ bài gốc dùng thuật ngữ `g`, kèm câu dịch và cách dịch đã dùng. */
+function choDungThuatNgu(g) {
+  const goc = mauThuatNgu(g.en, true);
+  // Trong bản dịch, thuật ngữ đúng bảng là: giữ nguyên tiếng Anh (keep_en) —
+  // kèm nghĩa Việt cũng được — hoặc đúng cách dịch `vi`.
+  // Bỏ chữ chung chung ở đầu/cuối cụm: bản dịch hay giữ phần lõi tiếng Anh và
+  // dịch phần chung — "Credit assignment problem" → "bài toán credit
+  // assignment". Đó là dịch ĐÚNG; đòi nguyên cụm thì bản đầu báo oan 3/3 đoạn.
+  const loi = String(g.en || "").replace(/\s*\(.*?\)\s*/g, " ").trim()
+    .replace(/^(?:the|a|an)\s+/i, "")
+    .replace(/\s+(?:problem|method|approach|algorithm|technique|framework|strategy|process|mechanism|task|issue)s?$/i, "");
+  const dungThem = loi.split(/\s+/).length >= 2 && loi !== g.en ? mauThuatNgu(loi, true) : [];
+  const dung = g.keep_en ? [...goc, ...dungThem, ...mauThuatNgu(g.vi)]
+    : [...mauThuatNgu(g.vi), ...goc, ...dungThem];
+  const phanLoi = [...new Set(String(g.en || "").replace(/\(.*?\)/g, " ").toLowerCase()
+    .split(/[\s\-\/]+/).filter((w) => w.length >= 4 && !TN_CHUNG.has(w)))]
+    .map((w) => {
+      // Gốc từ: bỏ đuôi biến thể rồi gộp phụ âm đôi cuối, dò theo TIỀN TỐ —
+      // "timestamped" ↔ "timestamp", "overfitting" ↔ "overfit".
+      const g0 = w.replace(/(?:ing|ed|es|s)$/, "").replace(/([b-df-hj-np-tv-z])\1$/, "$1");
+      const goc = g0.length >= 4 ? g0 : w;
+      return new RegExp(`(?<![\\p{L}\\p{N}])${goc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\p{L}*`, "iu");
+    });
+  const out = [];
+  for (const b of state.doc.blocks) {
+    if (b.hidden || !b.text) continue;
+    const hg = timMau(b.text, goc);
+    if (!hg) continue;
+    const vi = state.doc.translations[b.id] || "";
+    const hd = vi ? timMau(vi, dung) : null;
+    // Giữ MỘT PHẦN: tiếng Việt đảo trật tự nhưng giữ chữ lõi tiếng Anh —
+    // "dustbin class" → "lớp dustbin", "acoustic model" → "mô hình acoustic".
+    // Đo trên thư viện: phần lớn 91 chỗ "khác bảng" của bản đầu là kiểu này;
+    // gộp chung với chỗ dịch khác hẳn thì con số không ai tin được.
+    const mot = vi && !hd ? timMau(vi, phanLoi) : null;
+    out.push({ id: b.id, goc: b.text, hg, vi, hd, mot });
+  }
+  return out;
+}
+
+// Chữ chung chung không đủ để nói "đã giữ thuật ngữ": "mô hình model" thì chưa nói
+// lên gì. Chỉ chữ lõi ≥4 ký tự mới tính.
+const TN_CHUNG = new Set(["model", "models", "class", "problem", "method", "network", "learning",
+  "data", "based", "system", "function", "loss", "task", "rate", "score", "accuracy", "with",
+  "from", "the", "and", "for", "approach", "algorithm", "process", "layer", "training"]);
+
+function moThuatNgu(el) {
+  const i = +el.dataset.term;
+  const g = (state.doc.brief?.glossary || [])[i];
+  const dau = $(".term-dau", el);
+  const mo = el.querySelector(".term-dung");
+  if (mo) { mo.remove(); dau.setAttribute("aria-expanded", "false"); return; }
+  dau.setAttribute("aria-expanded", "true");
+  const ds = choDungThuatNgu(g);
+  const daDich = ds.filter((x) => x.vi);
+  const khac = daDich.filter((x) => !x.hd && !x.mot);
+  const mot = daDich.filter((x) => !x.hd && x.mot);
+  const tom = !ds.length
+    ? "Không thấy thuật ngữ này trong bài gốc (có thể chỉ xuất hiện trong hình hoặc công thức)."
+    : `Gặp ở ${ds.length} đoạn · ${daDich.length - khac.length - mot.length} đoạn dịch đúng bảng`
+      + (mot.length ? ` · ${mot.length} đoạn giữ một phần thuật ngữ` : "")
+      + (khac.length ? ` · <b class="term-khac">${khac.length} đoạn dùng cách gọi khác</b>` : "")
+      + (ds.length > daDich.length ? ` · ${ds.length - daDich.length} đoạn chưa dịch` : "");
+  // Đoạn dùng cách gọi khác lên trước, rồi tới giữ một phần: đó là chỗ người đọc
+  // cần nhìn nhất.
+  const xep = [...khac, ...mot, ...daDich.filter((x) => x.hd), ...ds.filter((x) => !x.vi)];
+  el.insertAdjacentHTML("beforeend", `<div class="term-dung">
+      <p class="term-tom">${tom}</p>
+      ${xep.slice(0, 40).map((x) => `<div class="term-cho${x.vi && !x.hd ? (x.mot ? " is-mot" : " is-khac") : ""}"
+          role="button" tabindex="0" data-go="${esc(x.id)}" title="Bấm để nhảy tới đoạn này trong bài">
+        <div class="term-goc">${quanhCho(x.goc, x.hg)}</div>
+        <div class="term-vi">${!x.vi ? '<i class="muted">chưa dịch</i>'
+          : x.hd ? quanhCho(x.vi, x.hd)
+          : x.mot ? `<span class="term-nhan-mot">giữ một phần:</span> ${quanhCho(x.vi, x.mot)}`
+          : `<span class="term-nhan">cách gọi khác — không thấy «${esc(g.keep_en ? g.en : g.vi)}», câu dịch ở chỗ tương ứng:</span> ${cauTuongUng(x)}`}</div>
+      </div>`).join("")}
+      ${xep.length > 40 ? `<p class="muted small">… và ${xep.length - 40} đoạn nữa</p>` : ""}
+    </div>`);
 }
 
 function jumpToSection(name) {

@@ -1163,6 +1163,32 @@ mặc định 40% không đi qua `pdfClamp`, nên cột trái đang rộng 700px
 thì cột đọc còn **127px** (đã đo). Khung vừa được bấm mở thì giữ bề rộng của
 nó, cột trái nhường.
 
+### Thuật ngữ đã dịch thế nào (tab Thuật ngữ, bấm vào một mục)
+
+Bảng thuật ngữ nói bài ĐỊNH dịch thế nào; bản dịch thật có theo không thì chỉ
+thấy được khi đặt từng chỗ gốc cạnh câu dịch của nó. `moThuatNgu` mở ra mọi đoạn
+bài gốc chứa thuật ngữ (`choDungThuatNgu`), câu gốc trên, câu dịch dưới, thuật ngữ
+tô vàng cả hai bên, bấm là nhảy tới đoạn. Miễn phí — chỉ đọc bản dịch đã có.
+
+Ba mức, và chia ba là quyết định sau khi đo trên cả thư viện (969 chỗ):
+
+- **đúng bảng** — giữ nguyên tiếng Anh (`keep_en`) hoặc đúng cách dịch `vi`.
+  Phải nhận cả thuật ngữ đã BỎ CHỮ CHUNG CHUNG: "Credit assignment problem" →
+  "bài toán credit assignment" là dịch đúng, đòi nguyên cụm thì bản đầu báo oan
+  3/3 đoạn của bài World Models.
+- **giữ một phần** — tiếng Việt đảo trật tự nhưng giữ chữ lõi: "dustbin class" →
+  "lớp dustbin". Dò chữ lõi theo GỐC TỪ (tiền tố): "timestamped" ↔ "timestamp",
+  "overfitting" ↔ "overfit". Gộp mức này vào "khác" thì 91 chỗ bị đánh dấu,
+  phần lớn oan, và con số không ai tin.
+- **dùng cách gọi khác** — 35 chỗ còn lại, đa số lệch thật ("spatiotemporal
+  priors" bảng ghi giữ nguyên, bản dịch viết "tiên nghiệm không gian-thời gian").
+  Không gọi là "sai": "chọn khung hình" so với "lựa chọn khung hình" không sai.
+
+Khi không thấy thuật ngữ trong bản dịch, hiện câu dịch ở vị trí TƯƠNG ỨNG theo tỉ
+lệ độ dài (`cauTuongUng`), không hiện đầu đoạn — bản đầu hiện "Các RNN lớn là…"
+trong khi thuật ngữ nằm ở câu thứ ba. Và `jumpToBlock` chỉ đóng cột trái ở màn
+hẹp (nơi cột phủ lên bài) — đúng như chú thích của nó vốn nói mà code không làm.
+
 ### Ô xem trước hình: kéo và phóng
 
 Bấm vào chữ *"Figure 3"* trong bài mở `#figPeek` — cửa sổ nhỏ cho biết chỗ đó
