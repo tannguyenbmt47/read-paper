@@ -2145,6 +2145,68 @@ xong cờ "Kho đã đổi" biến mất dù không đọc thêm bài nào. Vớ
 `kiem_so` chỉ soát số ở `CLAIM_SECTIONS` — mục cơ chế cố ý kể ví dụ giả định, và
 người kiểm chứng sẽ XOÁ câu ví dụ vì không đoạn nào đỡ nó.
 
+### Báo cáo thử 11/10 (Loupe Testing 2) — người mới dùng phần Tìm hiểu
+
+22 lỗi, cả bốn lỗi [Cao] đều là chuyện CHỮ và NGUỒN chứ không phải tính năng
+thiếu. Sáu bài học, mỗi bài một chỗ trong code:
+
+**Không ai soát CHỮ, chỉ soát nội dung** (`server/tieng_viet.py`). Hỏi đáp trả
+lời trọn bằng tiếng Pháp; bài giảng ra "dữ li ngẫu nhi", "miêu shù", cả mục Bằng
+chứng tiếng Anh — DeepSeek V4 Flash, lỗi của model chứ không của bộ dựng. Luật
+"viết tiếng Việt" nằm đầu system prompt bị chìm dưới hàng chục nghìn token bằng
+chứng tiếng Anh, nên `NHAC_NGON_NGU` đứng CUỐI phần user (không đụng prefix).
+Tầng máy (`loi_chu`, $0): tỉ lệ từ mang dấu RIÊNG của tiếng Việt — đo được tiếng
+Pháp 0%, văn Việt xen thuật ngữ Anh 41–55%, ngưỡng 0,15 — cộng pinyin, âm tiết
+sai cấu trúc tiếng Việt ("shù"), từ nối tiếng Anh. Chỉ xét từ viết THƯỜNG: 12/12
+ca bắt oan trên 1.823 bản dịch là tên "Gutiérrez". Rơi âm tiết thì máy không bắt
+được nếu thiếu từ điển, nên có vai **người soát chữ** (model rẻ) trong ban biên
+tập: chỉ trả cặp *cụm sai → cụm đúng*, cụm sai phải là chuỗi con thật, cụm đúng
+không mang số mới, giữ nguyên mã `[…]`, và tự qua được tầng máy. Hỏi đáp còn
+canh NGAY TRONG LÚC STREAM: ~500 ký tự đầu lạc ngôn ngữ thì huỷ và viết lại.
+
+**Nói bài A, trích bài B** (`verify.sai_bai`, `doi_trich_sai_bai`). "Dans WAM…"
+trích đoạn của World Models. Bí danh bài lấy từ tiêu đề, chữ đầu dãy từ viết hoa
+("WAM") và tên tắt chính câu trả lời định nghĩa — tên phải đứng SÁT ngoặc, dò
+trong cả khúc trước thì DreamZero bị gán cho World Models. Thư ký chỉ đổi trích
+dẫn khi đoạn mới khớp câu TỐT HƠN đoạn cũ: bản đầu đổi nhầm câu đối chiếu "Ngoài
+bài World Models, kho có đoạn bàn về JEPA [đoạn WAM]" vốn đúng. Câu còn cảnh báo
+thì GẠCH CHÂN ngay trong câu trả lời (`svDanhDauCau`, qua `wrapRange`), hộp cảnh
+báo viết câu hành động tiếng Việt chứ không phải khoá nội bộ.
+
+**Phần lớn cảnh báo là oan, và oan thì người ta thôi đọc.** 16 cảnh báo của một
+câu trả lời thật còn 2: số mục ("Mục 3.1"), chỉ số công thức (`z_{t+1}`), số thứ
+tự đầu dòng không phải số liệu (`verify.so_lieu`); câu/hàng bảng có số mà thiếu
+trích dẫn thì thư ký gắn đoạn chứa ĐỦ số ($0, `gan_nguon_cho_so`). Lượt hỏi và
+bài giảng CŨ được soát lại bằng luật hiện tại lúc mở (chỉ máy, miễn phí) — không
+thì bản dựng trước bản sửa mãi mang cảnh báo luật mới đã bỏ.
+
+**`page` lưu từ 0.** Hiện thẳng ra là "trang ?" ở trang đầu — đúng cái "tr.?"
+của báo cáo. Mọi chỗ hiện trang đi qua `svTrang`. Trích dẫn hiện "[World Models
+· tr.1]" (`…/nhan-trich`), mã băm chỉ còn trong `data-cite`.
+
+**Thiếu năm/tác giả là gốc của hai lỗi khác nhau** (`survey/thongtin_bai.py`).
+Bản tổng hợp viết "không có năm công bố"; bài giảng báo "tiêu đề quá ngắn để tra
+(“World Models”) — sửa lại tiêu đề" trong khi đó là tên thật. Bài từ phần Dịch đã
+có đủ ở `doc_meta`, chỉ chưa lấy sang; bài nạp thẳng thì tra bằng chính
+`thongtin.tim`. Chỉ ĐIỀN chỗ trống, chạy ngầm khi mở kho, trước khi dựng tổng hợp
+và trước khi tra Semantic Scholar. World Models: 0 → 100 tham khảo.
+
+**Giá ghi cứng là giá sai.** "~$0,08" cho bài giảng thực chi $0,012, "~$0,09" cho
+tổng hợp thực chi $0,003–0,018. Nút Dựng giờ hỏi `…/lecture/gia`, `…/synthesis/
+gia`, `…/matrix/gia` (độ dài thật × bảng giá model, cố ý lệch về phía cao). Và
+MỘT hàm `money()` dấu phẩy thập phân — `test_mot_kieu_dinh_dang_tien` quét mọi
+nhãn viết sẵn.
+
+Kèm theo: mục "Cần biết trước" ba phần (hình dung đời thường → kỹ thuật có giải
+nghĩa tại chỗ → vì sao bài cần) và ô "Viết cho: Người mới / Đã biết ML" (`MUC_DOC`,
+ở phần user); câu ví von `doi_thuong` KHÔNG soát số ("70% mưa nhẹ" bị báo bịa).
+Bảng so sánh gập theo dòng thay vì cắt ký tự (cắt ngang công thức), ô trống ghi
+"—", nút "Điền ô trống bằng model" chỉ chạy cho bài còn thiếu. `thuc_the` dò cả
+phần trước và trong ngoặc của tên, và chuẩn hoá CẢ đoạn — `norm_name` cắt ở 80
+ký tự nên trước đây chỉ soát câu đầu. Nhật ký kỹ thuật của Hỏi đáp gập trong
+"Chi tiết", câu trả lời đứng ngay dưới ô hỏi; "Đọc gì trước" lên đầu bản tổng
+hợp; "phiếu"/"bơm" thành "tóm tắt bài"/"đọc kỹ toàn văn" trên giao diện.
+
 ### Trang giới thiệu và hướng dẫn (`docs/`)
 
 `docs/index.html` (giới thiệu) + `docs/huong-dan.html` (hướng dẫn từng bước), dùng

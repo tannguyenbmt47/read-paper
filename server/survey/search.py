@@ -37,6 +37,7 @@ những đoạn khác đã phủ được gì. Tầng bằng model thì biết c
 from __future__ import annotations
 
 import os
+import asyncio
 
 from .. import llm
 from . import db as sdb
@@ -50,6 +51,7 @@ POOL = 60            # số ứng viên sau khi trộn
 CROSS_KEEP = 20      # cross-encoder giữ lại bao nhiêu cho tầng model
 PER_PAPER = 3        # trần đa dạng
 BM25_LIMIT = 30      # mỗi biến thể truy vấn lấy về bấy nhiêu
+LOCAL_SEARCH_TIMEOUT = 30  # không bắt người hỏi chờ model cục bộ nạp vô hạn
 
 
 # ------------------------------------------------------------ lập kế hoạch
@@ -146,6 +148,7 @@ async def retrieve(survey_id: str, plan_obj: dict, *, pool: int = POOL,
     exclude = exclude or set()
     lists: list[list[str]] = []
     counts: dict[str, int] = {}
+    fallbacks: list[str] = []
 
     # --- BM25 trên từng biến thể truy vấn ---------------------------------
     variants = [q["q"] for q in plan_obj.get("queries") or []]
@@ -168,7 +171,12 @@ async def retrieve(survey_id: str, plan_obj: dict, *, pool: int = POOL,
     if embed.enabled() and dense_qs:
         ids, blobs, dim = sdb.all_vecs(survey_id, embed.MODEL_NAME)
         if ids:
-            qv = await embed.encode([embed.as_query(q) for q in dense_qs])
+            try:
+                qv = await asyncio.wait_for(embed.encode([embed.as_query(q) for q in dense_qs]),
+                                            LOCAL_SEARCH_TIMEOUT)
+            except asyncio.TimeoutError:
+                qv = None
+                fallbacks.append("Tìm theo nghĩa chờ quá lâu; lượt này dùng tìm theo từ khoá. Model vẫn nạp trong nền.")
             if qv is not None:
                 mat = embed.unpack(blobs, dim)
                 for i in range(qv.shape[0]):
@@ -189,7 +197,7 @@ async def retrieve(survey_id: str, plan_obj: dict, *, pool: int = POOL,
 
     rows = sdb.get_chunks(fused + extra)
     hits = [rows[cid] for cid in fused + extra if cid in rows]
-    return {"hits": hits, "edges": edges, "lists": counts}
+    return {"hits": hits, "edges": edges, "lists": counts, "fallbacks": fallbacks}
 
 
 # ---------------------------------------------------------------- rerank
@@ -205,8 +213,11 @@ async def rerank(question: str, subs: list[dict], hits: list[dict],
 
     # Tầng 1: cross-encoder, miễn phí. Không nạp được thì bỏ qua, giữ thứ tự RRF.
     cands = list(hits)
-    scored = await embed.cross_score(
-        question, [f"{h.get('ctx') or ''}\n{h['text']}" for h in hits])
+    try:
+        scored = await asyncio.wait_for(embed.cross_score(
+            question, [f"{h.get('ctx') or ''}\n{h['text']}" for h in hits]), LOCAL_SEARCH_TIMEOUT)
+    except asyncio.TimeoutError:
+        scored = None  # tầng model bên dưới vẫn chấm, không mất bước kiểm độ liên quan
     if scored:
         order = sorted(range(len(hits)), key=lambda i: -scored[i])
         cands = [dict(hits[i], cross=round(scored[i], 3)) for i in order][:CROSS_KEEP]

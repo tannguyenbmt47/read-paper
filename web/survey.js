@@ -10,7 +10,7 @@
      Hỏi đáp       — nhật ký từng vòng hiện dần theo SSE, rồi câu trả lời
      Tổng hợp      — bản đọc cả kho, dựng một lần (tốn tiền)
      Bài giảng     — giảng một bài cho hiểu (tốn tiền)
-     Bảng so sánh  — bài × facet, dựng từ phiếu, mở không tốn tiền
+     Bảng so sánh  — bài × facet, dựng từ tóm tắt bài, mở không tốn tiền
 
    Mọi danh sách dài đều **vẽ dần** (`SV_PAGE` + `svWatchTail`): kho sinh ra để
    chứa vài trăm bài, vẽ hết một lượt là trang khựng ngay lúc mở.
@@ -81,7 +81,13 @@ function svMd(src) {
      `^{…}` / `_{…}`; thiếu hai dòng này thì câu trả lời hiện ra `d_{i}` thô.
      `_SUBSCRIPTISH` (khai ở `app.js`) lo dạng không ngoặc model hay viết —
      luật hẹp, `snake_case` không bị chạm. */
+  /* Công thức LaTeX model vẫn viết (`$z \in \mathbb{R}^{64}$`, `\(…\)`): dựng
+     bằng `mathTeX` của app.js như màn đọc. Chỉ nhận `$…$` có ký hiệu TeX bên
+     trong, không thì "$0,09 và $1" thành công thức. */
   const inline = (s) => s
+    .replace(/\\\((.+?)\\\)/g, (_, m) => `<span class="imath">${mathTeX(m)}</span>`)
+    .replace(/\$([^$\n]{1,200}?)\$/g, (m, x) => (/[\\^_{]/.test(x)
+      ? `<span class="imath">${mathTeX(x)}</span>` : m))
     .replace(/\^\{([^{}]*)\}/g, "<sup>$1</sup>")
     .replace(/_\{([^{}]*)\}/g, "<sub>$1</sub>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
@@ -161,11 +167,13 @@ async function svLoadList() {
   const want = SV.id || localStorage.getItem(SV_KEY) || d.surveys[0].id;
   SV.id = d.surveys.some((s) => s.id === want) ? want : d.surveys[0].id;
   pick.value = SV.id;
-  pick.title = d.surveys.length > 1
-    ? `${d.surveys.length} kho — mỗi kho là một chủ đề riêng, tìm kiếm không lẫn sang nhau`
-    : "Tạo thêm kho cho chủ đề khác — hai kho không lẫn nội dung sang nhau";
+  pick.title = pick.selectedOptions[0]?.textContent || "Chọn kho tài liệu";
   await svLoad();
   svBackends(d);
+  if (!localStorage.getItem("docdoc:survey:intro")) {
+    $("#svIntro").classList.remove("hidden");
+    $("#svIntroSample").classList.toggle("hidden", !SV.surveys.some((s) => /\[Thử\]|mẫu/i.test(s.name)));
+  }
 }
 
 /* Mỗi kho là một chủ đề riêng biệt: `bm25()` và bộ tìm dense đều lọc theo
@@ -214,7 +222,7 @@ function svShowModels() {
    hiện ra thay vì âm thầm chốt một model, để người dùng biết mình đang ở mặc
    định nào và đổi được mà không phải sửa file. */
 function svFillModels(d) {
-  const opt = (cur) => '<option value="">Theo .env (mặc định)</option>'
+  const opt = (cur) => '<option value="">Mặc định</option>'
     + (state.models || []).map((m) =>
       `<option value="${esc(m.id)}" title="${esc(m.label || m.id)}"`
       + `${m.id === cur ? " selected" : ""}>${esc(shortLabel(m))}</option>`).join("");
@@ -276,10 +284,12 @@ async function svLoad() {
     });
     const q = $("#svQ"); if (q) q.value = "";
     SV.hits = []; SV.found = []; SV.answer = ""; SV.cites.clear();
+    SV.nhanTrich = {};
     SV.lecPid = "";
     SV.shown = SV.id;
   }
   const d = await svFetch(`/api/survey/${SV.id}`);
+  $("#svPick").title = $("#svPick").selectedOptions[0]?.textContent || d.name;
   SV.survey = d;
   SV.papers = d.papers;
   SV.facets = d.facets;
@@ -291,7 +301,7 @@ async function svLoad() {
   svRenderHistory(d.runs || []);
   const st = d.stats;
   $("#svStats").textContent =
-    `${st.papers} bài · ${st.chunks} đoạn · ${st.carded} phiếu · đã tiêu ${money(st.spent)}`;
+    `${st.papers} bài · ${st.chunks} đoạn · ${st.carded} tóm tắt bài · đã tiêu ${money(st.spent)}`;
   // Kho đã có bài thì gấp khối thêm bài lại, nhường chỗ cho danh sách.
   $("#svAddBox").classList.toggle("is-shut", st.papers > 0);
   // Bản đồ vẽ từ chính danh sách bài, nên thêm/bỏ/chuyển bài xong là nó phải
@@ -319,10 +329,10 @@ function svRenderPapers(more = false) {
     // của kho — ghi "đủ" cho nó là nói quá, và người dùng không biết vì sao bản
     // đồ của bài ấy không nối với bài nào.
     if (p.card?.from_brief) {
-      return '<i class="chip" title="Phiếu dựng từ tóm lược của phần Dịch. Chưa có câu ngữ cảnh, cây tóm lược và đồ thị riêng.">từ bản dịch</i>';
+      return '<i class="chip" title="Phiếu dựng từ tóm lược của phần Dịch. Chưa có câu ngữ cảnh, cây tóm lược và đồ thị riêng.">tóm tắt từ bài đã dịch</i>';
     }
-    if (p.status === "carded") return '<i class="chip ok">đủ</i>';
-    if (p.status === "indexed") return '<i class="chip">chưa bơm</i>';
+    if (p.status === "carded") return '<i class="chip ok">đã đọc kỹ</i>';
+    if (p.status === "indexed") return '<i class="chip">đã nạp</i>';
     if (p.status === "abstract_only") return '<i class="chip warn">chỉ abstract</i>';
     if (p.status === "failed") return '<i class="chip bad">lỗi</i>';
     return `<i class="chip">${esc(p.status)}</i>`;
@@ -344,11 +354,11 @@ function svRenderPapers(more = false) {
       </div>
       <div class="sv-pact">
         ${p.status === "indexed" || p.card?.from_brief
-          ? `<button class="btn xs" data-act="enrich" title="Ngữ cảnh hoá từng đoạn, cây tóm lược, phiếu và đồ thị — tìm chính xác hơn nhiều">Bơm nội dung · ~$0,034</button>` : ""}
-        ${p.card && !p.card.from_brief ? '<button class="btn xs" data-act="recard">Bóc lại phiếu · ~$0,01</button>' : ""}
+          ? `<button class="btn xs" data-act="enrich" title="Model đọc kỹ toàn văn: gắn ngữ cảnh cho từng đoạn, dựng cây tóm lược, tóm tắt bài và đồ thị — tìm chính xác hơn nhiều">Đọc kỹ toàn văn · ~$0,034</button>` : ""}
+        ${p.card && !p.card.from_brief ? '<button class="btn xs" data-act="recard">Dựng lại tóm tắt bài · ~$0,01</button>' : ""}
         <button class="btn xs" data-act="edit" title="Sửa tiêu đề, năm, nơi đăng — miễn phí">Sửa</button>
-        <button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>
-        <button class="btn xs is-danger" data-act="drop">Bỏ</button>
+        <button class="btn xs" data-act="move" title="Chuyển sang kho khác — giữ nguyên bản tóm tắt bài, câu ngữ cảnh, cây tóm lược và bài giảng, không tốn tiền">Chuyển kho</button>
+        <button class="btn xs is-danger sv-drop-paper" data-act="drop">Bỏ khỏi kho</button>
       </div>
     </li>`).join("");
 
@@ -450,7 +460,7 @@ function svMoveBox(li, pid) {
       <button class="btn xs" data-go="1">Chuyển · miễn phí</button>
       <button class="btn xs" data-cancel="1">Thôi</button>
     </div>
-    <p class="small muted">Giữ nguyên phiếu, câu ngữ cảnh, cây tóm lược, vector và
+    <p class="small muted">Giữ nguyên bản tóm tắt bài, câu ngữ cảnh, cây tóm lược, vector và
       bài giảng — không bóc lại, không gọi model.</p>`;
   li.appendChild(box);
   box.querySelector("select").focus();
@@ -497,6 +507,9 @@ function svWatchTail(el, load) {
 }
 
 function svRenderHistory(runs) {
+  SV.runs = runs;
+  svGiaHoi();
+  svViDuHoi();
   // 8 lượt gần nhất là đủ; cũ hơn thì mở bằng nút. Vẽ hết vài trăm lượt vào một
   // cột không ai cuộn tới là công dựng DOM bỏ đi.
   const show = runs.slice(0, 8);
@@ -566,10 +579,151 @@ async function svUpload(files) {
 
 /* ------------------------------------------------------------ hỏi đáp */
 
+/* `page` lưu từ 0 (đúng như `Block.page` của bộ bóc). Hiện thẳng ra thì đoạn ở
+   trang đầu thành "trang ?" — báo cáo 11/10 thấy "tr.?" đúng vì chỗ này. */
+const svTrang = (p, tien = "tr.") => (p == null || p === "" ? "" : tien + (+p + 1));
+
+/* Nhãn trích dẫn đọc được: "[World Models · tr.3]" thay cho mã băm. Mã vẫn nằm
+   trong `data-cite` để bấm mở đúng đoạn; chỉ phần chữ hiện ra là đổi. */
+SV.nhanTrich = {};
+async function svGanNhanTrich(root) {
+  if (!root || !SV.id) return;
+  const sid = SV.id;
+  const as = $$("a.sv-cite[data-cite]", root);
+  const thieu = [...new Set(as.map((a) => a.dataset.cite))].filter((c) => !(c in SV.nhanTrich));
+  if (thieu.length) {
+    try {
+      const d = await svFetch(`/api/survey/${sid}/nhan-trich?ids=${thieu.join(",")}`);
+      if (sid !== SV.id) return;
+      thieu.forEach((c) => { SV.nhanTrich[c] = d[c] || null; });
+    } catch (_) { return; }
+  }
+  as.forEach((a) => {
+    const n = SV.nhanTrich[a.dataset.cite];
+    if (!n || a.dataset.nhan) return;
+    a.dataset.nhan = "1";
+    a.textContent = `[${n.ten}${n.trang != null ? " · " + svTrang(n.trang) : ""}]`;
+    a.title = `${n.muc ? n.muc + " · " : ""}bấm để xem đoạn gốc · ${a.dataset.cite}`;
+  });
+}
+
+/* Cảnh báo của câu trả lời, nói bằng CÂU HÀNH ĐỘNG cho người đọc chứ không phải
+   mã nội bộ ("số_không_nguồn", "đỡ_yếu"). Báo cáo 11/10: người mới không hiểu
+   hộp "5 chỗ cần soát lại" muốn họ làm gì. */
+const SV_CB_HOI = {
+  "số_bịa": "Con số trong câu này không có trong đoạn được trích. Đừng tin vội con số đó.",
+  "số_không_nguồn": "Câu này đưa số liệu mà không ghi nguồn. Đừng tin vội.",
+  "cite_lạ": "Câu này trích một đoạn máy chưa đọc ở lượt này, nên nguồn không đáng tin.",
+  "sai_bài": "Câu này nói về một bài nhưng nguồn lại thuộc bài khác. Có thể gán nhầm.",
+  "không_được_đỡ": "Đoạn được trích không nói điều này. Đừng tin vội.",
+  "đỡ_yếu": "Đoạn được trích chỉ nói một phần điều này.",
+  "chữ_hỏng": "Câu này có chữ bị hỏng (lẫn tiếng nước ngoài hoặc mất chữ).",
+  "chữ_hán": "Câu trả lời lẫn chữ Hán.",
+  "sai_ngôn_ngữ": "Câu trả lời không viết bằng tiếng Việt. Bấm Hỏi lại để máy viết lại.",
+  "giấu_thiếu": "Còn ý chưa tìm được bằng chứng mà câu trả lời không nói ra.",
+  "năm_lệch": "Năm công bố ghi trong câu không khớp với thông tin của bài trong kho.",
+  "khẳng_định_kho": "Câu này nhầm kết quả tìm kiếm với toàn bộ kho. Kho còn các bài khác; đừng tin kết luận kho chỉ có một bài.",
+};
+// Lời giải thích của model chỉ hiện khi nó là tiếng Việt — lượt cũ có lời
+// tiếng Pháp ("Le texte ne mentionne pas…").
+const svLaViet = (t) => /[ăâđơưạ-ỹ]/i.test(t || "");
+const svTho = (t) => String(t || "").replace(/\*\*|`/g, "").replace(/\s*\[[^\]]*\]/g, "")
+  .replace(/^[|\s]+|[|\s]+$/g, "").replace(/…$/, "").trim();
+
+function svCanhBaoHoi(w) {
+  const nang = w.filter((x) => SV_CB_HOI[x.kind]);
+  const nhe = w.filter((x) => !SV_CB_HOI[x.kind]);
+  if (!nang.length && !nhe.length) {
+    return '<div class="sv-okbox">Chưa phát hiện lỗi qua các bước kiểm tra. Bạn vẫn có thể bấm nguồn để kiểm lại.</div>';
+  }
+  const dong = nang.map((x) => `<li>${esc(SV_CB_HOI[x.kind])}`
+    + (x.text ? ` <button class="sv-link" data-xem-cau="${x.i}">Xem câu</button>`
+      + `<br><span class="muted">“${esc(catGon(svTho(x.text), 140))}”</span>` : "")
+    + (["sai_bài", "số_bịa", "đỡ_yếu", "không_được_đỡ", "năm_lệch"].includes(x.kind) && svLaViet(x.msg)
+      ? `<br><span class="small muted">${esc(x.msg)}</span>` : "")
+    + "</li>").join("");
+  const goiY = nhe.length
+    ? `<details class="small"><summary class="muted">${nhe.length} gợi ý về cách viết (câu chưa nói cơ chế, nói chung chung) — không ảnh hưởng độ đúng</summary>
+        <ul>${nhe.map((x) => `<li>${esc(tenCanhBao(x.kind))}${x.text ? ` · “${esc(catGon(svTho(x.text), 100))}”` : ""}</li>`).join("")}</ul></details>`
+    : "";
+  return nang.length
+    ? `<div class="sv-warnbox"><b>${nang.length} câu chưa chắc đúng</b> — đã gạch chân trong câu trả lời ở trên.<ul>${dong}</ul>${goiY}</div>`
+    : `<div class="sv-okbox">Chưa phát hiện lỗi qua các bước kiểm tra. Bạn vẫn có thể bấm nguồn để kiểm lại.${goiY}</div>`;
+}
+
+/* Gạch chân đúng CÂU bị cảnh báo trong câu trả lời đã dựng (báo cáo 11/10: câu
+   bị kiểm chứng đánh dấu vẫn trình bày như đã đúng). Dò theo chữ thô của câu
+   trong chữ hiển thị của từng khối, rồi bọc bằng `wrapRange` của app.js — cùng
+   lối với vệt bôi, không cắt chuỗi HTML. */
+function svDanhDauCau(w) {
+  const root = $("#svAnswer");
+  for (const x of w) {
+    if (!SV_CB_HOI[x.kind] || !x.text || x.i < 0) continue;
+    const khoa = svTho(x.text).slice(0, 48);
+    if (khoa.length < 12) continue;
+    for (const el of $$("p, li, td, th", root)) {
+      const chu = el.textContent;
+      const at = chu.indexOf(khoa);
+      if (at < 0) continue;
+      const tho = svTho(x.text);
+      let het = chu.indexOf(tho.slice(-24), at);
+      het = het < 0 ? Math.min(chu.length, at + tho.length) : het + Math.min(24, tho.length);
+      wrapRange(el, at, het, () => {
+        const sp = document.createElement("span");
+        sp.className = "sv-ngo";
+        sp.dataset.cau = x.i;
+        sp.title = SV_CB_HOI[x.kind];
+        return sp;
+      });
+      break;
+    }
+  }
+}
+
+/* Giá ước tính TRƯỚC khi bấm Hỏi: trung vị các lượt đã hỏi của kho (không tính
+   lượt lấy từ cache). Chưa hỏi lần nào thì lấy mức đo được trên kho thử. */
+function svGiaHoi() {
+  const c = (SV.runs || []).map((r) => +r.cost || 0).filter((x) => x > 0).sort((a, b) => a - b);
+  const v = c.length ? c[Math.floor(c.length / 2)] : 0.003;
+  $("#svAsk").textContent = `Hỏi · ~${money(v)}`;
+}
+
+/* Câu ví dụ theo CHỦ ĐỀ của kho, không phải một câu cố định về RAG nằm trong
+   kho robot (báo cáo 11/10). Lấy tên ngắn của hai bài đầu. */
+function svViDuHoi() {
+  const ten = (SV.papers || []).map((p) => String(p.title || "").split(":")[0].trim())
+    .filter((t) => t && t.length <= 40).slice(0, 2);
+  $("#svQ").placeholder = ten.length === 2
+    ? `Hỏi cả kho bằng tiếng Việt — ví dụ: ${ten[0]} và ${ten[1]} khác nhau ở đâu?`
+    : ten.length === 1 ? `Hỏi cả kho bằng tiếng Việt — ví dụ: ${ten[0]} giải quyết vấn đề gì?`
+      : "Hỏi cả kho bằng tiếng Việt";
+}
+
 function svStepBox(kind, html) {
+  $("#svLog").classList.remove("hidden");
   $("#svSteps").insertAdjacentHTML("beforeend",
     `<div class="sv-step sv-step-${kind}">${html}</div>`);
-  $("#svSteps").scrollTop = $("#svSteps").scrollHeight;
+}
+
+/* Một dòng tiến độ GỌN cho người đọc ("Đang tìm… · 23 giây"). Nhật ký kỹ thuật
+   (bảng kiểm, query2doc, BM25/vector) vẫn ghi đủ nhưng gập trong "Chi tiết" —
+   báo cáo 11/10: câu trả lời thật nằm sau hai màn hình nhật ký. */
+function svAskProg(msg) {
+  const el = $("#svAskProg");
+  if (!msg) {
+    el.classList.add("hidden");
+    clearInterval(SV.askTimer);
+    return;
+  }
+  SV.askMsg = msg;
+  el.classList.remove("hidden");
+  const ve = () => {
+    const giay = Math.round((Date.now() - SV.askT0) / 1000);
+    el.innerHTML = `<span class="sv-spin"></span>${esc(SV.askMsg)} <span class="muted">· ${giay} giây</span>`;
+  };
+  ve();
+  clearInterval(SV.askTimer);
+  SV.askTimer = setInterval(ve, 1000);
 }
 
 async function svAsk() {
@@ -578,11 +732,14 @@ async function svAsk() {
   svStopAsk();
   SV.answer = "";
   SV.cites = new Set();
+  SV.askT0 = Date.now();
   $("#svSteps").innerHTML = "";
+  $("#svLog").classList.add("hidden");
+  $("#svLog").open = false;
   $("#svAnswer").innerHTML = "";
   $("#svWarns").innerHTML = "";
-  $("#svCost").textContent = `đang chạy… (${svShort((SV.models || {}).fast)} tìm, `
-    + `${svShort((SV.models || {}).strong)} tổng hợp)`;
+  $("#svCost").textContent = "";
+  svAskProg("Đang lập kế hoạch tìm");
   $("#svAsk").disabled = true;
   $("#svStop").classList.remove("hidden");
 
@@ -594,11 +751,14 @@ async function svAsk() {
   const es = new EventSource(`/api/survey/${SV.id}/ask?${p}`);
   SV.es = es;
 
-  es.addEventListener("cached", () =>
-    svStepBox("cached", "Đã hỏi câu này rồi và kho chưa đổi — lấy lại bản cũ, <b>miễn phí</b>."));
+  es.addEventListener("cached", () => {
+    svAskProg("");
+    svStepBox("cached", "Đã hỏi câu này rồi và kho chưa đổi — lấy lại bản cũ, <b>miễn phí</b>.");
+  });
 
   es.addEventListener("plan", (e) => {
     const d = JSON.parse(e.data);
+    svAskProg(`Đang tìm trong kho cho ${(d.sub_questions || []).length || 1} ý của câu hỏi`);
     svStepBox("plan",
       `<b>Bảng kiểm</b> <i class="small muted">(${esc(d.intent || "")})</i>
        <ol class="sv-checklist">${(d.sub_questions || []).map((s) =>
@@ -610,10 +770,18 @@ async function svAsk() {
   es.addEventListener("search", (e) => {
     const d = JSON.parse(e.data);
     const l = d.lists || {};
+    svAskProg(d.step > 1 ? `Vòng ${d.step}: tìm thêm cho ý còn thiếu` : "Đang tìm trong kho");
     svStepBox("search",
       `<b>Vòng ${d.step} · tìm</b> — ${d.found} đoạn
        <span class="small muted">(BM25 ${l.bm25 || 0} · vector ${l.dense || 0} · đồ thị ${l.graph || 0})</span>
-       <div class="sv-qs">${(d.queries || []).map((q) => `<code>${esc(q)}</code>`).join(" ")}</div>`);
+       ${(d.fallbacks || []).map((t) => `<p class="muted small">${esc(t)}</p>`).join("")}
+       <div class="sv-qs">${(d.queries || []).map((q) => `<span class="sv-q">${esc(q)}</span>`).join(" ")}</div>`);
+  });
+
+  es.addEventListener("hits", (e) => {
+    const d = JSON.parse(e.data);
+    const bai = new Set((d.hits || []).map((h) => h.paper_id)).size;
+    svAskProg(`Đang đọc ${(d.hits || []).length} đoạn từ ${bai} bài`);
   });
 
   es.addEventListener("read", (e) => {
@@ -632,52 +800,70 @@ async function svAsk() {
     svStepBox("gap",
       `<b>Còn thiếu</b> <span class="small muted">· đã tiêu ${money(d.spent)}</span>
        <ul>${d.missing.map((m) =>
-        `<li><b>${esc(m.id)}</b> ${esc(m.why)}${m.next_q ? ` → tìm tiếp: <code>${esc(m.next_q)}</code>` : ""}</li>`).join("")}</ul>`);
+        `<li><b>${esc(m.id)}</b> ${esc(m.why)}${m.next_q ? ` → tìm tiếp: <span class="sv-q">${esc(m.next_q)}</span>` : ""}</li>`).join("")}</ul>`);
   });
 
   es.addEventListener("synth", (e) => {
     const d = JSON.parse(e.data);
+    svAskProg("Đang viết câu trả lời");
     svStepBox("synth", `<b>Tổng hợp</b> từ ${d.evidence} đoạn, ${d.findings} phát hiện`
       + (d.model ? ` <span class="muted">bằng ${esc(svShort(d.model))}</span>` : "")
       + (d.stopped ? ` <span class="sv-stopped">— dừng sớm: ${esc(d.stopped)}</span>` : ""));
   });
 
+  es.addEventListener("stage", (e) => svAskProg(JSON.parse(e.data).msg));
+
   es.addEventListener("answer", (e) => {
     const d = JSON.parse(e.data);
+    // Lạc sang tiếng nước ngoài thì server bỏ bản đang viết và viết lại.
+    if (d.reset) { SV.answer = ""; svAskProg(d.msg || "Đang viết lại"); }
+    if (d.replace != null) SV.answer = d.replace;
     if (d.text) SV.answer += d.text;
     $("#svAnswer").innerHTML = svMd(SV.answer);
+    if (d.done) svGanNhanTrich($("#svAnswer"));
   });
 
   es.addEventListener("check", (e) => {
     const w = JSON.parse(e.data).warns || [];
-    $("#svWarns").innerHTML = w.length
-      ? `<div class="sv-warnbox"><b>${w.length} chỗ cần soát lại</b><ul>` + w.map((x) =>
-        `<li><i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}${x.text ? `<br><span class="muted">“${esc(x.text)}”</span>` : ""}</li>`)
-        .join("") + "</ul></div>"
-      : '<div class="sv-okbox">Soát cơ học không thấy vấn đề: số liệu khớp đoạn đã trích, mã đoạn có thật.</div>';
+    svDanhDauCau(w);
+    $("#svWarns").innerHTML = svCanhBaoHoi(w);
   });
 
   es.addEventListener("error", (e) => {
     let msg = "mất kết nối";
     try { msg = JSON.parse(e.data).msg; } catch (_) { /* lỗi mạng, không có body */ }
     svStepBox("err", `<b>Lỗi</b> ${esc(msg)}`);
+    $("#svWarns").innerHTML = `<div class="sv-warnbox"><b>Không xong được</b> — ${esc(msg)}</div>`;
     svStopAsk();
   });
 
   es.addEventListener("done", (e) => {
     const d = JSON.parse(e.data);
     $("#svCost").textContent =
-      `${d.steps || 0} vòng · ${d.warns || 0} cảnh báo · ${money(d.cost)} · ${d.secs}s`
-      + (d.stopped ? ` · DỪNG SỚM: ${d.stopped}` : "");
+      `${d.steps || 0} vòng tìm · ${money(d.cost)} · ${d.secs} giây`
+      + (d.stopped ? ` · dừng sớm: ${d.stopped}` : "");
     svStopAsk();
+    svGanNhanTrich($("#svAnswer"));
     svLoad();
   });
 }
 
 function svStopAsk() {
   if (SV.es) { SV.es.close(); SV.es = null; }
+  svAskProg("");
   $("#svAsk").disabled = false;
   $("#svStop").classList.add("hidden");
+}
+
+/* Giá trên nút Dựng tính từ độ dài thật và bảng giá của model (server ước),
+   không ghi cứng: "~$0,08" ghi cứng lệch 6–7 lần so với thực chi $0,012. */
+async function svGiaNut(btn, url, lai) {
+  const chu = lai ? "Dựng lại" : "Dựng";
+  btn.textContent = chu;
+  try {
+    const g = await svFetch(url);
+    if (g && g.usd != null) btn.textContent = `${chu} · ~${money(g.usd)}`;
+  } catch (_) { /* không ước được thì để nút trơn */ }
 }
 
 /* ---------------------------------------------------------- tổng hợp */
@@ -700,7 +886,7 @@ function svRenderSynth(d, stale) {
   SV.synth = d;
   if (!d) {
     el.innerHTML = '<p class="muted">Chưa dựng. Bấm <b>Dựng</b> ở trên — cần ít nhất '
-      + 'một bài đã bơm nội dung.</p>';
+      + 'một bài đã đọc kỹ toàn văn.</p>';
     return;
   }
   const P = (x) => (x ? `<p>${esc(x)}</p>` : "");
@@ -713,6 +899,15 @@ function svRenderSynth(d, stale) {
 
   parts.push(`<h2 class="sv-syn-h1">${esc(d.title || "")}</h2>`);
   if (d.scope) parts.push(`<p class="sv-scope">${esc(d.scope)}</p>`);
+
+  // "Đọc gì trước" lên ĐẦU: với người mới đây là phần hữu ích nhất, mà bản cũ
+  // đặt nó sau ~29.000 ký tự (báo cáo 11/10).
+  if ((d.read_order || []).length) {
+    parts.push('<div class="sv-docgi"><h3 class="sv-syn-h2">Đọc gì trước</h3><ol class="sv-order">');
+    d.read_order.forEach((r) => parts.push(
+      `<li>${svPaperChip(r.paper)} <span class="muted">${esc(r.why)}</span></li>`));
+    parts.push("</ol></div>");
+  }
 
   const pb = d.problem || {};
   if (pb.statement || pb.why_hard) {
@@ -794,13 +989,6 @@ function svRenderSynth(d, stale) {
     parts.push("</ul>");
   }
 
-  if ((d.read_order || []).length) {
-    parts.push('<h3 class="sv-syn-h2">Nên đọc theo thứ tự</h3><ol class="sv-order">');
-    d.read_order.forEach((r) => parts.push(
-      `<li>${svPaperChip(r.paper)} <span class="muted">${esc(r.why)}</span></li>`));
-    parts.push("</ol>");
-  }
-
   const done = () => {
     // Nạp tiếp khi nút lọt vào tầm nhìn — cùng cơ chế với danh sách tài liệu.
     const nov = $("#svMoreNov");
@@ -848,6 +1036,7 @@ const SV_VAI = [
   ["doc_thu", "Người đọc thử", "chỉ đọc bản viết, không có bài gốc, chỉ ra chỗ người mới vướng"],
   ["kiem_chung", "Người kiểm chứng", "so từng khẳng định còn ngờ với đoạn gốc"],
   ["bien_tap", "Biên tập viên", "viết lại đúng những đoạn bị chỉ ra"],
+  ["soat_chu", "Người soát chữ", "vá chữ rơi âm tiết, pinyin, câu lạc sang tiếng nước ngoài"],
 ];
 
 function svBtTienTrinh(box, vai) {
@@ -928,10 +1117,10 @@ async function svLoadSynth() {
   $("#svSynMd").href = `/api/survey/${SV.id}/synthesis?fmt=md`;
   $("#svSynMd").classList.toggle("hidden", !d.synth);
   $("#svSynDrop").classList.toggle("hidden", !d.synth);
-  $("#svSynGo").textContent = d.synth ? "Dựng lại · ~$0,09" : "Dựng · ~$0,09";
+  svGiaNut($("#svSynGo"), `/api/survey/${SV.id}/synthesis/gia`, !!d.synth);
   $("#svSynGo").title = `Chạy bằng ${(SV.models || {}).strong || "?"}`;
   $("#svSynProg").textContent = d.carded
-    ? "" : "Chưa bài nào có phiếu — bơm nội dung cho vài bài ở cột trái trước.";
+    ? "" : "Chưa bài nào có tóm tắt — đọc kỹ toàn văn cho vài bài ở cột trái trước.";
 }
 
 function svBuildSynth() {
@@ -954,7 +1143,7 @@ function svBuildSynth() {
     $("#svSynProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
     $("#svSynMd").classList.remove("hidden");
     $("#svSynDrop").classList.remove("hidden");
-    btn.textContent = "Dựng lại · ~$0,09";
+    svGiaNut(btn, `/api/survey/${SV.id}/synthesis/gia`, true);
     btn.disabled = false;
     es.close();
     svLoad();
@@ -985,9 +1174,9 @@ async function svEditFacets() {
   const cur = (SV.facets || []).map((f) => `${f.key} | ${f.label}`).join("\n");
   const got = await nhapChu("Các cột của bảng đối chiếu",
     "Mỗi dòng một cột, dạng:  khoá | Nhãn hiện trên bảng\n"
-    + "Khoá phải trùng tên trường trong phiếu (task, problem, idea, method, "
+    + "Khoá phải trùng tên trường trong bản tóm tắt bài (task, problem, idea, method, "
     + "datasets, metrics, baselines, novelty, limitations…).\n\n"
-    + "Miễn phí — bảng dựng thẳng từ phiếu đã bóc, không gọi model.",
+    + "Miễn phí — bảng dựng thẳng từ tóm tắt bài đã bóc, không gọi model.",
     cur, true);
   if (got === null) return;
 
@@ -1034,20 +1223,59 @@ async function svGrid() {
   SV.grid = d;
   SV.shownRows = 0;
   svRenderGrid();
+  svGiaDienBang();
   $("#svCsv").href = `/api/survey/${SV.id}/matrix?fmt=csv`;
   $("#svMd").href = `/api/survey/${SV.id}/matrix?fmt=md`;
 }
 
+/* Ô gập theo SỐ DÒNG (line-clamp), không cắt theo ký tự: cắt ký tự thì cắt cả
+   ngang công thức ("P(z_{t+1" — báo cáo 11/10) và bấm vào không mở ra được. Giờ
+   ô dựng đủ nội dung qua `svMd` (có công thức), bấm vào là mở hết. Ô trống ghi
+   "—" để không trông như bảng bị hỏng. */
 function svGridRow(d, r) {
   return "<tr>"
       + `<td class="sv-gt" title="${esc(r.title)}">${esc(svClip(r.title))}`
-      + `${r.has_card ? "" : ' <i class="chip">chưa có phiếu</i>'}</td>`
-      + `<td>${r.year || ""}</td>`
+      + `${r.has_card ? "" : ' <i class="chip">chưa có tóm tắt bài</i>'}</td>`
+      + `<td>${r.year || '<span class="muted">—</span>'}</td>`
       + d.facets.map((f) => {
-        const v = r.cells[f.key] || "";
-        return `<td title="${esc(v)}">${esc(svClip(v))}</td>`;
+        const v = String(r.cells[f.key] || "").trim();
+        return v
+          ? `<td class="sv-o" tabindex="0" title="Bấm để xem đủ"><div class="sv-o-chu">${svMd(v)}</div></td>`
+          : '<td class="sv-o-trong">—</td>';
       }).join("")
       + "</tr>";
+}
+
+async function svGiaDienBang() {
+  const b = $("#svDienBang");
+  try {
+    const g = await svFetch(`/api/survey/${SV.id}/matrix/gia`);
+    SV.giaDien = g;
+    b.classList.toggle("hidden", !g.bai);
+    b.textContent = `Điền ô trống bằng model · ~${money(g.usd)}`;
+  } catch (_) { b.classList.add("hidden"); }
+}
+
+async function svDienBang() {
+  const g = SV.giaDien;
+  if (!g || !g.bai) return;
+  if (!await xacNhan(`Điền ô trống cho ${g.bai} bài?`,
+    `Model đọc toàn văn từng bài và bóc lại bản tóm tắt bài đầy đủ (dữ liệu, chỉ số đo, `
+    + `so với ai…). Khoảng ${money(g.usd)} cho cả ${g.bai} bài.\n\n`
+    + g.ten.map((t) => "· " + t).join("\n"), { ok: "Điền" })) return;
+  const b = $("#svDienBang");
+  b.disabled = true;
+  b.textContent = "Đang điền…";
+  try {
+    const r = await svFetch(`/api/survey/${SV.id}/matrix/dien`, { method: "POST" });
+    if ((r.hong || []).length) await baoTin("Có bài không điền được", r.hong.join("\n"));
+    await svGrid();
+    svLoad();
+  } catch (e) {
+    await baoTin("Không điền được", e.message);
+  } finally {
+    b.disabled = false;
+  }
 }
 
 /* Bảng cũng vẽ dần: mỗi hàng có (2 + số facet) ô, nên kho trăm bài với chín cột
@@ -1061,8 +1289,8 @@ function svRenderGrid(more = false) {
   if (!more) {
     $("#svGrid").innerHTML =
       "<thead><tr>" + head.map((h) => `<th>${esc(h)}</th>`).join("") + "</tr></thead><tbody>"
-      + (d.rows.length ? "" : `<tr><td colspan="${head.length}" class="muted">Chưa có phiếu nào. `
-        + "Bơm nội dung cho vài bài ở cột trái để bảng có dữ liệu.</td></tr>")
+      + (d.rows.length ? "" : `<tr><td colspan="${head.length}" class="muted">Chưa có tóm tắt bài nào. `
+        + "Đọc kỹ toàn văn cho vài bài ở cột trái để bảng có dữ liệu.</td></tr>")
       + "</tbody>";
     SV.shownRows = 0;
   }
@@ -1083,10 +1311,12 @@ function svRenderGrid(more = false) {
 async function svSearch() {
   const q = $("#svSearch").value.trim();
   if (!q || !await svNeedId()) return;
+  const sid = SV.id;
   if ($("#svHits")) $("#svHits").innerHTML = '<p class="muted small">đang tra…</p>';
   // Lấy về nhiều hơn số vẽ ra: tra là miễn phí và nhanh (không gọi model), nên
   // chi phí thật nằm ở việc dựng DOM chứ không ở việc lấy dữ liệu.
   const d = await svFetch(`/api/survey/${SV.id}/search?q=${encodeURIComponent(q)}&limit=60`);
+  if (sid !== SV.id || q !== $("#svSearch").value.trim()) return;
   SV.hits = d.hits;
   SV.shownHits = 0;
   svRenderHits();
@@ -1107,16 +1337,23 @@ function svRenderHits(more = false) {
     <div class="sv-hit">
       <div class="sv-hmeta">
         <b>${esc(h.title)}</b> ${h.year || ""} · ${esc(h.section || "")}
-        ${h.level > 0 ? `<i class="chip">tóm lược tầng ${h.level}</i>` : `<span>tr.${h.page || "?"}</span>`}
-        <a class="sv-cite" data-cite="${esc(h.id)}">[${esc(h.id)}]</a>
+        ${h.level > 0 ? `<i class="chip">tóm lược tầng ${h.level}</i>` : `<span>${svTrang(h.page)}</span>`}
+        <a class="sv-cite" data-cite="${esc(h.id)}">[Xem nguồn${h.page != null ? " · " + svTrang(h.page) : ""}]</a>
       </div>
       ${h.ctx ? `<div class="sv-hctx">${esc(h.ctx)}</div>` : ""}
       <div class="sv-htext">${sci(h.text)}</div>
       ${h.vi ? `<div class="sv-hvi">${sci(h.vi)}</div>` : ""}
     </div>`).join("");
 
+  // Ô tra đoạn KHÔNG trả lời câu hỏi — báo cáo 11/10: người mới gõ "world model
+  // là gì" tưởng đây là ô hỏi. Nói rõ và chỉ lối sang Hỏi đáp kèm câu đã gõ
+  // (chỉ điền sẵn, không tự hỏi: Hỏi đáp tốn tiền và nút đó ghi giá).
+  const dau = more ? "" : `<div class="sv-hit-goi">Đây là các đoạn văn khớp từ khoá, chưa phải câu trả lời.
+      <button class="sv-link" id="svHitsHoi">Muốn câu trả lời? Sang Hỏi đáp với câu này →</button></div>`;
   if (more) el.insertAdjacentHTML("beforeend", html);
-  else el.innerHTML = html;
+  else el.innerHTML = dau + html;
+  const hoi = $("#svHitsHoi");
+  if (hoi) hoi.onclick = () => { $("#svQ").value = $("#svSearch").value.trim(); svTab("svTabAsk"); $("#svQ").focus(); };
   SV.shownHits = Math.min(SV.shownHits + SV_PAGE, SV.hits.length);
 
   const left = SV.hits.length - SV.shownHits;
@@ -1139,7 +1376,7 @@ async function svOpenCite(cid) {
         ${c.loupe_doc_id ? `<a class="btn btn-ghost small" href="#doc=${esc(c.loupe_doc_id)}">Mở trong màn đọc</a>` : ""}
         <button class="btn btn-ghost" data-close>Đóng</button></header>
       <div class="modal-body">
-        <p class="small muted">${esc(c.section || "")} · trang ${c.page || "?"} ·
+        <p class="small muted">${esc(c.section || "")} · ${svTrang(c.page, "trang ")} ·
           ${c.level > 0 ? `tóm lược tầng ${c.level}` : "đoạn gốc"} · <code>${esc(c.id)}</code></p>
         ${c.ctx ? `<p class="sv-hctx">${esc(c.ctx)}</p>` : ""}
         <p class="sv-quote">${sci(c.text)}</p>
@@ -1147,8 +1384,13 @@ async function svOpenCite(cid) {
         ${(d.around || []).filter((a) => a.id !== c.id).map((a) =>
           `<p class="sv-around">${sci(catGon(a.text, 400))}</p>`).join("")}
       </div></div>`;
+    // Esc đóng, như mọi hộp thoại khác của app. Gỡ bộ nghe khi đóng, không thì
+    // mỗi lần mở popup để lại một bộ nghe mồ côi trên document.
+    const dong = () => { box.remove(); document.removeEventListener("keydown", phim, true); };
+    const phim = (e) => { if (e.key === "Escape") { e.stopPropagation(); dong(); } };
+    document.addEventListener("keydown", phim, true);
     box.onclick = (e) => {
-      if (e.target === box || e.target.hasAttribute("data-close")) box.remove();
+      if (e.target === box || e.target.hasAttribute("data-close")) dong();
     };
     document.body.appendChild(box);
   } catch (e) {
@@ -1161,6 +1403,9 @@ async function svOpenCite(cid) {
 async function svFindPapers() {
   const q = $("#svFind").value.trim();
   if (!q || !await svNeedId()) return;
+  const sid = SV.id, req = SV.findReq = (SV.findReq || 0) + 1;
+  SV.found = []; SV.foundPicked = new Set(); SV.foundErrs = [];
+  svFoundTotal();
   $("#svFindList").innerHTML = "đang tìm…";
   $("#svFindBox").classList.remove("hidden");
   try {
@@ -1168,16 +1413,31 @@ async function svFindPapers() {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ q, limit: 25, web: true }),
     });
+    if (sid !== SV.id || req !== SV.findReq) return;
     SV.found = d.results;
+    SV.foundPicked = new Set();
+    SV.foundErrs = d.errs || [];
+    svRenderFound();
+  } catch (e) {
+    if (sid !== SV.id || req !== SV.findReq) return;
+    $("#svFindList").innerHTML = `<p class="err">Lỗi: ${esc(e.message)}</p>`;
+  }
+}
+
+function svRenderFound() {
+    const year = +$("#svFindYear").value || 0;
+    const sort = $("#svFindSort").value;
+    const rows = SV.found.map((r, i) => ({ r, i })).filter(({ r }) => !year || (r.year || 0) >= year);
+    if (sort !== "relevant") rows.sort((a, b) => (+b.r[sort] || 0) - (+a.r[sort] || 0));
     // Nguồn nào hỏng thì nói ra. Im lặng trả về ít kết quả hơn là kiểu hỏng khó
     // phát hiện nhất: danh sách trông vẫn bình thường.
-    const errs = (d.errs || []).length
-      ? `<div class="sv-warnbox"><b>${d.errs.length} nguồn không trả lời được</b><ul>`
-        + d.errs.map((e) => `<li>${esc(e)}</li>`).join("") + "</ul></div>"
+    const errs = (SV.foundErrs || []).length
+      ? `<div class="sv-warnbox"><b>${SV.foundErrs.length} nguồn không trả lời được</b><ul>`
+        + SV.foundErrs.map((e) => `<li>${esc(e)}</li>`).join("") + "</ul></div>"
       : "";
-    $("#svFindList").innerHTML = errs + (d.results.length ? d.results.map((r, i) => `
+    $("#svFindList").innerHTML = errs + (rows.length ? rows.map(({r, i}) => `
       <label class="sv-found ${r.in_survey ? "is-have" : ""}">
-        <input type="checkbox" data-i="${i}" ${r.in_survey || !r.pdf_url ? "" : "checked"}>
+        <input type="checkbox" data-i="${i}" ${r.in_survey ? "disabled" : ""} ${SV.foundPicked?.has(i) ? "checked" : ""}>
         <div>
           <b>${esc(r.title)}</b>
           <div class="sv-pmeta">
@@ -1192,20 +1452,30 @@ async function svFindPapers() {
         </div>
       </label>`).join("")
       : '<p class="muted">Không tìm thấy bài nào.</p>');
-  } catch (e) {
-    $("#svFindList").innerHTML = `<p class="err">Lỗi: ${esc(e.message)}</p>`;
-  }
+    svFoundTotal();
+}
+
+function svFoundTotal() {
+  const n = SV.foundPicked?.size || 0;
+  const paid = $("#svFindEnrich").checked;
+  const gia = n * 0.034;
+  $("#svFindTotal").textContent = n ? `${n} bài đã chọn · ${paid ? "ước tính ~" + money(gia) : "nạp miễn phí"}` : "Chưa chọn bài nào";
+  $("#svFindAdd").textContent = n ? `Nạp ${n} bài · ${paid ? "~" + money(gia) : "miễn phí"}` : "Nạp bài đã chọn";
+  $("#svFindAdd").disabled = !n;
 }
 
 async function svAddFound() {
-  const items = $$("#svFindList input:checked").map((el) => SV.found[+el.dataset.i]);
+  const items = [...(SV.foundPicked || [])].map((i) => SV.found[i]).filter(Boolean);
   if (!items.length || !await svNeedId()) return;
+  const enrich = $("#svFindEnrich").checked;
+  if (enrich && !await xacNhan(`Đọc kỹ toàn văn ${items.length} bài?`,
+    `Ước tính ~${money(items.length * 0.034)} cho cả lượt. Giá thực tế phụ thuộc độ dài bài và model.`, { ok: "Nạp và đọc kỹ" })) return;
   $("#svFindBox").classList.add("hidden");
   const es = svWatch();
   try {
     const d = await svFetch(`/api/survey/${SV.id}/find/add`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items, enrich: $("#svFindEnrich").checked ? 1 : 0 }),
+      body: JSON.stringify({ items, enrich: enrich ? 1 : 0 }),
     });
     svProg(`nạp ${d.papers.length} bài · ${money(d.cost)}`);
     await svLoad();
@@ -1252,6 +1522,13 @@ function svTab(tab) {
     $("#" + t).classList.toggle("is-on", t === tab);
     $("#" + p).classList.toggle("hidden", p !== pane);
   });
+  $("#svTabHelp").textContent = {
+    svTabMap: "Bản đồ: bấm vào bài hoặc khái niệm để xem các liên hệ và nguồn.",
+    svTabAsk: "Hỏi đáp: hỏi bằng tiếng Việt, nhận câu trả lời có nguồn. Giá ước tính nằm trên nút Hỏi.",
+    svTabSyn: "Tổng hợp: đọc bức tranh chung và thứ tự đọc bài. Dựng một lần rồi đọc lại miễn phí.",
+    svTabLec: "Bài giảng: chọn một bài để được giải thích từng bước theo mức độ của bạn.",
+    svTabGrid: "Bảng so sánh: so các bài theo bài toán, dữ liệu và kết quả. Mở bảng miễn phí.",
+  }[tab];
   if (!SV.id) return;
   if (pane === "svPaneMap") BanDo.mo(SV.id).catch(() => {});
   if (pane === "svPaneSyn") svLoadSynth().catch(() => {});
@@ -1320,8 +1597,8 @@ function svWire() {
     const n = SV.papers.length;
     if (!await xacNhan(`Xoá kho "${SV.survey?.name || ""}"?`,
       `${n} bài, cùng toàn bộ đoạn, chỉ mục và lịch sử hỏi sẽ mất. Không hoàn lại `
-      + `được.\n\nBơm lại một bài tốn khoảng $0,034, nên cả kho là khoảng `
-      + `$${(n * 0.034).toFixed(2)}. Nạp nhầm kho thì dùng Chuyển sang kho khác `
+      + `được.\n\nĐọc kỹ lại một bài tốn khoảng $0,034, nên cả kho là khoảng `
+      + `${money(n * 0.034)}. Nạp nhầm kho thì dùng Chuyển sang kho khác `
       + `(miễn phí), đừng xoá.`,
       { ok: "Xoá kho", hong: true })) return;
     await svFetch(`/api/survey/${SV.id}`, { method: "DELETE" });
@@ -1331,6 +1608,17 @@ function svWire() {
 
   // Khối thêm bài gấp lại được — kho đã có bài thì nó chỉ chiếm chỗ.
   $("#svAddTog").onclick = () => $("#svAddBox").classList.toggle("is-shut");
+  $("#svAddClose").onclick = () => $("#svAddBox").classList.add("is-shut");
+  $("#svIntroClose").onclick = () => {
+    $("#svIntro").classList.add("hidden");
+    localStorage.setItem("docdoc:survey:intro", "1");
+  };
+  $("#svIntroSample").onclick = async () => {
+    const s = SV.surveys.find((x) => /\[Thử\]|mẫu/i.test(x.name));
+    if (!s) return;
+    svStopAsk(); SV.id = s.id; $("#svPick").value = s.id;
+    await svLoad(); svTab("svTabSyn");
+  };
 
   // nạp file
   $("#svFiles").onchange = (e) => { svUpload(e.target.files); e.target.value = ""; };
@@ -1364,6 +1652,15 @@ function svWire() {
   $("#svFind").onkeydown = (e) => { if (e.key === "Enter") svFindPapers(); };
   $("#svFindClose").onclick = () => $("#svFindBox").classList.add("hidden");
   $("#svFindAdd").onclick = svAddFound;
+  $("#svFindYear").oninput = svRenderFound;
+  $("#svFindSort").onchange = svRenderFound;
+  $("#svFindEnrich").onchange = svFoundTotal;
+  $("#svFindList").onchange = (e) => {
+    if (!e.target.matches("input[data-i]")) return;
+    const i = +e.target.dataset.i;
+    e.target.checked ? SV.foundPicked.add(i) : SV.foundPicked.delete(i);
+    svFoundTotal();
+  };
 
   $("#svFromLoupe").onclick = svPickDocs;
   $("#svDocClose").onclick = () => $("#svDocBox").classList.add("hidden");
@@ -1395,7 +1692,7 @@ function svWire() {
     }
     if (act === "drop") {
       if (!await xacNhan("Bỏ bài này khỏi kho?",
-        "Mất phiếu, câu ngữ cảnh của từng đoạn, cây tóm lược, vector và bài giảng "
+        "Mất bản tóm tắt bài, câu ngữ cảnh của từng đoạn, cây tóm lược, vector và bài giảng "
         + "— bơm lại tốn khoảng $0,034.\n\nNạp nhầm kho thì dùng Chuyển sang kho "
         + "khác, nó giữ nguyên tất cả và miễn phí.",
         { ok: "Bỏ bài", hong: true })) return;
@@ -1427,18 +1724,26 @@ function svWire() {
   $("#svSynDrop").onclick = async () => {
     if (!SV.id) return;
     if (!await xacNhan("Bỏ bản tổng hợp này?",
-      "Dựng lại tốn khoảng $0,09.", { ok: "Bỏ", hong: true })) return;
+      "Dựng lại thì tốn tiền như lần đầu (giá ghi trên nút Dựng).", { ok: "Bỏ", hong: true })) return;
     await svFetch(`/api/survey/${SV.id}/synthesis`, { method: "DELETE" });
     await svLoadSynth();
   };
   $("#svLecDrop").onclick = async () => {
     if (!SV.id || !SV.lecPid) return;
     if (!await xacNhan("Bỏ bài giảng của bài này?",
-      "Dựng lại tốn khoảng $0,08.", { ok: "Bỏ", hong: true })) return;
+      "Dựng lại thì tốn tiền như lần đầu (giá ghi trên nút Dựng).", { ok: "Bỏ", hong: true })) return;
     await svFetch(`/api/survey/${SV.id}/paper/${SV.lecPid}/lecture`, { method: "DELETE" });
     await svLoadLec();
   };
   $("#svFacets").onclick = svEditFacets;
+  $("#svDienBang").onclick = svDienBang;
+  $("#svGrid").addEventListener("click", (e) => {
+    if (e.target.closest("a, [data-cite]")) return;
+    e.target.closest(".sv-o")?.classList.toggle("is-mo");
+  });
+  $("#svGrid").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.matches(".sv-o")) e.target.classList.toggle("is-mo");
+  });
   $("#svLecGo").onclick = svBuildLec;
   $("#svLecPick").onchange = (e) => {
     SV.lecPid = e.target.value;
@@ -1475,6 +1780,16 @@ function svWire() {
   // Trích dẫn bấm được, ở bất cứ đâu trong màn — nhật ký, câu trả lời, đồ thị,
   // kết quả tìm. Một listener trên cả màn thay vì gắn lại sau mỗi lần vẽ.
   $("#survey").addEventListener("click", (e) => {
+    const xem = e.target.closest("[data-xem-cau]");
+    if (xem) {
+      const sp = $(`#svAnswer .sv-ngo[data-cau="${xem.dataset.xemCau}"]`);
+      if (sp) {
+        sp.scrollIntoView({ block: "center", behavior: "smooth" });
+        sp.classList.add("is-nhay");
+        setTimeout(() => sp.classList.remove("is-nhay"), 1600);
+      }
+      return;
+    }
     const a = e.target.closest("[data-cite]");
     if (a) { e.preventDefault(); svOpenCite(a.dataset.cite); return; }
     // Tên khái niệm ở chỗ khác trong màn thì nhảy về đúng điểm đó trên bản đồ.
@@ -1507,11 +1822,12 @@ function svWire() {
     $("#svAnswer").innerHTML = svMd(r.answer);
     $("#svQ").value = r.question;
     $("#svSteps").innerHTML = "";
-    $("#svCost").textContent = `xem lại · ${money(r.cost)} · ${r.steps.length} vòng`;
-    $("#svWarns").innerHTML = (r.warns || []).length
-      ? `<div class="sv-warnbox"><b>${r.warns.length} chỗ cần soát lại</b><ul>`
-        + r.warns.map((x) => `<li><i>${esc(tenCanhBao(x.kind))}</i> ${esc(x.msg)}</li>`).join("") + "</ul></div>"
-      : "";
+    $("#svLog").classList.add("hidden");
+    $("#svCost").textContent = `xem lại · ${money(r.cost)} · ${r.steps.length} vòng tìm`;
+    svDanhDauCau(r.warns || []);
+    $("#svWarns").innerHTML = svCanhBaoHoi(r.warns || []);
+    svGanNhanTrich($("#svAnswer"));
+    $("#svAnswer").scrollIntoView({ block: "start", behavior: "smooth" });
   };
 }
 
@@ -1567,7 +1883,8 @@ async function svLoadLec() {
   $("#svLecMd").href = `/api/survey/${SV.id}/paper/${pid}/lecture?fmt=md`;
   $("#svLecMd").classList.toggle("hidden", !d.lecture?.sections);
   $("#svLecDrop").classList.toggle("hidden", !d.lecture?.sections);
-  go.textContent = d.lecture?.sections ? "Dựng lại · ~$0,08" : "Dựng · ~$0,08";
+  svGiaNut(go, `/api/survey/${SV.id}/paper/${pid}/lecture/gia`, !!d.lecture?.sections);
+  if (d.lecture?.muc) $("#svLecMuc").value = d.lecture.muc;
   $("#svLecProg").textContent = d.has_text
     ? "" : "Bài này chưa có nội dung đã bóc — nạp lại PDF trước.";
   svLecRefs(pid).catch(() => {});
@@ -1616,8 +1933,12 @@ const SV_LEC_TITLE = {
   limits: "Chỗ đáng ngờ", check: "Tự kiểm tra",
 };
 
-function svRenderLec(lec, stale) {
+function svRenderLec(lec, stale, nhap = false) {
   const el = $("#svLec");
+  if (nhap && !Object.keys(lec?.sections || {}).length) {
+    el.innerHTML = '<p class="muted">Đang viết mục đầu tiên…</p>';
+    return;
+  }
   if (!lec || !lec.sections) {
     el.innerHTML = '<p class="muted">Chưa dựng. Chọn bài rồi bấm <b>Dựng</b> — '
       + 'phần đối chiếu với các bài được dẫn lấy miễn phí từ Semantic Scholar, '
@@ -1631,14 +1952,26 @@ function svRenderLec(lec, stale) {
       + '— dựng lại để khớp.</div>');
   }
   const head = (k) => `<h3>${esc(SV_LEC_TITLE[k] || k)}</h3>`;
+  // Bản đang chảy về là BẢN NHÁP: ban biên tập còn soát chữ và nội dung, và
+  // báo cáo 11/10 thấy cả đoạn tiếng Pháp trong bản nháp. Nói rõ, bản cuối thay vào.
+  if (nhap) {
+    out.push('<div class="sv-nhap">Bản nháp — ban biên tập còn soát chữ và nội dung. '
+      + 'Bản đã soát sẽ thay vào khi xong.</div>');
+  }
 
   for (const k of SV_LEC_ORDER) {
     const d = s[k];
     if (!d) continue;
     out.push(`<section class="sv-lecsec" data-sec="${k}">`, head(k));
     if (k === "prereq") {
+      // Bản mới có ba phần (hình dung đời thường → kỹ thuật → vì sao bài cần);
+      // bài giảng dựng trước đó chỉ có `why`, vẫn hiện như cũ.
       out.push("<dl class='sv-prereq'>" + (d.items || []).map((i) =>
-        `<dt>${esc(i.term || "")}</dt><dd>${svMd(i.why || "")}</dd>`).join("") + "</dl>");
+        `<dt>${esc(i.term || "")}</dt><dd>`
+        + (i.doi_thuong ? `<p class="sv-dt"><b>Hình dung:</b> ${esc(i.doi_thuong)}</p>` : "")
+        + (i.ky_thuat ? svMd(i.ky_thuat) : "")
+        + (i.why ? (i.ky_thuat ? `<p class="small"><b>Bài cần nó vì:</b> ${esc(i.why)}</p>` : svMd(i.why)) : "")
+        + "</dd>").join("") + "</dl>");
     } else if (k === "mechanism") {
       if (d.input) out.push(`<p class="sv-lecin"><b>Đầu vào lấy làm ví dụ:</b> ${svMd(d.input)}</p>`);
       out.push("<ol class='sv-steps-l'>" + (d.steps || []).map((st) =>
@@ -1692,37 +2025,57 @@ function svBuildLec() {
   // Dựng dần: mục nào xong hiện ngay, nên mất kết nối giữa chừng vẫn đọc được
   // phần đã có — cùng lối với dựng slide theo mẻ.
   const acc = { sections: {}, warns: [], model: (SV.models || {}).strong, cost: 0 };
+  // Không để dòng "Chưa dựng" nằm dưới dòng trạng thái trong lúc đang dựng
+  // (báo cáo 11/10), và có tiến độ theo bước + đồng hồ: 4–5 phút mà chỉ một
+  // dòng chữ đứng yên thì người dùng tưởng treo.
+  svRenderLec(acc, false, true);
+  $("#svLecWarns").innerHTML = "";
+  const t0 = Date.now();
+  let msg = "bắt đầu", pct = 2;
+  const ve = () => {
+    $("#svLecBar").classList.remove("hidden");
+    $("#svLecBar i").style.width = pct + "%";
+    $("#svLecProg").textContent = `${msg} · ${Math.round((Date.now() - t0) / 1000)} giây`
+      + (acc.cost ? ` · đã tốn ${money(acc.cost)}` : "");
+  };
+  ve();
+  const dongHo = setInterval(ve, 1000);
+  const het = () => { clearInterval(dongHo); $("#svLecBar").classList.add("hidden"); };
 
   const es = new EventSource(
-    `/api/survey/${SV.id}/paper/${pid}/lecture/build`);
+    `/api/survey/${SV.id}/paper/${pid}/lecture/build?muc=${$("#svLecMuc").value}`);
   es.addEventListener("stage", (e) => {
     const d = JSON.parse(e.data);
-    $("#svLecProg").textContent = `${d.msg}… (${svShort((SV.models || {}).strong)})`;
+    msg = d.msg;
+    if (d.pct) pct = d.pct;
+    ve();
     if (d.vai) svBtTienTrinh("#svLecWarns", d.vai);
   });
   es.addEventListener("section", (e) => {
     const d = JSON.parse(e.data);
     acc.sections[d.name] = d.data;
     acc.cost = d.cost;
-    svRenderLec(acc, false);
-    $("#svLecProg").textContent =
-      `${SV_LEC_TITLE[d.name] || d.name}${d.redone ? " (viết lại cho sâu hơn)" : ""} · ${money(d.cost)}`;
+    svRenderLec(acc, false, true);
+    msg = `đã viết ${SV_LEC_TITLE[d.name] || d.name}${d.redone ? " (viết lại cho sâu hơn)" : ""}`;
+    ve();
   });
   es.addEventListener("done", (e) => {
     const d = JSON.parse(e.data);
+    het();
     svRenderLec(d.lecture, false);
     svBt("#svLecWarns", d.lecture, `/api/survey/${SV.id}/paper/${pid}/lecture/soat`, svLoadLec);
-    $("#svLecProg").textContent = `xong · ${money(d.cost)} · ${d.secs}s`;
+    $("#svLecProg").textContent = `xong · ${money(d.cost)} · ${Math.round(d.secs)} giây`;
     $("#svLecMd").classList.remove("hidden");
     $("#svLecDrop").classList.remove("hidden");
-    btn.textContent = "Dựng lại · ~$0,08";
     btn.disabled = false;
+    svGiaNut(btn, `/api/survey/${SV.id}/paper/${pid}/lecture/gia`, true);
     es.close();
   });
   es.addEventListener("error", (e) => {
-    let msg = "mất kết nối";
-    try { msg = JSON.parse(e.data).msg; } catch (_) { /* lỗi mạng, không có body */ }
-    $("#svLecProg").textContent = "Lỗi: " + msg;
+    let loi = "mất kết nối";
+    try { loi = JSON.parse(e.data).msg; } catch (_) { /* lỗi mạng, không có body */ }
+    het();
+    $("#svLecProg").textContent = "Lỗi: " + loi;
     btn.disabled = false;
     es.close();
   });

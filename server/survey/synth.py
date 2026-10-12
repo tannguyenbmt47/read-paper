@@ -31,9 +31,9 @@ import json
 import os
 import time
 
-from .. import depth, llm
+from .. import depth, llm, tieng_viet
 from . import db as sdb
-from . import bientap, prompts, verify
+from . import bientap, prompts, thongtin_bai, verify
 
 STRONG = os.getenv("SURVEY_MODEL") or llm.DEFAULT_MODEL
 LOW_REASONING = {"effort": "low"}
@@ -79,6 +79,10 @@ def _edges_text(rows: list[dict], limit: int = 40) -> str:
 
 async def build(survey_id: str):
     """Async generator phát SSE: ("stage"|"done"|"error", payload)."""
+    # Năm/tác giả còn trống thì điền trước khi dựng phiếu toàn kho — thiếu năm
+    # thì bản tổng hợp viết "không có năm công bố ghi rõ" (báo cáo 11/10).
+    yield "stage", {"msg": "bổ sung năm và tác giả còn thiếu (miễn phí)", "pct": 4}
+    await thongtin_bai.bo_sung_kho(survey_id)
     papers = sdb.list_papers(survey_id)
     carded = [p for p in papers if p.get("card")]
     if not carded:
@@ -99,7 +103,8 @@ async def build(survey_id: str):
 
     raw, usage = await llm.complete(
         [sysmsg, {"role": "user",
-                  "content": prompts.synth_user("", _edges_text(lin), len(carded))}],
+                  "content": prompts.synth_user("", _edges_text(lin), len(carded))
+                  + tieng_viet.NHAC_NGON_NGU}],
         model=strong, session_id=survey_id, max_tokens=9000,
         temperature=0.35, reasoning=LOW_REASONING)
 
@@ -300,6 +305,12 @@ def check(survey_id: str, d: dict) -> list[dict]:
         if cid not in rows:
             warns.append({"kind": "cite_lạ", "msg": f"trích dẫn [{cid}] không có trong kho",
                           "text": depth.cat_gon(claim, 140)})
+
+    # 1b) chữ hỏng: câu tiếng Pháp/Anh, pinyin, chữ Hán (xem `tieng_viet`)
+    for _p, t in bientap.la(d):
+        for l in tieng_viet.loi_chu(t):
+            warns.append({"kind": "chữ_hỏng", "msg": tieng_viet.ten_loi(l["loai"]),
+                          "text": l["doan"]})
 
     # 2) số trong câu phải có mặt nguyên văn trong đoạn đã trích
     for cid, claim, them in cites:

@@ -68,7 +68,7 @@ def _dedup(rows: list[dict]) -> list[dict]:
     return list(out.values())
 
 
-def _rank(rows: list[dict]) -> list[dict]:
+def _rank(rows: list[dict], q: str = "") -> list[dict]:
     """Xếp hạng trộn ba yếu tố, theo lối rerank có yếu tố thời gian của SurveyForge.
 
     Chỉ xếp theo độ liên quan thì bài mới toanh chưa ai trích luôn đứng ngang bài
@@ -77,12 +77,22 @@ def _rank(rows: list[dict]) -> list[dict]:
     chỉ có mỗi abstract.
     """
     import math
+    def words_of(text: str) -> set[str]:
+        # Truy vấn thường ở số ít, tiêu đề ở số nhiều: model/models,
+        # robot/robots phải cùng khớp trước khi trộn năm và số trích dẫn.
+        return {w[:-1] if len(w) > 3 and w.endswith("s") else w
+                for w in re.findall(r"\w{3,}", text.lower())}
+
+    words = words_of(q)
 
     def key(r: dict) -> float:
         cites = math.log1p(r.get("cites") or 0)
         year = r.get("year") or 0
         recency = max(0.0, (year - 2015) / 10.0) if year else 0.0
-        return -(0.55 * cites + 0.30 * recency + (0.35 if r.get("pdf_url") else 0))
+        title = words_of(r.get("title") or "")
+        abstract = words_of(r.get("abstract") or "")
+        lien_quan = sum(1 if w in title else 0.35 if w in abstract else 0 for w in words) / max(1, len(words))
+        return -(4 * lien_quan + 0.15 * cites + 0.80 * recency + (0.15 if r.get("pdf_url") else 0))
 
     return sorted(rows, key=key)
 
@@ -288,7 +298,7 @@ async def find(q: str, *, limit: int = 20, use_web: bool = False) -> tuple[list[
         else:
             rows.extend(res)
 
-    return _rank(_dedup([r for r in rows if r.get("title")]))[:limit], errs
+    return _rank(_dedup([r for r in rows if r.get("title")]), q)[:limit], errs
 
 
 async def fetch_pdf(row: dict) -> bytes:

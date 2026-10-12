@@ -1080,14 +1080,27 @@ def thuc_the(survey_id: str, ten: str, limit: int = 12) -> dict:
     ids += [e["chunk_id"] for e in edges if e.get("chunk_id")]
     ids = list(dict.fromkeys(ids))
     if len(ids) < limit:
-        for cid, _s in bm25(survey_id, ten, limit=40):
-            if len(ids) >= limit:
-                break
-            if cid in ids:
-                continue
-            ch = get_chunks([cid], survey_id).get(cid)
-            if ch and not ch.get("level") and norm in norm_name(ch.get("text") or ""):
-                ids.append(cid)
+        # Tên từ tóm tắt bài hay mang dạng "VAE (Variational Autoencoder)": đòi
+        # nguyên cụm thì bài nhắc "VAE" hàng chục lần vẫn ra "0 đoạn". Dò từng
+        # cách gọi — phần trước ngoặc, phần trong ngoặc — theo ranh giới từ.
+        bien = [ten]
+        m = re.match(r"^\s*(.+?)\s*\((.+?)\)\s*$", ten)
+        if m:
+            bien += [m.group(1), m.group(2)]
+        mau = [re.compile(r"(?<!\w)" + re.escape(norm_name(b)) + r"(?!\w)")
+               for b in bien if len(norm_name(b)) >= 3]
+        for b in bien:
+            for cid, _s in bm25(survey_id, b, limit=40):
+                if len(ids) >= limit:
+                    break
+                if cid in ids:
+                    continue
+                ch = get_chunks([cid], survey_id).get(cid)
+                # Chuẩn hoá CẢ đoạn, không qua `norm_name` — hàm đó cắt ở 80
+                # ký tự (đúng cho tên), dùng cho đoạn là chỉ soát mỗi câu đầu.
+                chu = " ".join(_NORM_STRIP.sub(" ", (ch.get("text") or "").lower()).split()) if ch else ""
+                if ch and not ch.get("level") and any(x.search(chu) for x in mau):
+                    ids.append(cid)
     got = get_chunks(ids[:limit], survey_id)
     chunks = [{"id": i, "paper_id": got[i]["paper_id"], "title": got[i].get("paper_title", ""),
                "section": got[i].get("section") or "", "text": (got[i].get("text") or "")[:500],

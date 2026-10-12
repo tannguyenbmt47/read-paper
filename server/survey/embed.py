@@ -112,9 +112,11 @@ async def encode(texts: list[str]) -> np.ndarray | None:
     Chạy trong executor: nhân ma trận trên GPU vẫn chặn luồng Python, mà server
     còn phải phục vụ SSE cho các tab khác trong lúc đang nạp bài.
     """
-    if not texts or not _load():
+    if not texts:
         return None
     loop = asyncio.get_running_loop()
+    if not await loop.run_in_executor(None, _load):
+        return None
     return await loop.run_in_executor(None, _encode_sync, texts)
 
 
@@ -230,7 +232,9 @@ def _rerank_sync(query: str, docs: list[str]) -> list[float]:
 
 async def cross_score(query: str, docs: list[str]) -> list[float] | None:
     """Chấm lại `(câu hỏi, đoạn)` bằng cross-encoder. `None` nếu không dùng được."""
-    if not docs or not _load_rr():
+    if not docs:
         return None
     loop = asyncio.get_running_loop()
+    if not await loop.run_in_executor(None, _load_rr):
+        return None
     return await loop.run_in_executor(None, _rerank_sync, query, docs)

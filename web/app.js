@@ -397,11 +397,15 @@ const state = {
 };
 
 /** Giá tiền theo đơn vị người đọc cảm nhận được, không phải 6 chữ số 0. */
+/* MỘT hàm định dạng tiền cho cả app, dấu phẩy thập phân kiểu Việt. Báo cáo
+   11/10: cùng một màn có "~$0,09" (nhãn viết tay) và "$0.0092" (hàm này) — hai
+   kiểu dấu thập phân cạnh nhau. Nhãn giá ghi sẵn trong HTML/JS cũng phải viết
+   dấu phẩy; `test_mot_kieu_dinh_dang_tien` canh. */
 function money(v) {
   if (v == null) return "—";
+  v = +v;
   if (v === 0) return "$0";
-  if (v < 0.01) return "$" + v.toFixed(4);
-  return "$" + v.toFixed(3);
+  return "$" + v.toFixed(v < 0.01 ? 4 : 3).replace(".", ",");
 }
 
 /** Báo chi phí của một lượt gọi vừa xong, kèm tổng đã tiêu cho bài này. */
@@ -664,7 +668,7 @@ function nguonGon(src) {
 const RECENT_SORT = {
   moi: (a, b) => b.updated_at - a.updated_at,
   nap: (a, b) => b.created_at - a.created_at,
-  ten: (a, b) => (a.title_vi || a.title).localeCompare(b.title_vi || b.title, "vi"),
+  ten: (a, b) => tenBai(a).ten.localeCompare(tenBai(b).ten, "vi"),
   dich: (a, b) => tiLeDich(b) - tiLeDich(a),
   // Việc còn dở xếp trước, và bài chưa dịch gì cũng là việc còn dở — nhưng bài
   // đã xong 100% thì xuống cuối, chứ không lẫn vào giữa.
@@ -691,12 +695,13 @@ function loRecent() {
   const loc = thuVien.loc;
   const trongTM = (d) => loc === "all" || (loc === "none" ? !d.folder_id : d.folder_id === loc);
   const ra = recentDocs.filter((d) => trongTM(d) && (!q || khongDau(
-    [d.title_vi, d.title, tenModel(d.model), d.source].filter(Boolean).join(" ")
+    [d.title_vi, d.title, d.meta?.title_goc, tenModel(d.model), d.source].filter(Boolean).join(" ")
   ).includes(q)));
   return ra.sort(xep);
 }
 
-/** Tên hiện ra cho một bài, kèm cờ "chưa có tên đọc được".
+/** Luôn hiển thị tên gốc, không thay bằng tên dịch trong brief.
+    Tên hiện ra cho một bài, kèm cờ "chưa có tên đọc được".
 
     Đếm trong thư viện thật: 11/36 tiêu đề là rác — `(không tiêu đề)`, tiêu đề
     còn dính dấu Markdown (`# Contrastive Pretraining…`), `Tiêu đề thử`. Dấu `#`
@@ -704,7 +709,7 @@ function loRecent() {
     đánh dấu để giao diện in nghiêng — người dùng thấy ngay bài nào cần đặt tên,
     thay vì năm dòng "(không tiêu đề)" giống hệt nhau. */
 function tenBai(d) {
-  const t = String(d.title_vi || d.title || "").replace(/^\s*#{1,6}\s+/, "").trim();
+  const t = String(d.meta?.title_goc || d.title || "").replace(/^\s*#{1,6}\s+/, "").trim();
   if (t && t !== "(không tiêu đề)") return { ten: t, voDanh: false };
   return { ten: tenNguon(d.source) || "Bài chưa có tên", voDanh: true };
 }
@@ -1128,7 +1133,7 @@ function veRecent() {
       ? `Bài này đã tốn $${(+d.cost_usd).toFixed(4).replace(".", ",")} để dịch.\n\n` : "";
     if (!await xacNhan(
       "Xoá bài này khỏi máy?",
-      `${d.title_vi || d.title || ""}\n\n${gia}`
+      `${tenBai(d).ten}\n\n${gia}`
       + "Mất cả bản dịch, ghi chú, vệt bôi và bộ slide. Không hoàn lại được.",
       { ok: "Xoá", hong: true },
     )) return;
@@ -1538,7 +1543,7 @@ async function loadEstimate() {
       // DẢI chứ không một con số: ước tính token có sai số thật, và một con số
       // duy nhất tạo ảo giác chính xác mà nó không có. Kèm luôn phạm vi — con số
       // này chỉ tính lượt dịch, không gồm giải thích từng đoạn, slide, hỏi đáp.
-      : `<div class="stat warn-stat"><b>$${(e.cost_low ?? e.cost_usd).toFixed(3)}–${(e.cost_high ?? e.cost_usd).toFixed(3)}</b>`
+      : `<div class="stat warn-stat"><b>${money(e.cost_low ?? e.cost_usd)}–${money(e.cost_high ?? e.cost_usd).slice(1)}</b>`
         + `<span>ước tính · ${esc(e.covers || "lượt dịch")}</span></div>`;
     box.innerHTML =
       // Nói rõ phần còn lại đi đâu. Ba con số không giải thích (tổng · sẽ dịch
@@ -1944,14 +1949,14 @@ function mountDoc(doc) {
   const ci = $("#chatInput"); if (ci) ci.value = "";
   state.session = 0;
   showScreen("reader");
-  const tenVi = doc.brief?.title_vi || doc.title || "(không tiêu đề)";
-  const tenEn = doc.title && doc.brief?.title_vi ? doc.title : doc.source || "";
-  $("#docTitleVi").textContent = tenVi;
-  $("#docTitleEn").textContent = tenEn;
+  const ten = tenBai(doc).ten;
+  const nguon = doc.source || "";
+  $("#docTitleVi").textContent = ten;
+  $("#docTitleEn").textContent = nguon;
   // Tiêu đề bài báo thường dài hơn chỗ có trên thanh, nên nó bị cắt bằng dấu ba
   // chấm. Không có `title` thì phần bị cắt không có đường nào đọc được — mà đó
   // hay là phần phân biệt bài này với bài kia ("… for Multi-hop QA").
-  $(".topbar-title").title = tenEn ? `${tenVi}\n${tenEn}` : tenVi;
+  $(".topbar-title").title = nguon ? `${ten}\n${nguon}` : ten;
   // Nhãn ĐẦY ĐỦ: từ khi ô chọn nằm trong panel tuỳ chọn thay vì trên thanh, nó
   // rộng cả panel, nên nhãn rút gọn chỉ còn làm mất phần giá và độ dài ngữ cảnh
   // — vốn là hai thứ duy nhất để chọn giữa hai model.
@@ -2177,7 +2182,7 @@ function wireReader() {
       if (!r.ok) throw new Error(await apiErr(r, "không dựng được"));
       const res = await r.json();
       state.doc.brief = res.brief;
-      $("#docTitleVi").textContent = res.brief.title_vi || state.doc.title;
+      $("#docTitleVi").textContent = tenBai(state.doc).ten;
       renderSide();
       reportCost("Đã chốt lại bảng thuật ngữ", res.run, res.total);
     } catch (e) {
@@ -3653,7 +3658,7 @@ async function loadSections() {
     box.innerHTML = sections.map((s) => {
       const left = s.blocks - s.done;
       const money = s.cost_usd == null ? "" :
-        `~$${(s.cost_usd * (left / Math.max(s.blocks, 1))).toFixed(3)}`;
+        `~${money(s.cost_usd * (left / Math.max(s.blocks, 1)))}`;
       return `<label class="pick-row${left === 0 ? " done" : ""}" data-sec="${esc(s.first)}">
         <input type="checkbox" ${state.pick.has(s.first) ? "checked" : ""}>
         <span class="nm" title="${esc(s.name)}">${esc(s.name)}</span>
@@ -3772,7 +3777,7 @@ async function runTranslate() {
       }
       const res = await r.json();
       state.doc.brief = res.brief;
-      $("#docTitleVi").textContent = state.doc.brief.title_vi || state.doc.title;
+      $("#docTitleVi").textContent = tenBai(state.doc).ten;
       renderSide();
       dongHoTat();
       reportCost("Đọc toàn bài xong", res.run, res.total);

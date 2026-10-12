@@ -27,7 +27,7 @@ from __future__ import annotations
 import os
 import re
 
-from .. import depth, llm, pipeline
+from .. import depth, llm, pipeline, tieng_viet
 from . import db as sdb
 from . import prompts
 
@@ -127,15 +127,26 @@ def check_answer(survey_id: str, answer: str, allowed: list[str],
     sents = split_sentences(answer)
     allow = set(allowed)
     rows = sdb.get_chunks(list(allow))
+    papers = sdb.list_papers(survey_id)
 
     def add(i: int, kind: str, msg: str) -> None:
         warns.append({"i": i, "kind": kind, "msg": msg,
                       "text": depth.cat_gon(sents[i]["text"], 160) if 0 <= i < len(sents) else ""})
 
     for s in sents:
-        body = _URLISH.sub(" ", s["text"])
-        nums = [n for n in _NUM.findall(body)]
+        # Số thứ tự đầu dòng ("1.", "2)") không phải số liệu: câu trả lời đánh số
+        # các bước từng bị báo "có số liệu (1) mà không kèm trích dẫn" ba lần.
+        nums = so_lieu(s["text"])
+        # Năm đi sát tên bài là metadata đã biết, không phải số liệu thí nghiệm
+        # bắt buộc phải xuất hiện trong chính đoạn trích ("World Models (2018)").
+        plain = re.sub(r'[*`"“”]', "", s["text"])
+        years = {str(p["year"]) for p in papers if p.get("year") and re.search(
+            re.escape(_ten_dau(p.get("title") or "")) + r"\s*\(\s*" + str(p["year"]) + r"\s*\)", plain)}
+        nums = [n for n in nums if n not in years]
         cites = s["cites"]
+        if len(papers) > 1 and re.search(
+                r"không có bài (?:nào )?khác (?:trong kho|ngoài)|kho chỉ có (?:một|1) bài", plain, re.I):
+            add(s["i"], "khẳng_định_kho", "Kho có " + str(len(papers)) + " bài; chỉ tìm được một bài không có nghĩa các bài khác không tồn tại.")
 
         # (2) mã bịa hoặc mã không thuộc lượt này
         for c in cites:
@@ -169,6 +180,22 @@ def check_answer(survey_id: str, answer: str, allowed: list[str],
     # (4) tên bài và năm phải khớp kho
     _check_papers(survey_id, answer, warns)
 
+    # (4b) câu nói về bài A mà trích đoạn của bài B — báo cáo 11/10: "Dans WAM,
+    # le modèle doit aussi prédire…" trích đoạn của World Models. Người mới tin
+    # trích dẫn và học sai bài.
+    for i, ten, nguon, _pid in sai_bai(survey_id, answer, sents, rows):
+        add(i, "sai_bài", f"câu nói về «{ten}» nhưng đoạn được trích thuộc «{nguon}»")
+
+    # (4c) ngôn ngữ và chữ hỏng (xem `server/tieng_viet.py`)
+    ngu = tieng_viet.sai_ngon_ngu(answer)
+    if ngu:
+        warns.append({"i": -1, "kind": "sai_ngôn_ngữ",
+                      "msg": "câu trả lời không viết bằng tiếng Việt", "text": ""})
+    else:
+        for s3 in sents:
+            for l in tieng_viet.loi_chu(s3["text"]):
+                add(s3["i"], "chữ_hỏng", tieng_viet.ten_loi(l["loai"]) + f": “{l['doan'][:60]}”")
+
     # (5) rò chữ Đông Á
     src = " ".join(r["text"] for r in rows.values())
     if pipeline.cjk_leak(answer, src):
@@ -193,6 +220,179 @@ def check_answer(survey_id: str, answer: str, allowed: list[str],
 
 
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
+_DAU_DONG = re.compile(r"^\s*(?:\d{1,2}[.)]|[-*•])(?:\s+|$)")
+_VIET_TAT = re.compile(r"\(\s*(?:gọi tắt là\s+|viết tắt\s+)?([A-Z][A-Za-z0-9\-]{1,11})\s*\)")
+
+
+def _ten_dau(title: str) -> str:
+    """Phần tên của tiêu đề: trước dấu hai chấm, chữ hoa toàn bộ thì đổi về
+    dạng thường để so (PDF hay in tiêu đề hoa)."""
+    t = (title or "").split(":")[0].strip()
+    # Một từ viết hoa là tên riêng ("SONIC"), giữ nguyên; cả câu viết hoa là lối
+    # in của PDF ("LATENT ACTION PRETRAINING…"), đổi về dạng thường.
+    return t.title() if t.isupper() and " " in t else t
+
+
+def bi_danh(papers: list[dict], answer: str = "") -> dict[str, set[str]]:
+    """Những cách câu văn gọi tên từng bài.
+
+    - phần tên của tiêu đề, nếu ngắn (≤6 từ): "World Models", "SONIC";
+    - chữ đầu của dãy từ viết hoa mở đầu tiêu đề: "World Action Models are…" →
+      "WAM";
+    - tên viết tắt chính câu trả lời tự định nghĩa: "Latent Action Pretraining
+      (LAPA)" — tiêu đề không cho ra LAPA, nhưng model hay khai ngay lần đầu.
+    """
+    out: dict[str, set[str]] = {}
+    for p in papers:
+        t = _ten_dau(p.get("title") or "")
+        a: set[str] = set()
+        if t and len(t.split()) <= 6 and len(t) >= 4:
+            a.add(t)
+        dau = []
+        for w in t.split():
+            if w[:1].isupper():
+                dau.append(w[0])
+            else:
+                break
+        if len(dau) >= 2:
+            a.add("".join(dau))
+        out[p["id"]] = a
+    for m in _VIET_TAT.finditer(answer or ""):
+        # Tên phải đứng SÁT ngay trước ngoặc. Dò trong cả khúc trước đó thì
+        # "World Models (…) và **World Action Models (DreamZero)**" gán nhầm
+        # DreamZero cho bài World Models — đã ra đúng vậy trên câu trả lời thật.
+        truoc = answer[max(0, m.start() - 90):m.start()].rstrip(" *_\"“”").lower()
+        for pid, a in out.items():
+            if any(len(x) >= 6 and truoc.endswith(x.lower()) for x in a):
+                a.add(m.group(1))
+    return out
+
+
+def _nhac(text: str, ten: str) -> bool:
+    return bool(re.search(r"(?<![\w-])" + re.escape(ten) + r"(?![\w-])", text))
+
+
+def sai_bai(survey_id: str, answer: str, sents: list[dict], rows: dict) -> list[tuple]:
+    """(chỉ số câu, tên bài được nhắc, tên bài của đoạn trích) cho mọi câu nhắc
+    bài A mà KHÔNG trích đoạn nào của A, chỉ trích bài khác.
+
+    Câu nhắc cả hai bài ("WAM mở rộng World Models [đoạn của World Models]") thì
+    không bắt: có một bài khớp là đủ."""
+    papers = sdb.list_papers(survey_id)
+    ten = {p["id"]: _ten_dau(p.get("title") or "") for p in papers}
+    bd = bi_danh(papers, answer)
+    out = []
+    for s in sents:
+        nguon = {rows[c]["paper_id"] for c in s["cites"] if c in rows}
+        if not nguon:
+            continue
+        nhac = {pid for pid, a in bd.items() if any(_nhac(s["text"], x) for x in a)}
+        # Đoạn được trích tự nhắc tới bài A (bài B bàn về A) thì câu nói về A
+        # mà trích B là hợp lệ.
+        chu = " ".join(rows[c]["text"] for c in s["cites"] if c in rows)
+        nhac = {pid for pid in nhac if not any(_nhac(chu, x) for x in bd[pid] if len(x) >= 3)}
+        if nhac and not (nhac & nguon):
+            pid = sorted(nhac)[0]
+            ng = sorted(nguon)[0]
+            out.append((s["i"], ten.get(pid, pid), ten.get(ng, ng), pid))
+    return out
+
+
+_TU = re.compile(r"\w{3,}")
+# Số KHÔNG phải số liệu: số mục/hình/bảng/bước ("Mục 3.1", "Bảng 2"), chỉ số
+# trong công thức (`z_{t+1}`, `h_t`). Câu trả lời thật trên World Models bị báo
+# oan 7 lần đúng vì mấy dạng này — "số 3.1 không có trong đoạn đã trích".
+_SO_NHAN = re.compile(r"(?i)\b(?:mục|phần|chương|hình|bảng|bước|giai đoạn|vòng|"
+                      r"section|sec\.|figure|fig\.|table|eq\.|equation|step|stage|"
+                      r"công thức|phương trình|appendix|phụ lục)\s*\(?\d+(?:\.\d+)*\)?")
+_CHI_SO = re.compile(r"_\{[^{}]*\}|_[A-Za-z0-9+\-]{1,4}")
+
+
+def so_lieu(text: str) -> list[str]:
+    """Số liệu của một câu, sau khi gỡ những số không phải số liệu."""
+    body = _DAU_DONG.sub("", text or "")
+    body = _SO_NHAN.sub(" ", _CHI_SO.sub(" ", body))
+    return _NUM.findall(_URLISH.sub(" ", body))
+
+
+def _diem(tu: set[str], r: dict) -> int:
+    return len(tu & {w.lower() for w in _TU.findall(f"{r['text']} {r.get('vi') or ''}")})
+
+
+def gan_nguon_cho_so(answer: str, allowed: list[str]) -> tuple[str, list[dict]]:
+    """Thư ký, $0: câu (hay hàng bảng) đưa số mà không kèm trích dẫn thì tìm
+    trong các đoạn ĐÃ LẤY VỀ ở lượt này một đoạn chứa ĐỦ mọi số của câu và trùng
+    chữ nhiều nhất, rồi gắn mã đoạn đó vào. Không đoạn nào chứa đủ thì để nguyên
+    — cảnh báo "số không nguồn" vẫn hiện, vì lúc ấy nó đúng."""
+    rows = sdb.get_chunks(list(set(allowed)))
+    log = []
+    for s in reversed(split_sentences(answer)):
+        nums = so_lieu(s["text"])
+        if not nums or s["cites"]:
+            continue
+        want = {_norm(n) for n in nums}
+        tu = {w.lower() for w in _TU.findall(s["text"])}
+        best, diem = "", 0
+        for cid, r in rows.items():
+            if r.get("level") or not want <= source_numbers(f"{r['text']} {r.get('vi') or ''}"):
+                continue
+            d = _diem(tu, r)
+            if d > diem:
+                best, diem = cid, d
+        if not best or diem < 2:
+            continue
+        t = s["text"]
+        # Hàng bảng: mã đặt vào ô cuối, trước dấu `|` đóng hàng. Câu thường: mã
+        # đặt trước dấu chấm câu cuối.
+        m = re.search(r"\s*\|\s*$", t) or re.search(r"[.!?…]+$", t)
+        moi = (t[:m.start()] + f" [{best}]" + t[m.start():]) if m else t + f" [{best}]"
+        answer = answer[:s["start"]] + moi + answer[s["end"]:]
+        log.append({"vai": "thu_ky", "viec": "gắn nguồn cho câu có số mà thiếu trích dẫn",
+                    "truoc": "", "sau": best, "cau": depth.cat_gon(t, 120)})
+    return answer, log
+
+
+def doi_trich_sai_bai(survey_id: str, answer: str, allowed: list[str]) -> tuple[str, list[dict]]:
+    """Thư ký, $0: câu nhắc bài A mà trích đoạn bài B thì đổi sang đoạn của A
+    trong số các đoạn ĐÃ LẤY VỀ ở lượt này (đoạn ngoài lượt là model chưa đọc,
+    trích nó là bịa theo kiểu khác). Chọn đoạn trùng nhiều từ nhất với câu, và
+    phải phủ đủ số của câu. Không có đoạn nào hợp thì để nguyên, cảnh báo vẫn
+    hiện và giao diện gạch chân câu đó."""
+    rows = sdb.get_chunks(list(set(allowed)))
+    sents = split_sentences(answer)
+    log = []
+    for i, _ten, _ng, pid in reversed(sai_bai(survey_id, answer, sents, rows)):
+        s = sents[i]
+        tu = {w.lower() for w in _TU.findall(s["text"])}
+        nums = {_norm(n) for n in so_lieu(s["text"])}
+        # Đoạn mới phải khớp câu TỐT HƠN đoạn đang trích. Câu nhắc bài A để đối
+        # chiếu ("Ngoài bài World Models, kho có đoạn bàn về JEPA [đoạn WAM]")
+        # vốn trích đúng; bản đầu đổi nó sang đoạn World Models và phép chấm kéo
+        # theo bắt ngay "đoạn không nhắc đến JEPA".
+        cu = max((_diem(tu, rows[c]) for c in s["cites"] if c in rows), default=0)
+        best, diem = "", cu
+        for cid, r in rows.items():
+            if r["paper_id"] != pid or r.get("level"):
+                continue
+            chu = f"{r['text']} {r.get('vi') or ''}"
+            if nums and not nums <= source_numbers(chu):
+                continue
+            d = _diem(tu, r)
+            if d > diem:
+                best, diem = cid, d
+        if not best or diem < 3:
+            continue
+        moi = s["text"]
+        for c in s["cites"]:
+            if c in rows and rows[c]["paper_id"] != pid:
+                moi = moi.replace(f"[{c}]", f"[{best}]", 1)
+        moi = re.sub(r"(\[" + re.escape(best) + r"\])(?:\s*\[" + re.escape(best) + r"\])+", r"\1", moi)
+        if moi != s["text"]:
+            answer = answer[:s["start"]] + moi + answer[s["end"]:]
+            log.append({"vai": "thu_ky", "viec": "đổi trích dẫn sang đúng bài được nhắc",
+                        "truoc": ", ".join(s["cites"]), "sau": best,
+                        "cau": depth.cat_gon(s["text"], 120)})
+    return answer, log
 
 
 def _check_papers(survey_id: str, answer: str, warns: list[dict]) -> None:
@@ -240,7 +440,8 @@ async def check_entailment(answer: str, allowed: list[str],
 
     raw, u = await llm.complete(
         [{"role": "system", "content": prompts.ENTAIL_SYSTEM},
-         {"role": "user", "content": prompts.entail_user(items[:40])}],
+         {"role": "user", "content": prompts.entail_user(items[:40])
+          + "\n\nTrường \"why\" viết bằng tiếng Việt."}],
         model=fast or FAST, session_id=session or None, max_tokens=2000,
         temperature=0.0, reasoning=NO_REASONING)
     usage.add(u)

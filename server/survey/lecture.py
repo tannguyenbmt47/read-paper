@@ -45,7 +45,7 @@ import re
 import time
 
 from .. import db as maindb
-from .. import depth, llm
+from .. import depth, llm, tieng_viet
 from ..pipeline import _NUM, _URLISH, _norm_num
 from . import db as sdb
 from . import bientap, ingest, prompts, refs, verify
@@ -86,7 +86,7 @@ def stale(paper: dict) -> bool:
     return bool(paper.get("lecture_fp")) and lec.get("fp") != paper.get("lecture_fp")
 
 
-async def build(paper_id: str, *, deepen: bool = True):
+async def build(paper_id: str, *, deepen: bool = True, muc: str = "moi"):
     """Async generator phát SSE: ("stage"|"section"|"done"|"error", payload)."""
     paper = sdb.load_paper(paper_id)
     sid = paper["survey_id"]
@@ -127,7 +127,7 @@ async def build(paper_id: str, *, deepen: bool = True):
         titles = ", ".join(prompts.SECTIONS[n]["title"].lower() for n in names)
         yield "stage", {"msg": f"viết {titles}", "pct": 20 + int(52 * bi / n_batch)}
         try:
-            got, u = await _one(sysmsg, paper, names, dtext, strong, paper_id)
+            got, u = await _one(sysmsg, paper, names, dtext, strong, paper_id, muc=muc)
         except Exception as e:             # noqa: BLE001 — mẻ hỏng thì giữ mẻ đã xong
             usage.add(getattr(e, "usage", None) or llm.Usage())
             yield "stage", {"msg": f"mẻ {bi + 1} không viết được: {e}", "pct": 20}
@@ -152,7 +152,7 @@ async def build(paper_id: str, *, deepen: bool = True):
             prompts.SECTIONS[n]["title"].lower() for n in names), "pct": 78}
         try:
             got, u = await _one(sysmsg, paper, names, dtext, strong, paper_id,
-                                redo=shallow)
+                                redo=shallow, muc=muc)
             usage.add(u)
             for n in names:
                 if n in got:
@@ -188,6 +188,7 @@ async def build(paper_id: str, *, deepen: bool = True):
         "s2_id": dos.get("s2_id") or "",
         "n_refs_total": dos.get("n_refs") or 0,
         "model": strong,
+        "muc": muc,
         "cost": round(usage.cost, 5),
         "created_at": time.time(),
         "fp": _fingerprint(paper, dos),
@@ -216,7 +217,7 @@ async def ban_bien_tap(paper_id: str, sections: dict, ids: set[str], strong: str
     async for kind, payload in bientap.soat(
             sid, sections, kieu="bai_giang", paper_id=paper_id, ids=ids,
             strong=strong, fast=fast, nhan_muc=_nhan_muc,
-            kiem_so=lambda p: p[0] in CLAIM_SECTIONS,
+            kiem_so=lambda p: p[0] in CLAIM_SECTIONS and p[-1] != "doi_thuong",
             soat_sau=lambda p: p[0] != "check"):
         if kind == "stage":
             pct0 = min(95, pct0 + 4)
@@ -253,7 +254,7 @@ async def soat_lai(paper_id: str):
 
 
 async def _one(sysmsg, paper: dict, names: tuple[str, ...], dtext: str,
-               model: str, paper_id: str, redo: dict | None = None):
+               model: str, paper_id: str, redo: dict | None = None, muc: str = "moi"):
     """Một mẻ, thử lại một lần nếu phản hồi không bóc ra JSON được.
 
     `session_id=paper_id` để OpenRouter giữ sticky routing cho prefix.
@@ -263,8 +264,12 @@ async def _one(sysmsg, paper: dict, names: tuple[str, ...], dtext: str,
     trong một dòng tiến trình. Lần thử lại gần như miễn phí — prefix đã ấm nên
     chỉ trả tiền phần đầu ra.
     """
+    # Lời nhắc ngôn ngữ đứng CUỐI phần user, không vào prefix: prefix là toàn
+    # văn tiếng Anh dài hàng chục nghìn token, luật "viết tiếng Việt" ở đầu
+    # system bị nó nhấn chìm — bài giảng World Models ra cả mục Bằng chứng tiếng
+    # Anh và pinyin rải khắp mục cơ chế.
     user = prompts.lecture_user(paper.get("title") or "", paper.get("card"),
-                                names, dtext, redo)
+                                names, dtext, redo, muc) + tieng_viet.NHAC_NGON_NGU
     usage = llm.Usage()
     last: Exception | None = None
     for attempt in range(2):
@@ -300,7 +305,8 @@ def _texts(name: str, data) -> list[tuple[str, str]]:
     elif name == "prereq":
         for it in data.get("items") or []:
             if isinstance(it, dict):
-                out.append((it.get("term", "")[:30], it.get("why", "")))
+                out.append((it.get("term", "")[:30],
+                            " ".join(str(it.get(k) or "") for k in ("doi_thuong", "ky_thuat", "why"))))
     elif name == "compare":
         for it in data.get("items") or []:
             if isinstance(it, dict):
@@ -342,6 +348,12 @@ def _numbers(name: str, data) -> list[str]:
         blob = " ".join(f"{i.get('claim', '')} {i.get('number', '')} {i.get('setting', '')}"
                         for i in (data.get("items") or []) if isinstance(i, dict))
         blob += " " + (data.get("limits_of_evidence") or "")
+    elif name == "prereq" and isinstance(data, dict):
+        # `doi_thuong` là câu VÍ VON đời thường ("70% mưa nhẹ, 20% mưa to"), không
+        # phải số liệu của bài — soát nó là kêu oan, cùng lý do mục cơ chế không
+        # soát số (xem `CLAIM_SECTIONS`).
+        blob = " ".join(f"{i.get('ky_thuat', '')} {i.get('why', '')}"
+                        for i in (data.get("items") or []) if isinstance(i, dict))
     else:
         blob = " ".join(t for _, t in _texts(name, data))
     blob = verify.tach_don_vi(_TIMEISH.sub(" ", _URLISH.sub(" ", blob)))
@@ -392,6 +404,10 @@ def check(sections: dict, chunk_ids: set[str], paper_id: str = "") -> list[dict]
             for w in depth.check_text(text, label=f"{title}{' · ' + label if label else ''}"):
                 warns.append({"section": name, "kind": w["kind"], "msg": w["msg"],
                               "text": w.get("text", "")})
+            for l in tieng_viet.loi_chu(text):
+                warns.append({"section": name, "kind": "chữ_hỏng",
+                              "msg": f"{title}: {tieng_viet.ten_loi(l['loai'])}",
+                              "text": l["doan"]})
 
     return _gom(warns)
 
@@ -457,7 +473,18 @@ def _shallow(warns: list[dict]) -> dict[str, str]:
 
 
 def load(paper_id: str) -> dict:
-    return sdb._loads(sdb.load_paper(paper_id).get("lecture"), {})
+    """Bài giảng đã lưu, với phần "chưa gỡ được" soát lại bằng luật HIỆN TẠI.
+
+    Miễn phí (chỉ máy). Không làm thì bài giảng dựng trước một bản sửa luật mãi
+    mang cảnh báo oan mà luật mới đã bỏ — ví dụ "số 70" trong câu ví von đời
+    thường của mục Cần biết trước."""
+    lec = sdb._loads(sdb.load_paper(paper_id).get("lecture"), {})
+    if lec.get("sections") and isinstance(lec.get("bien_tap"), dict):
+        ids = {c["id"] for c in sdb.paper_chunks(paper_id)}
+        con = bientap.nghiem_trong(check(lec["sections"], ids, paper_id))
+        con += [w for w in lec.get("warns") or [] if w.get("kind") == "thiếu_mục"]
+        lec["warns"] = lec["bien_tap"]["con_lai"] = con
+    return lec
 
 
 # In đậm chỉ có tác dụng khi nó NGẮN. Model hay viết `do` và `point` thành cả
@@ -485,7 +512,10 @@ def as_markdown(paper: dict, lec: dict) -> str:
     if (d := s.get("prereq")):
         head("prereq")
         for it in d.get("items") or []:
-            out.append(f"**{it.get('term', '')}** — {it.get('why', '')}\n")
+            out.append(f"**{it.get('term', '')}** — "
+                       + " ".join(x for x in (it.get("doi_thuong"), it.get("ky_thuat"),
+                                              (f"Bài cần nó vì: {it['why']}" if it.get("why") and it.get("ky_thuat") else it.get("why")))
+                                  if x) + "\n")
     for name in ("problem", "why_hard"):
         if (d := s.get(name)):
             head(name)

@@ -23,6 +23,118 @@ import tempfile
 import pytest
 
 
+def test_tim_bai_uu_tien_lien_quan_va_nam():
+    """Bài cũ nhiều trích dẫn không được đẩy bài mới đúng chủ đề xuống cuối."""
+    from server.survey.sources import _rank
+    rows = [
+        {"title": "World modeling for mobile robots", "year": 2003, "cites": 5000},
+        {"title": "World Models for Robot Learning", "year": 2026, "cites": 0},
+        {"title": "Medical image classification", "year": 2026, "cites": 50000},
+    ]
+    assert _rank(rows, "world model robot")[0]["title"] == rows[1]["title"]
+
+
+def test_nap_model_embedding_khong_chan_luong_web(monkeypatch):
+    """Trong lúc nạp model, vòng sự kiện vẫn phải xử lý được việc khác."""
+    import asyncio
+    import threading
+    from server.survey import embed
+    event = threading.Event()
+    seen = {}
+    def load():
+        seen["web_chay"] = event.wait(1)
+        return False
+    monkeypatch.setattr(embed, "_load", load)
+    async def run():
+        task = asyncio.create_task(embed.encode(["Một câu thử"]))
+        await asyncio.sleep(0.01)
+        event.set()
+        assert await task is None
+    asyncio.run(run())
+    assert seen["web_chay"]
+
+
+def test_tim_theo_nghia_qua_gio_van_co_ket_qua_tu_khoa(monkeypatch):
+    """Model cục bộ chờ lâu không được làm mất kết quả BM25 đã tìm được."""
+    import asyncio
+    from server.survey import search, embed
+    monkeypatch.setattr(embed, "enabled", lambda: True)
+    monkeypatch.setattr(search, "LOCAL_SEARCH_TIMEOUT", 0.01)
+    monkeypatch.setattr(search.sdb, "bm25", lambda *a, **k: [("c1", 1)])
+    monkeypatch.setattr(search.sdb, "all_vecs", lambda *a: (["c1"], [], 1))
+    monkeypatch.setattr(search.sdb, "get_chunks", lambda ids: {"c1": {"id": "c1", "text": "Nguồn đã có"}})
+    monkeypatch.setattr(search.graph, "expand", lambda *a: ([], []))
+    async def slow(*a):
+        await asyncio.sleep(10)
+    monkeypatch.setattr(embed, "encode", slow)
+    r = asyncio.run(search.retrieve("kho", {"question": "thử", "queries": [{"q": "thử"}]}))
+    assert [h["id"] for h in r["hits"]] == ["c1"]
+    assert r["fallbacks"]
+
+
+def test_kiem_chung_nam_metadata_va_ket_luan_ve_ca_kho(kho):
+    """Năm đúng không bị bắt oan; một kết quả không được suy thành kho một bài."""
+    from server.survey import verify
+    sid = kho["sid"]
+    warns = verify.check_answer(sid, "CIRAG (2025) là một phương pháp truy hồi.", [])
+    assert not any(w["kind"] in ("số_bịa", "số_không_nguồn") for w in warns)
+    warns = verify.check_answer(sid, "Không có bài nào khác ngoài CIRAG trong kho.", [])
+    assert any(w["kind"] == "khẳng_định_kho" for w in warns)
+
+
+def test_cache_cu_khong_tra_lai_cau_tieng_phap(client, sdb, monkeypatch):
+    """Cache sai ngôn ngữ phải đi lại luồng hỏi, không phát lại bản hỏng."""
+    import asyncio
+    from server.survey import agent
+    sid = sdb.create_survey("Kho thử cache ngôn ngữ", "")["id"]
+    monkeypatch.setattr(sdb, "qcache_get", lambda key: {
+        "answer": "Le modèle est un système qui permet de comprendre le monde et les actions. " * 5})
+    async def run():
+        return [x async for x in agent.deep_dive(sid, "Mô hình thế giới là gì?", use_cache=True)]
+    events = asyncio.run(run())
+    assert not any("event: cached" in x or "event: answer" in x for x in events)
+    assert any("event: error" in x for x in events)  # kho thử trống, không gọi model
+
+
+def test_soat_chu_khong_duoc_mat_hoac_doi_so(monkeypatch):
+    """Soát chữ chỉ sửa chữ; không xoá số liệu hay làm mất số lặp."""
+    import asyncio
+    from server import llm, tieng_viet
+    async def complete(*args, **kwargs):
+        return '{"sua":[{"o":"L1","sai":"trung reward 5 và 5","dung":"trung bình reward 5"}]}', llm.Usage()
+    monkeypatch.setattr(llm, "complete", complete)
+    doi, log = asyncio.run(tieng_viet.soat_chu(
+        [("a", "Đo trung reward 5 và 5 trong bài.")], "model-thu", "sid-thu", llm.Usage()))
+    assert doi == []
+    assert log == []
+
+
+def test_nhan_trich_khong_lay_doan_tu_kho_khac(client, sdb):
+    """Tra nhãn cũng phải giữ ranh giới kho như tra đoạn gốc."""
+    a = sdb.create_survey("Kho nhãn A", "")
+    b = sdb.create_survey("Kho nhãn B", "")
+    pid = sdb.add_paper(b["id"], title="Bài của kho B", status="indexed")
+    sdb.put_chunks(pid, [{"ord": 0, "text": "Nội dung của riêng kho B", "page": 0}])
+    cid = sdb.paper_chunks(pid, level=0)[0]["id"]
+    assert client.get(f"/api/survey/{a['id']}/nhan-trich", params={"ids": cid}).json() == {}
+    labels = client.get(f"/api/survey/{b['id']}/nhan-trich", params={"ids": cid}).json()
+    assert labels[cid]["trang"] == 0
+
+
+def test_dinh_nghia_khai_niem_dung_lai_bang_thuat_ngu(client, sdb, monkeypatch):
+    """Định nghĩa lấy từ brief đã lưu và chỉ từ các bài trong kho đang mở."""
+    from server import store
+    a = sdb.create_survey("Kho định nghĩa", "")
+    sdb.add_paper(a["id"], title="Bài có thuật ngữ", loupe_doc_id="docthu", status="indexed")
+    monkeypatch.setattr(store, "load", lambda did: {"brief": {"glossary": [
+        {"en": "Latent vector", "vi": "Vectơ tiềm ẩn", "gloss": "Một dãy số tóm tắt thông tin của ảnh."}]}})
+    d = client.get(f"/api/survey/{a['id']}/thuc-the", params={"ten": "latent VECTOR"}).json()
+    assert d["definitions"][0]["text"] == "Một dãy số tóm tắt thông tin của ảnh."
+    assert d["definitions"][0]["loupe_doc_id"] == "docthu"
+    b = sdb.create_survey("Kho không có thuật ngữ", "")
+    assert client.get(f"/api/survey/{b['id']}/thuc-the", params={"ten": "Latent vector"}).json()["definitions"] == []
+
+
 @pytest.fixture(scope="module")
 def client():
     # `setdefault`, KHÔNG gán đè: `tests/conftest.py` đã đặt biến này trước khi
@@ -1380,3 +1492,65 @@ def test_thu_ky_doi_ma_noi_bo_trong_chu_thanh_ten_bai(sdb, kho):
     d = {"scope": f"Bài thứ nhất ({kho['p1']}b) mở đầu, {nhan} là bài nền [{kho['p1']}c2] của kho."}
     bientap.doi_ma_trong_chu(d, papers, nhan_p=True)
     assert d["scope"] == "Bài thứ nhất (CIRAG) mở đầu, CIRAG là bài nền của kho."
+
+
+def test_mot_kieu_dinh_dang_tien():
+    """Báo cáo 11/10: cùng một màn có "~$0,09" và "$0.0092". Mọi số tiền hiện
+    ra phải dấu phẩy thập phân — `money()` lo phần tính, còn nhãn viết sẵn trong
+    HTML/JS thì không được ghi dấu chấm."""
+    import re
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    app = (web / "app.js").read_text()
+    m = re.search(r"function money\(v\) \{.*?\n\}", app, re.S)
+    assert m and 'replace(".", ",")' in m.group(0), "money() phải ra dấu phẩy thập phân"
+    for f in ("index.html", "survey.js", "sv-bando.js", "app.js", "thuvien.js", "slide.js"):
+        # Bỏ chú thích để không bắt oan lời giải thích có nhắc dạng cũ.
+        chu = re.sub(r"/\*.*?\*/|^\s*//.*$", "", (web / f).read_text(), flags=re.S | re.M)
+        sai = re.findall(r"\$\d+\.\d+", chu)
+        assert not sai, f"{f}: giá viết dấu chấm {sai[:3]}"
+
+
+def test_bo_soat_chu_bat_dung_va_khong_bat_oan():
+    """Ba kiểu hỏng có thật (tiếng Pháp, pinyin, từ nối tiếng Anh) phải bị bắt;
+    văn tiếng Việt xen thuật ngữ Anh và tên riêng Tây Ban Nha thì không."""
+    from server import tieng_viet as tv
+    phap = ("World model, c'est un modèle interne que l'agent construit pour prédire "
+            "ce qui va se passer ensuite, à partir de ce qu'il perçoit.")
+    assert tv.sai_ngon_ngu(phap * 3) == "fr"
+    assert any(l["loai"] == "tieng_phap" for l in tv.loi_chu(phap))
+    assert any(l["loai"] == "pinyin" for l in tv.loi_chu("Khung hình nguyên shǐ đi vào VAE."))
+    assert any(l["loai"] == "am_tiet_la" for l in tv.loi_chu("như bài báo miêu shù ở mục 2."))
+    assert any(l["loai"] == "noi_tieng_anh" for l in tv.loi_chu("Concretely, encoder của VAE sinh ra μ."))
+    sach = ("World model (mô hình thế giới) dùng VAE để nén khung hình thành vector latent z, "
+            "rồi MDN-RNN dự đoán z tiếp theo. Controller tuyến tính nhận [z, h] và chọn hành động. "
+            "Theo Gutiérrez và Pérez, reward trung bình trên 100 trial vượt ngưỡng 900.")
+    assert tv.sai_ngon_ngu(sach) == ""
+    assert tv.loi_chu(sach) == []
+
+
+def test_so_muc_va_chi_so_cong_thuc_khong_phai_so_lieu():
+    """Câu trả lời thật bị báo oan "số 3.1 không có trong đoạn đã trích" cho
+    "Mục 3.1 (…)", và "số 1" cho chỉ số `z_{t+1}`. Số liệu thật vẫn phải bóc ra."""
+    from server.survey import verify
+    assert verify.so_lieu("**Mục 3.1 (World Model for Feature Extraction)** — ví dụ") == []
+    assert verify.so_lieu("1.") == []
+    assert verify.so_lieu("Mô hình dự đoán P(z_{t+1} | a_t, z_t)") == []
+    assert verify.so_lieu("Agent đạt 906 ± 21 trên 100 trial, theo Bảng 1.") == ["906", "21", "100"]
+
+
+def test_thuc_the_tim_ca_ten_trong_ngoac_va_soat_ca_doan(client, sdb, kho):
+    """Tên từ tóm tắt bài hay có dạng "VAE (Variational Autoencoder)": đòi nguyên
+    cụm thì bài nhắc "VAE" hàng chục lần vẫn ra "0 đoạn". Và phép dò phải soát
+    CẢ đoạn — `norm_name` cắt ở 80 ký tự, dùng cho đoạn là chỉ soát câu đầu."""
+    sid = kho["sid"]
+    p = sdb.add_paper(sid, title="World Models", year=2018, status="indexed", sha256="s3")
+    dai = ("We explore building generative neural network models of popular reinforcement "
+           "learning environments, and the agent compresses each frame with a VAE before "
+           "the memory model predicts the next latent vector.")
+    assert dai.lower().find("vae") > 80
+    sdb.put_chunks(p, [{"ord": 1, "section": "2.1 Model", "page": 2, "kind": "para",
+                        "text": dai, "ctx": "", "vi": ""}], title="World Models")
+    d = sdb.thuc_the(sid, "VAE (Variational Autoencoder)")
+    assert any("compresses each frame" in c["text"] for c in d["chunks"]), \
+        "tên viết tắt trong ngoặc, nằm sau ký tự thứ 80 của đoạn, vẫn phải tìm ra"

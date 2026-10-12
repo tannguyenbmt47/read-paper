@@ -38,7 +38,7 @@ import json
 import os
 import time
 
-from .. import llm
+from .. import llm, tieng_viet
 from . import db as sdb
 from . import graph, prompts, search, verify
 
@@ -108,7 +108,12 @@ async def deep_dive(survey_id: str, question: str, *, budget: float | None = Non
 
     # --- cache: hỏi lại đúng câu cũ khi kho chưa đổi thì miễn phí -----------
     key = sdb.qcache_key(survey_id, question)
-    if use_cache and (hit := sdb.qcache_get(key)) is not None:
+    if (use_cache and (hit := sdb.qcache_get(key)) is not None
+            and not tieng_viet.sai_ngon_ngu(hit.get("answer") or "")):
+        # Cache cũ vẫn phải qua các chốt hiện tại; không trả nguyên cảnh báo
+        # lỗi thời hoặc lặp lại một câu trả lời tiếng Pháp đã lưu.
+        keep = [w for w in hit.get("warns") or [] if w.get("kind") in ("không_được_đỡ", "đỡ_yếu")]
+        hit["warns"] = verify.check_answer(survey_id, hit["answer"], hit.get("cites") or []) + keep
         yield _sse("cached", {"run_id": hit["id"], "cost": 0.0})
         yield _sse("plan", {"sub_questions": hit["steps"][0].get("sub_questions", [])
                             if hit["steps"] else []})
@@ -158,7 +163,7 @@ async def deep_dive(survey_id: str, question: str, *, budget: float | None = Non
         got = await search.retrieve(survey_id, p, exclude=seen)
         yield _sse("search", {"step": step, "queries": [q["q"] for q in p["queries"]],
                               "found": len(got["hits"]), "lists": got["lists"],
-                              "edges": len(got["edges"])})
+                              "edges": len(got["edges"]), "fallbacks": got.get("fallbacks", [])})
         all_edges.extend(got["edges"])
         if not got["hits"]:
             if step == 1:
@@ -235,15 +240,52 @@ async def deep_dive(survey_id: str, question: str, *, budget: float | None = Non
                          "stopped": bud.stopped, "model": strong})
 
     answer = ""
-    async for kind, payload in _synthesise(survey_id, question, subs, sorted(covered),
-                                           groups, evidence, all_edges, bud.stopped, strong):
-        if kind == "delta":
-            answer += payload
-            yield _sse("answer", {"text": payload})
-        elif kind == "usage":
-            u = llm.Usage(**json.loads(payload))
-            bud.add(u)
-            total.add(u)
+    for lan in range(2):
+        # Canh ngôn ngữ NGAY TRONG LÚC stream: báo cáo 11/10 ra trọn một câu trả
+        # lời tiếng Pháp cho câu hỏi tiếng Việt, người dùng chờ 100 giây rồi đọc
+        # không được chữ nào. Đủ ~500 ký tự là biết, dừng ngay và viết lại kèm
+        # lời nhắc mạnh hơn — đỡ tốn hơn để model viết hết rồi mới bỏ. Lượt bị
+        # dừng giữa chừng không trả về `usage`, nên chi phí của nó không cộng vào
+        # được; đó là phần nhỏ (≤500 ký tự đầu ra) so với một lượt trọn vẹn.
+        answer, lac = "", False
+        gen = _synthesise(survey_id, question, subs, sorted(covered), groups, evidence,
+                          all_edges, bud.stopped, strong, nhac_manh=lan > 0)
+        async for kind, payload in gen:
+            if kind == "delta":
+                answer += payload
+                yield _sse("answer", {"text": payload})
+                if lan == 0 and len(answer) > 500 and tieng_viet.sai_ngon_ngu(answer):
+                    lac = True
+                    break
+            elif kind == "usage":
+                u = llm.Usage(**json.loads(payload))
+                bud.add(u)
+                total.add(u)
+        await gen.aclose()
+        if not lac:
+            break
+        yield _sse("answer", {"reset": True,
+                              "msg": "Câu trả lời lạc sang tiếng nước ngoài — đang viết lại bằng tiếng Việt"})
+
+    # ---------------------------------------------------- ban biên tập nhỏ
+    # Thư ký ($0) đổi trích dẫn "nói bài A, trích bài B" sang đúng bài nếu lượt
+    # này có đoạn của bài A; người soát chữ (model rẻ) vá chữ rơi âm tiết,
+    # pinyin, câu lạc ngôn ngữ. Bản sửa thay hẳn bản đã stream.
+    goc = answer
+    answer, nk = verify.doi_trich_sai_bai(survey_id, answer, sorted(seen))
+    answer, nk_so = verify.gan_nguon_cho_so(answer, sorted(seen))
+    nk += nk_so
+    if answer:
+        yield _sse("stage", {"msg": "soát chữ và trích dẫn của câu trả lời"})
+        dong = answer.split("\n")
+        o = [(i, d) for i, d in enumerate(dong) if len(d.strip()) >= 25]
+        doi, nk2 = await tieng_viet.soat_chu(o, fast or FAST, survey_id, total)
+        for i, d in doi:
+            dong[i] = d
+        answer = "\n".join(dong)
+        nk += nk2
+    if answer != goc:
+        yield _sse("answer", {"replace": answer, "sua": nk})
     yield _sse("answer", {"text": "", "done": True})
 
     # ---------------------------------------------------------- kiểm chứng
@@ -308,7 +350,8 @@ async def _read(survey_id: str, question: str, subs: list[dict], hits: list[dict
 
 async def _synthesise(survey_id: str, question: str, subs: list[dict],
                       covered: list[str], groups: dict, evidence: list[dict],
-                      edges: list[dict], stopped: str, strong: str = ""):
+                      edges: list[dict], stopped: str, strong: str = "",
+                      nhac_manh: bool = False):
     """Tổng hợp bằng **model mạnh** — đây là chỗ 87,3% số câu sai được sinh ra.
 
     Bằng chứng vào prompt đã **nhóm sẵn theo câu hỏi con** (`prompts.answer_user`),
@@ -316,12 +359,25 @@ async def _synthesise(survey_id: str, question: str, subs: list[dict],
     chỗ nó hỏng.
     """
     user = prompts.answer_user(question, subs, covered, groups, evidence, stopped)
+    papers = sdb.list_papers(survey_id)
+    user += "\n\nDANH SÁCH THẬT CỦA KHO (khác với các đoạn đã tìm được):\n" + "\n".join(
+        f"- {p.get('title') or 'Bài không có tiêu đề'}" for p in papers)
+    user += ("\nKho có " + str(len(papers)) + " bài. Chỉ tìm được đoạn của một bài "
+             "không có nghĩa các bài khác không tồn tại hoặc không bàn về chủ đề. "
+             "Khi thiếu đoạn, nói 'lượt này chưa tìm được bằng chứng từ các bài khác'; "
+             "không khẳng định kho chỉ có một bài hay không có bài khác.")
     if edges:
         user += ("\n\n=== QUAN HỆ ĐỌC ĐƯỢC TỪ ĐỒ THỊ (mỗi dòng có mã đoạn để trích) ===\n"
                  + graph.describe(edges))
+    # Lời nhắc đứng CUỐI: bằng chứng ở trên toàn tiếng Anh, luật ngôn ngữ ở đầu
+    # system bị nó nhấn chìm. Lượt viết lại (`nhac_manh`) nói thẳng lý do.
+    user += tieng_viet.NHAC_NGON_NGU
+    if nhac_manh:
+        user += ("\nLượt trước bạn đã viết bằng tiếng nước ngoài và bị huỷ. Câu hỏi "
+                 "là tiếng Việt, người đọc chỉ đọc được tiếng Việt.")
     async for kind, payload in llm.stream_text(
             [{"role": "system", "content": prompts.ANSWER_SYSTEM},
              {"role": "user", "content": user}],
             model=strong or STRONG, session_id=survey_id, max_tokens=6000,
-            temperature=0.3, reasoning=LOW_REASONING):
+            temperature=0.15 if nhac_manh else 0.3, reasoning=LOW_REASONING):
         yield kind, payload

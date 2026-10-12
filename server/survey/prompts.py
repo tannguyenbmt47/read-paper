@@ -654,14 +654,23 @@ SECTIONS: dict[str, dict] = {
         "title": "Cần biết trước",
         "spec": (
             "Ba đến năm thứ mà **bài báo giả định người đọc đã biết** và vì thế "
-            "không giải thích. Mỗi thứ: tên (giữ thuật ngữ tiếng Anh) + 2–4 câu "
-            "nói nó LÀM GÌ và vì sao bài này cần đến nó.\n"
+            "không giải thích. Mỗi thứ có BA phần, theo đúng thứ tự:\n"
+            "- `doi_thuong`: MỘT câu hình dung bằng chuyện đời thường, không thuật "
+            "ngữ nào (VAE: 'như nén một bức ảnh thành vài con số mà vẫn vẽ lại "
+            "được gần giống ảnh gốc').\n"
+            "- `ky_thuat`: 1–3 câu kỹ thuật nói nó LÀM GÌ. Thuật ngữ nào dùng ở "
+            "đây (latent, gradient, fitness…) phải giải nghĩa ngay trong câu — "
+            "báo cáo thử chê đúng chỗ này: giải thích VAE bằng 'q(z|x)', 'KL "
+            "loss', giải thích CMA-ES bằng 'black-box', 'không khả phân', tức "
+            "dùng thứ còn khó hơn để giải thích.\n"
+            "- `why`: vì sao BÀI NÀY cần nó (bài dùng nó vào bước nào).\n"
             "Đây là mục quan trọng nhất của cả bài giảng: thiếu kiến thức nền "
             "mới là thứ làm người ta đọc không vào, chứ không phải câu dài.\n"
             "Chọn đúng thứ bài này THẬT SỰ dựa vào, không phải thứ phổ thông của "
             "ngành. 'Mạng nơ-ron là gì' thì không ai cần; "
             "'vì sao pretraining không nhãn lại thay được dữ liệu có nhãn' thì cần."),
-        "shape": '{"items": [{"term": "…", "why": "…"}], "source": ["…"]}',
+        "shape": ('{"items": [{"term": "…", "doi_thuong": "…", "ky_thuat": "…", '
+                  '"why": "…"}], "source": ["…"]}'),
     },
     "problem": {
         "title": "Bài toán",
@@ -796,10 +805,23 @@ def dossier_text(dos: dict) -> str:
     return "\n".join(out)
 
 
+# Mức người đọc. Nằm ở phần user (thay đổi theo lượt), KHÔNG ở prefix — đổi mức
+# là đổi thứ thay đổi theo request, prefix toàn văn vẫn trúng cache.
+MUC_DOC = {
+    "moi": ("NGƯỜI ĐỌC: người mới vào ngành, chưa học máy học bài bản. Mọi thuật ngữ "
+            "kỹ thuật (kể cả loss, gradient, latent, policy, reward) dùng lần đầu phải "
+            "giải nghĩa bằng lời thường ngay tại chỗ. Ưu tiên ví dụ đời thường trước, "
+            "chi tiết kỹ thuật sau."),
+    "ml": ("NGƯỜI ĐỌC: đã biết máy học cơ bản (mạng nơ-ron, loss, gradient, "
+           "reinforcement learning cơ bản). Không giải thích những thứ đó; dành chỗ "
+           "cho cái riêng của bài này."),
+}
+
+
 def lecture_user(title: str, card: dict | None, names: tuple[str, ...],
-                 dossier: str = "", redo: dict | None = None) -> str:
+                 dossier: str = "", redo: dict | None = None, muc: str = "moi") -> str:
     """Phần thay đổi theo mẻ. Toàn văn bài nằm ở prefix, KHÔNG lặp lại ở đây."""
-    parts = [f"Bài: {title}"]
+    parts = [f"Bài: {title}", MUC_DOC.get(muc, MUC_DOC["moi"])]
     if card:
         keep = {k: card[k] for k in ("task", "problem", "idea", "method", "novelty")
                 if card.get(k)}

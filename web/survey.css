@@ -28,11 +28,20 @@
   background: var(--surface); flex: none;
 }
 .sv-pick {
-  font: inherit; font-weight: 600; font-size: .95em; max-width: 260px;
+  font: inherit; font-weight: 600; font-size: .95em; max-width: min(440px, 46vw);
   border: 1px solid transparent; border-radius: var(--radius);
   padding: .25rem .4rem; background: none; color: var(--ink); cursor: pointer;
 }
 .sv-pick:hover { border-color: var(--line); background: var(--surface-2); }
+.sv-intro { margin: .7rem 1rem; padding: .8rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.sv-intro > .sv-link { float: right; }
+.sv-intro p { margin: .4rem 0; }
+.sv-tabhelp { margin: .4rem 1rem; }
+.sv-findfilters { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; padding: .6rem 1rem; border-bottom: 1px solid var(--line); }
+.sv-findfilters input { width: 100px; }
+.sv-findfilters select { width: auto; }
+.sv-drop-paper { flex-basis: 100%; margin-top: .5rem; border-top: 1px solid var(--line); }
+.sv-engine { display: none; }
 .sv-stats { font-size: .8em; color: var(--muted); }
 .sv-engine { font-family: var(--mono); font-size: 10px; color: var(--muted); opacity: .8; }
 .grow { flex: 1; }
@@ -167,7 +176,9 @@
 .sv-tab:hover { color: var(--ink); }
 .sv-tab.is-on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-.sv-pane { overflow-y: auto; flex: 1; min-height: 0; padding: 20px 18px 60px; }
+/* `scrollbar-gutter: stable`: thanh cuộn hiện ra giữa lúc câu trả lời đang chảy
+   về thì cả cột dịch trái ~8px. Giữ sẵn chỗ cho nó. */
+.sv-pane { overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; flex: 1; min-height: 0; padding: 20px 18px 60px; }
 
 /* Bề ngang đọc được. Câu trả lời trải hết chiều ngang màn hình thì mắt phải
    nhảy quá xa mỗi lần xuống dòng. */
@@ -221,9 +232,11 @@
 .sv-step-gap  { border-left-color: var(--warn); }
 .sv-step-err  { border-left-color: #c0392b; }
 .sv-step ul, .sv-step ol { margin: 3px 0 0; padding-left: 18px; }
-.sv-step code {
-  font-family: var(--mono); font-size: .88em;
-  background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+/* Chip truy vấn là CHỮ TIẾNG VIỆT, không phải mã: font mono của hệ tách dấu khỏi
+   chữ ("dễ`hiểu", "thế´giới" — báo cáo 11/10). Dùng font thường của app. */
+.sv-step code, .sv-q {
+  font-family: var(--sans); font-size: .88em;
+  background: var(--surface-2); padding: 1px 6px; border-radius: 4px;
 }
 .sv-qs { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }
 .sv-finds li { margin: 2px 0; }
@@ -256,7 +269,7 @@
    được thì người đọc không có cách nào kiểm tra, và cả bộ chốt chặn thành vô
    nghĩa với họ. */
 .sv-cite {
-  font-family: var(--mono); font-size: .72em; color: var(--accent);
+  font-family: var(--sans); font-size: .74em; color: var(--accent);
   background: var(--accent-soft); border-radius: 4px; padding: 0 4px;
   cursor: pointer; text-decoration: none; white-space: nowrap; vertical-align: .08em;
 }
@@ -267,12 +280,38 @@
   font-size: 13px; font-family: var(--sans);
 }
 .sv-warnbox { background: var(--warn-bg); border: 1px solid var(--warn); }
-.sv-warnbox i { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--warn); }
+.sv-warnbox i { font-style: normal; font-size: 12px; color: var(--warn); }
 .sv-warnbox ul { margin: 6px 0 0; padding-left: 18px; }
+.sv-warnbox li { margin: 0 0 7px; }
+.sv-warnbox details { margin-top: 8px; }
+
+/* Câu bị cảnh báo: gạch chân lượn sóng ngay trong câu trả lời, không để nó
+   trình bày như đã đúng (báo cáo 11/10, lỗi trích sai bài). */
+.sv-ngo {
+  text-decoration: underline wavy var(--warn); text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px; text-decoration-skip-ink: none; cursor: help;
+}
+.sv-ngo.is-nhay { background: var(--warn-bg); transition: background .3s; }
+
+/* Tiến độ gọn cho người đọc; nhật ký kỹ thuật gập trong `.sv-log`. */
+.sv-askprog { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: 14px; color: var(--ink-2); }
+.sv-spin {
+  width: 12px; height: 12px; flex: none; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent); animation: sv-quay .8s linear infinite;
+}
+@keyframes sv-quay { to { transform: rotate(360deg); } }
+.sv-log { margin: 18px 0 0; font-size: 13px; }
+.sv-log > summary { cursor: pointer; color: var(--muted); }
+.sv-log .sv-steps { margin: 10px 0 0; }
 .sv-okbox { background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
 .sv-cost { font-size: .8em; color: var(--muted); margin: 10px 0 0; }
 
-.sv-history { margin-top: 26px; display: grid; gap: 3px; }
+/* `minmax(0, 1fr)`: rãnh ngầm `auto` bị câu hỏi dài (`nowrap`) kéo giãn, cột giá
+   bị đẩy ra ngoài và cả tab có thanh cuộn ngang (báo cáo 11/10, màn 1242px). */
+.sv-history { margin-top: 26px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
+.sv-runrow { display: flex; min-width: 0; }
+.sv-runrow .sv-runitem { min-width: 0; }
+.sv-runitem i { flex: none; }
 .sv-runitem {
   display: flex; gap: 10px; width: 100%; text-align: left; cursor: pointer;
   background: none; border: 0; border-radius: 6px;
@@ -723,7 +762,8 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
 .bd-tt[data-mau="v"] circle { fill: var(--c-v); }
 .bd-tt.phieu circle { stroke-dasharray: 3 2; }
 .bd-tt.chung circle { stroke-width: 2.2; }
-.bd-tt text { font-size: 11px; text-anchor: middle; display: none; }
+.bd-tt text { font-size: 11px; text-anchor: middle; display: block; }
+.bd-label-line { stroke: var(--muted); stroke-width: .7px; opacity: .45; pointer-events: none; }
 .bd-tt.luon text, .bd-svg.gan .bd-tt text, .bd-tt.sang text, .bd-tt:hover text { display: block; }
 .bd-tt.chung text { font-weight: 600; }
 .bd-n:hover circle, .bd-n.dang-chon circle { stroke-width: 3; }
@@ -821,3 +861,27 @@ p.sv-modelnote { margin: 0 0 8px; white-space: normal; }
 .sv-bt-buoc li.dang { border-color: var(--muc); color: var(--ink); background: var(--c-y); font-weight: 600; }
 .sv-bt-buoc li.xong { color: var(--ink-2); border-color: var(--muc); }
 .sv-bt-buoc li.xong::before { content: "✓"; background: var(--c-g); }
+
+/* Tiến độ dựng bài giảng: thanh theo bước, cạnh dòng chữ có đồng hồ. */
+.sv-pbar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin: 10px 0 0; }
+.sv-pbar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+.sv-nhap {
+  margin: 0 0 14px; padding: 8px 12px; border: 1.5px dashed var(--warn); border-radius: var(--radius);
+  background: var(--warn-bg); font-family: var(--sans); font-size: 13px; color: var(--ink-2);
+}
+.sv-prereq .sv-dt { margin: 0 0 4px; font-style: italic; }
+
+/* Ô bảng so sánh: gập 4 dòng, bấm mở đủ. */
+.sv-o { cursor: pointer; }
+.sv-o-chu { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.sv-o-chu p { margin: 0; }
+.sv-o.is-mo .sv-o-chu { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.sv-o:not(.is-mo):hover { background: var(--surface-2); }
+.sv-o-trong { color: var(--muted); text-align: center; }
+
+/* "Đọc gì trước" ở đầu bản tổng hợp: một tờ giấy nhớ, để người mới thấy ngay. */
+.sv-docgi { margin: 14px 0 22px; padding: 4px 16px 10px; border: 2px solid var(--muc); border-radius: var(--radius); background: var(--surface-2); }
+.sv-docgi .sv-syn-h2 { margin-top: 10px; border-bottom: 0; }
+
+#svDienBang { white-space: nowrap; }
+.sv-hit-goi { margin: 0 0 10px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-2); font-size: 13px; }

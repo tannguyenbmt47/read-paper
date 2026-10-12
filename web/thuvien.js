@@ -103,7 +103,7 @@ function tvViewDocs() {
   else if (L !== "all") ds = ds.filter((d) => d.folder_id === L);
   const q = khongDau(TV.q.trim());
   if (q) {
-    ds = ds.filter((d) => khongDau([tenBai(d).ten, d.title, d.meta?.title_goc,
+    ds = ds.filter((d) => khongDau([tenBai(d).ten, d.title, d.title_vi, d.meta?.title_goc,
       (d.meta?.authors || []).join(" "), d.meta?.venue, d.meta?.year,
       (d.tags || []).join(" "), d.source].join(" ")).includes(q));
   }
@@ -301,7 +301,7 @@ async function tvDetail() {
   box.innerHTML = `
     <div class="tv-d-head">
       <h2>${esc(ten)}</h2>
-      ${m.title_goc ? `<p class="tv-goc">${esc(m.title_goc)}</p>` : ""}
+      ${m.title_goc && khongDau(m.title_goc) !== khongDau(ten) ? `<p class="tv-goc">${esc(m.title_goc)}</p>` : ""}
       <div class="tv-d-nut">
         <button class="btn btn-primary btn-sm" id="tvOpenDoc">Mở đọc →</button>
         <button class="btn btn-sm" id="tvRefetch" title="Tra lại từ Semantic Scholar / arXiv / Crossref. Trường đã sửa tay giữ nguyên.">Lấy lại thông tin</button>

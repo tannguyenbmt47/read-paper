@@ -52,7 +52,7 @@ from __future__ import annotations
 import re
 import time
 
-from .. import depth, llm
+from .. import depth, llm, tieng_viet
 from . import db as sdb
 from . import prompts as sprompts
 from . import verify
@@ -678,7 +678,20 @@ async def soat(survey_id: str, d: dict, *, kieu: str, paper_id: str = "",
                             "o": _nhan(p, nhan_muc), "truoc": depth.cat_gon(t, 160),
                             "sau": depth.cat_gon(moi, 160)})
 
-    # ---- 5. thư ký soát lần cuối: biên tập viên được thêm số lấy từ đoạn nguồn
+    # ---- 5. người soát chữ: rơi âm tiết, pinyin, câu tiếng Pháp/Anh. Chạy SAU
+    # biên tập viên vì chính biên tập viên cũng là model có thể hỏng chữ. Báo
+    # cáo 11/10: bài giảng World Models ra "dữ li ngẫu nhi", "miêu shù", cả mục
+    # Bằng chứng tiếng Anh — mà không một chốt nào ở trên soát CHỮ.
+    yield "stage", {"msg": "người soát chữ dò chữ hỏng, pinyin, câu lạc ngôn ngữ", "vai": "soat_chu"}
+    doi, nk = await tieng_viet.soat_chu(o, fast, survey_id, usage)
+    for p, t in doi:
+        dat(khung, p, t)
+    o = la(khung)
+    log += nk
+    # Chỗ máy còn bắt được sau lượt soát thì không im lặng: `lecture.check` /
+    # `synth.check` gắn loại "chữ_hỏng", và `nghiem_trong` đưa nó vào `con_lai`.
+
+    # ---- 6. thư ký soát lần cuối: biên tập viên được thêm số lấy từ đoạn nguồn
     # của nó, mà ô ấy có thể đang trích một đoạn khác. Chạy thật đã ra đúng vậy:
     # câu bằng chứng thêm "49%, 31%, 33%" mà vẫn trích đoạn tóm tắt. Miễn phí.
     if kieu == "tong_hop":
@@ -700,7 +713,7 @@ def tom_tat(log: list[dict], con_lai: list[dict], usage: llm.Usage, truoc: int) 
     """Biên bản lưu kèm bản viết, để giao diện nói được ban biên tập đã làm gì."""
     dem = {}
     for x in log:
-        if x["vai"] in ("thu_ky", "kiem_chung", "bien_tap") and "trả về" not in x["viec"]:
+        if x["vai"] in ("thu_ky", "kiem_chung", "bien_tap", "soat_chu") and "trả về" not in x["viec"]:
             dem[x["vai"]] = dem.get(x["vai"], 0) + 1
     return {"sua": sum(dem.values()), "theo_vai": dem, "nhat_ky": log[:120],
             "con_lai": con_lai, "sac_truoc": truoc, "chi_phi": round(usage.cost, 5),
@@ -712,6 +725,6 @@ def nghiem_trong(warns: list[dict]) -> list[dict]:
     thì không bày lại cho người đọc — đã sửa được thì hết, không sửa được thì
     đó là giới hạn của chính bài, không phải việc người đọc phải dò."""
     nang = {"số_bịa", "số_không_có_trong_bài", "cite_lạ", "bài_lạ",
-            "mã_đoạn_không_có", "thiếu_mục", "bỏ_sót_bài", "chưa_gom_được"}
+            "mã_đoạn_không_có", "thiếu_mục", "bỏ_sót_bài", "chưa_gom_được", "chữ_hỏng"}
     return [w for w in warns if w.get("kind") in nang]
 

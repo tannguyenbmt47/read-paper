@@ -41,7 +41,7 @@ const BanDo = (() => {
   async function mo(sid) {
     const moi = sid !== S.sid;
     S.sid = sid;
-    if (moi) { S.chon = ""; S.viTri = {}; S.an.clear(); }
+    if (moi) { S.chon = ""; S.viTri = {}; S.an.clear(); S.gia = null; S.traBai = null; }
     $b("#bdMsg").textContent = "đang nạp…";
     let d;
     try {
@@ -59,11 +59,11 @@ const BanDo = (() => {
       S.chiChung = d.entities.length > TRAN && chung >= 8;
     }
     $b("#bdChung").checked = S.chiChung;
-    veLoai();
     dung();
+    veLoai();
     if (moi || !S.k) vuaKhung();
     ve();
-    if (S.chon && !S.by[S.chon]) S.chon = "";
+    if (S.chon && !S.by[S.chon] && !S.data.entities.some((e) => e.id === S.chon)) S.chon = "";
     S.chon ? hien(S.chon) : tongQuan();
     giaDung().catch(() => {});
   }
@@ -71,6 +71,9 @@ const BanDo = (() => {
   function dung() {
     const d = S.data;
     let ents = d.entities.filter((e) => !S.an.has(e.kind) && (!S.chiChung || e.papers.length > 1));
+    // Kho chưa dựng: chỉ hiện bài, thay vì hàng chục điểm rời từ tóm tắt mà
+    // không có quan hệ nào. Các tên khái niệm vẫn đọc được trong chi tiết bài.
+    if (d.papers.every((p) => !p.co_do_thi)) ents = [];
     const bac = {};
     d.edges.forEach((g) => { bac[g.src] = (bac[g.src] || 0) + 1; bac[g.dst] = (bac[g.dst] || 0) + 1; });
     if (ents.length > TRAN) {
@@ -102,8 +105,10 @@ const BanDo = (() => {
     if (boCuc()) {
       // Tách chồng phải biết mức phóng THẬT: cỡ điểm cố định trên màn, nên ở
       // mức 0,5 một thẻ bài chiếm gấp đôi chỗ trên mặt phẳng so với ở mức 1.
-      vuaKhung();
-      tachChong(nodes, S.k);
+      for (let i = 0; i < 3; i++) {
+        vuaKhung();
+        tachChong(nodes, S.k);
+      }
       nodes.forEach((n) => { S.viTri[n.id] = { x: n.x, y: n.y }; });
       vuaKhung();
     }
@@ -236,12 +241,11 @@ const BanDo = (() => {
     const hop = (n) => (n.bai
       ? [tenBaiNgan(n.ref).length * 3.9 + 16, 19]
       : [n.r + 4, n.r + 4]).map((v) => v / k);
-    for (let v = 0; v < 40; v++) {
+    for (let v = 0; v < 100; v++) {
       let dich = false;
       for (let i = 0; i < N.length; i++) {
         for (let j = i + 1; j < N.length; j++) {
           const a = N[i], b = N[j];
-          if (!a.bai && !b.bai && v % 2) continue;
           const [aw, ah] = hop(a), [bw, bh] = hop(b);
           const dx = b.x - a.x, dy = b.y - a.y;
           const ox = aw + bw - Math.abs(dx), oy = ah + bh - Math.abs(dy);
@@ -251,10 +255,15 @@ const BanDo = (() => {
           // giữ được dáng toả tròn quanh bài. Đẩy theo trục thì khái niệm của
           // một bài xếp thành hai hàng thẳng trên dưới thẻ, trông như bảng.
           const ma = a.bai ? 0.15 : 0.5, mb = b.bai ? 0.15 : 0.5;
-          const d = Math.hypot(dx, dy) || 1;
-          const s = Math.min(ox, oy) + 1;
-          a.x -= dx / d * s * ma; a.y -= dy / d * s * ma;
-          b.x += dx / d * s * mb; b.y += dy / d * s * mb;
+          // Chừa cả hộp nhãn, dời theo trục có phần chồng ngắn hơn để tách
+          // thật sự; dịch xiên một đoạn ngắn vẫn để hai hộp chữ chồng nhau.
+          if (ox < oy) {
+            const s = (ox + 2) * (dx < 0 ? -1 : 1);
+            a.x -= s * ma; b.x += s * mb;
+          } else {
+            const s = (oy + 2) * (dy < 0 ? -1 : 1);
+            a.y -= s * ma; b.y += s * mb;
+          }
         }
       }
       if (!dich) break;
@@ -267,7 +276,9 @@ const BanDo = (() => {
     let t = (p.title || p.title_vi || "(không tiêu đề)").split(/[:—]/)[0].trim();
     // Tên bóc từ PDF hay viết hoa toàn bộ ("LATENT ACTION PRETRAINING…") — trên
     // thẻ hẹp thì nó vừa dài vừa như đang hét. Từ ngắn toàn hoa (tên tắt) giữ nguyên.
-    if (t === t.toUpperCase() && /[A-Z]{4}/.test(t)) {
+    // Một từ toàn hoa là TÊN RIÊNG ("SONIC"), giữ nguyên — chỉ cả câu toàn hoa
+    // mới là lối in của PDF.
+    if (t === t.toUpperCase() && /[A-Z]{4}/.test(t) && /\s/.test(t)) {
       t = t.toLowerCase().replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase());
     }
     return t.length > 28 ? t.slice(0, 27).replace(/\s+\S*$/, "") + "…" : t;
@@ -291,6 +302,7 @@ const BanDo = (() => {
       const luon = e.papers.length > 1 || n.bac >= 3;
       return `<g class="bd-n bd-tt ${e.papers.length > 1 ? "chung" : ""} ${luon ? "luon" : ""} ${e.nguon === "phieu" ? "phieu" : ""}"
           data-id="${esc(n.id)}" data-mau="${mau}">
+        <line class="bd-label-line"></line>
         <circle r="${n.r.toFixed(1)}"></circle>
         <text dy="${(n.r + 12).toFixed(1)}">${esc(e.name)}</text>
         <title>${esc(e.name)} · ${esc((LOAI[e.kind] || LOAI.concept)[0])} · ${e.papers.length} bài</title></g>`;
@@ -306,6 +318,7 @@ const BanDo = (() => {
       tx.setAttribute("text-anchor", "middle"); tx.setAttribute("dy", "4.5");
       S.by[g.dataset.id].w = w;
     });
+    vuaKhung();
     datVp();
     $b("#bdMsg").textContent = "";
     $b("#bdRong").classList.toggle("hidden", S.nodes.length > 0);
@@ -333,10 +346,42 @@ const BanDo = (() => {
   function datVp() {
     dat();
     const vp = $b("#bdSvg .bd-vp");
-    if (vp) vp.setAttribute("transform", `translate(${S.x.toFixed(1)},${S.y.toFixed(1)}) scale(${S.k.toFixed(3)})`);
+    if (vp) vp.setAttribute("transform", `translate(${S.x.toFixed(1)},${S.y.toFixed(1)}) scale(${S.k.toFixed(8)})`);
     // Nhãn của thực thể chỉ có một bài thì hiện khi đã phóng to: ở mức xem cả
     // bản đồ, mấy chục nhãn chồng lên nhau còn tệ hơn không có nhãn.
     $b("#bdSvg").classList.toggle("gan", S.k >= 1.25);
+    xepNhan();
+  }
+
+  // Đo chữ thật sau khi dựng: cỡ chữ không đổi khi thu bản đồ, nên nhãn cần
+  // dời riêng để tránh tên bài và không bị cắt ở mép sân vẽ.
+  function xepNhan() {
+    const svg = $b("#bdSvg"), san = svg.getBoundingClientRect();
+    if (!san.width || !san.height) return;
+    const da = [...svg.querySelectorAll(".bd-bai rect, .bd-tt circle")].map((t) => t.getBoundingClientRect());
+    svg.querySelectorAll(".bd-tt text").forEach((t) => {
+      const n = S.by[t.parentElement.dataset.id];
+      const dot = t.parentElement.querySelector("circle").getBoundingClientRect();
+      const cx = (dot.left + dot.right) / 2, cy = (dot.top + dot.bottom) / 2;
+      const w = t.getComputedTextLength(), h = 13, candidates = [];
+      const add = (x, y) => candidates.push({ x, y, left: x - w / 2, right: x + w / 2, top: y - h, bottom: y + 2 });
+      add(cx, cy + n.r + 14); add(cx, cy - n.r - 7);
+      // Nhãn có thể dùng phần sân còn trống thay vì dồn vào giữa các điểm.
+      // Đường mảnh nối lại tới điểm khi nhãn phải dời xa.
+      for (let y = san.top + 20; y < san.bottom - 28; y += 17) {
+        for (let x = san.left + w / 2 + 8; x <= san.right - w / 2 - 8; x += 25) add(x, y);
+      }
+      candidates.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+      const ok = (r) => r.left >= san.left + 6 && r.right <= san.right - 6
+        && r.top >= san.top + 6 && r.bottom <= san.bottom - 6
+        && !da.some((q) => r.left < q.right + 3 && r.right > q.left - 3 && r.top < q.bottom + 2 && r.bottom > q.top - 2);
+      const p = candidates.find(ok) || candidates[0];
+      t.setAttribute("x", p.x - cx); t.setAttribute("dy", p.y - cy);
+      const line = t.parentElement.querySelector(".bd-label-line");
+      line.setAttribute("x2", p.x - cx); line.setAttribute("y2", p.y - cy - 5);
+      line.style.display = Math.hypot(p.x - cx, p.y - cy) > n.r + 26 ? "" : "none";
+      da.push(p);
+    });
   }
 
   function vuaKhung() {
@@ -351,7 +396,7 @@ const BanDo = (() => {
     // Cỡ điểm tính bằng px màn hình (xem `dat`), nên chừa lề bằng px: nửa thẻ
     // bài hai bên, một dòng nhãn trên dưới.
     const LX = 200, LY = 70;
-    S.k = Math.min(2.2, Math.max(0.15, Math.min((W - LX) / Math.max(1, x1 - x0),
+    S.k = Math.min(2.2, Math.max(0.01, Math.min((W - LX) / Math.max(1, x1 - x0),
       (H - LY) / Math.max(1, y1 - y0))));
     S.x = W / 2 - ((x0 + x1) / 2) * S.k;
     S.y = H / 2 - ((y0 + y1) / 2) * S.k;
@@ -362,12 +407,17 @@ const BanDo = (() => {
   function toSang() {
     const svg = $b("#bdSvg");
     const q = khongDau(($b("#svSearch").value || "").trim().toLowerCase());
+    const tu = q.replace(/\b(?:la|gi|the|nao|what|is|are|a|an)\b/g, " ").match(/[\p{L}\p{N}]+/gu) || [];
+    const goc = (w) => w.length > 3 ? w.replace(/s$/, "") : w;
     let sang = null;
     if (S.chon && S.by[S.chon]) {
       sang = new Set([S.chon, ...(S.ke[S.chon] || [])]);
     } else if (q.length >= 2) {
-      sang = new Set(S.nodes.filter((n) => khongDau((n.bai
-        ? (n.ref.title || "") + " " + (n.ref.title_vi || "") : n.ref.name).toLowerCase()).includes(q))
+      sang = new Set(S.nodes.filter((n) => {
+        const ten = khongDau((n.bai ? (n.ref.title || "") + " " + (n.ref.title_vi || "") : n.ref.name).toLowerCase());
+        const tenTu = (ten.match(/[\p{L}\p{N}]+/gu) || []).map(goc);
+        return ten.includes(q) || (tu.length > 0 && tu.every((w) => tenTu.includes(goc(w))));
+      })
         .map((n) => n.id));
       // Không điểm nào khớp tên thì tô các BÀI có đoạn khớp (sau khi Enter);
       // còn chưa tra thì để nguyên — mờ cả bản đồ vì một chữ đang gõ dở là
@@ -387,7 +437,7 @@ const BanDo = (() => {
   }
 
   function veLoai() {
-    const co = new Set(S.data.entities.map((e) => e.kind));
+    const co = new Set(S.nodes.filter((n) => !n.bai).map((n) => n.ref.kind));
     $b("#bdLoai").innerHTML = Object.entries(LOAI).filter(([k]) => co.has(k)).map(([k, [nhan, mau]]) =>
       `<button class="bd-loai-nut ${S.an.has(k) ? "tat" : ""}" data-loai="${k}" data-mau="${mau}"
          title="Bấm để ${S.an.has(k) ? "hiện" : "ẩn"} loại này"><i></i>${nhan}</button>`).join("");
@@ -425,12 +475,7 @@ const BanDo = (() => {
     }
     if (chua.length) {
       html += `<div class="bd-goiy">
-        <p><b>${chua.length}/${d.papers.length} bài chưa có đồ thị riêng.</b> Các điểm của
-          chúng lấy từ phiếu tóm tắt, nên chỉ có tên mà không có đoạn nguồn, và hiếm khi
-          trùng tên với bài khác. Dựng đồ thị thì model đọc toàn văn từng bài, bóc ra
-          phương pháp, tập dữ liệu, độ đo cùng quan hệ giữa chúng.</p>
-        <button class="btn btn-primary xs" data-bd="dung">${esc(S.gia
-          ? `Dựng đồ thị · ~${money(S.gia.usd)}` : "Dựng đồ thị…")}</button></div>`;
+        <p>Bản đồ cần dựng ${chua.length === d.papers.length ? "một lần" : "thêm cho " + chua.length + " bài"}${S.gia ? " (~" + money(S.gia.usd) + ")" : ""} để thấy các bài nối nhau. Bấm nút Dựng bản đồ ở thanh trên; các tên hiện tại lấy từ tóm tắt bài.</p></div>`;
     }
     if (chung.length) {
       html += `<h4 class="bd-h4">Cầu nối giữa các bài</h4>
@@ -444,7 +489,7 @@ const BanDo = (() => {
     html += `<h4 class="bd-h4">Các bài</h4><ul class="bd-ds">${d.papers.map((p) =>
       `<li>${nutBai(p.id)}<span class="muted small">${
         d.entities.filter((e) => e.papers.includes(p.id)).length} khái niệm${
-        p.co_do_thi ? "" : " · từ phiếu"}</span></li>`).join("")}</ul>
+        p.co_do_thi ? "" : " · từ tóm tắt bài"}</span></li>`).join("")}</ul>
       <p class="muted small bd-meo">Bấm một điểm để xem nó nối với gì. Cuộn để phóng,
         kéo nền để di, kéo một điểm để dời nó. Gõ vào ô tìm để tô sáng, Enter để tra
         đoạn văn.</p>`;
@@ -469,14 +514,14 @@ const BanDo = (() => {
       <div class="bd-nut">
         ${p.loupe_doc_id ? `<a class="btn xs" href="#doc=${esc(p.loupe_doc_id)}">Đọc bài</a>` : ""}
         <button class="btn xs" data-bd="giang" data-pid="${esc(p.id)}">Bài giảng</button>
-        <button class="btn xs" data-bd="hoi" data-q="${esc(`Bài «${tenBaiNgan(p)}» giải quyết vấn đề gì, bằng cách nào, và khác các bài còn lại trong kho ở đâu?`)}">Hỏi về bài này…</button>
+        <button class="btn xs" data-bd="hoi" data-q="${esc(`Bài «${tenBaiNgan(p)}» giải quyết vấn đề gì, bằng cách nào, và khác các bài còn lại trong kho ở đâu?`)}">Sang Hỏi đáp · xem giá trước khi hỏi</button>
       </div>
       ${dong("Vấn đề", card.problem)}${dong("Ý tưởng", card.idea)}${dong("Cách làm", card.method)}
       ${Object.keys(khac).length ? `<h4 class="bd-h4">Điểm chung với bài khác</h4>
         <ul class="bd-ds">${Object.entries(khac).map(([q, es]) =>
           `<li>${nutBai(q)}<div class="bd-tags">${es.map(nutTT).join("")}</div></li>`).join("")}</ul>` : ""}
       <h4 class="bd-h4">Khái niệm của bài · ${ents.length}</h4>
-      ${p.co_do_thi ? "" : `<p class="muted small">Lấy từ phiếu tóm tắt, chưa có đoạn nguồn.</p>`}
+      ${p.co_do_thi ? "" : `<p class="muted small">Lấy từ tóm tắt bài, chưa có đoạn nguồn.</p>`}
       <div class="bd-tags">${ents.map(nutTT).join("")}</div>`);
   }
 
@@ -485,10 +530,10 @@ const BanDo = (() => {
     const [nhan] = LOAI[e.kind] || LOAI.concept;
     const dau = `<button class="sv-link bd-lui" data-bd="tq">← Tổng quan</button>
       <h3 class="bd-h">${esc(e.name)}</h3>
-      <p class="muted small">${esc(nhan)} · có ở ${e.papers.length} bài${e.nguon === "phieu" ? " · lấy từ phiếu" : ""}</p>
+      <p class="muted small">${esc(nhan)} · có ở ${e.papers.length} bài${e.nguon === "phieu" ? " · từ tóm tắt bài" : ""}</p>
       <div class="bd-tags">${e.papers.map(nutBai).join("")}</div>
       <div class="bd-nut"><button class="btn xs" data-bd="hoi" data-q="${esc(
-        `«${e.name}» được các bài trong kho dùng thế nào, và khác nhau ở đâu?`)}">Hỏi về «${esc(catGon(e.name, 30))}»…</button></div>`;
+        `«${e.name}» là gì? Giải thích dễ hiểu trước, rồi cho biết các bài trong kho dùng nó thế nào.`)}">Sang Hỏi đáp · xem giá trước khi hỏi</button></div>`;
     pan(dau + '<p class="muted small">đang tìm đoạn nhắc tới…</p>');
     let d;
     try {
@@ -498,6 +543,12 @@ const BanDo = (() => {
       return;
     }
     if (S.chon !== n.id) return;          // người dùng đã bấm sang điểm khác
+    const defs = (d.definitions || []).filter((x) => x.text);
+    const definition = defs.length
+      ? `<div class="bd-goiy"><b>Hiểu đơn giản</b><p>${sci(defs[0].text)}</p>
+          <p class="muted small">Theo bảng thuật ngữ đã lưu của ${esc(defs[0].title)}
+          <a href="#doc=${esc(defs[0].loupe_doc_id)}">Đọc bài →</a></p></div>`
+      : '<p class="muted small">Chưa có định nghĩa đã lưu cho khái niệm này. Bạn có thể sang Hỏi đáp để yêu cầu giải thích; giá hiện trước khi hỏi.</p>';
     const qh = (d.edges || []).map((g) => `<li class="bd-qh">
         <span>${esc(g.src_name)}</span> <b>${esc(g.rel)}</b> <span>${esc(g.dst_name)}</span>
         ${g.chunk_id ? `<a class="sv-cite" data-cite="${esc(g.chunk_id)}">[nguồn]</a>` : ""}
@@ -505,14 +556,15 @@ const BanDo = (() => {
     const doan = (d.chunks || []).map((c) => `<li class="bd-doan" data-cite="${esc(c.id)}">
         <div class="muted small">${esc(catGon(c.title, 50))}${c.section ? " · " + esc(catGon(c.section, 40)) : ""}</div>
         <div>${sci(catGon(c.vi || c.text, 280))}</div></li>`).join("");
-    pan(dau
+    pan(dau + definition
       + (qh ? `<h4 class="bd-h4">Quan hệ các bài phát biểu</h4><ul class="bd-ds">${qh}</ul>` : "")
       + `<h4 class="bd-h4">Đoạn nhắc tới · ${(d.chunks || []).length}</h4>`
       + (doan ? `<ul class="bd-ds">${doan}</ul>` : '<p class="muted small">Không tìm thấy đoạn nào chứa nguyên cụm tên này.</p>'));
   }
 
   function hien(id) {
-    const n = S.by[id];
+    const e = S.data.entities.find((x) => x.id === id);
+    const n = S.by[id] || (e ? { id, bai: false, ref: e } : null);
     if (!n) return tongQuan();
     n.bai ? chiTietBai(n) : chiTietTT(n);
   }
@@ -522,7 +574,7 @@ const BanDo = (() => {
     // Gọi trước khi bản đồ nạp xong (bấm tên bài ở cột trái lúc đang ở tab
     // khác) thì giữ lại, `mo()` sẽ mở đúng điểm này khi vẽ xong.
     if (!S.data) return;
-    if (!S.by[S.chon]) S.chon = "";
+    if (!S.by[S.chon] && !S.data.entities.some((e) => e.id === S.chon)) S.chon = "";
     toSang();
     hien(S.chon);
   }
@@ -544,7 +596,7 @@ const BanDo = (() => {
     S.gia = g.bai ? g : null;
     const b = $b("#bdDung");
     b.classList.toggle("hidden", !g.bai);
-    b.textContent = `Dựng đồ thị · ~${money(g.usd)}`;
+    b.textContent = `Dựng bản đồ · ~${money(g.usd)}`;
     b.title = `${g.bai} bài chưa có đồ thị riêng · chạy bằng ${tenModel(g.model)}`;
     if (!S.chon) tongQuan();
   }
@@ -602,7 +654,7 @@ const BanDo = (() => {
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
       const [px, py] = toaDo(e);
-      const k2 = Math.min(4, Math.max(0.15, S.k * Math.exp(-e.deltaY * 0.0015)));
+      const k2 = Math.min(4, Math.max(0.01, S.k * Math.exp(-e.deltaY * 0.0015)));
       // Phóng lấy CON TRỎ làm tâm, cùng công thức với ô xem trước hình.
       S.x = px - (px - S.x) * k2 / S.k;
       S.y = py - (py - S.y) * k2 / S.k;
@@ -684,13 +736,17 @@ const BanDo = (() => {
       if (a.dataset.bd === "giang") { SV.lecPid = a.dataset.pid; svTab("svTabLec"); }
     });
 
-    new ResizeObserver(() => { if (S.data && !S.dang) datVp(); }).observe(svg);
+    new ResizeObserver(() => {
+      if (S.data && !S.dang && svg.clientWidth && svg.clientHeight) {
+        vuaKhung(); datVp();
+      }
+    }).observe(svg);
   }
 
   function phong(h) {
     const svg = $b("#bdSvg");
     const px = svg.clientWidth / 2, py = svg.clientHeight / 2;
-    const k2 = Math.min(4, Math.max(0.15, S.k * h));
+    const k2 = Math.min(4, Math.max(0.01, S.k * h));
     S.x = px - (px - S.x) * k2 / S.k;
     S.y = py - (py - S.y) * k2 / S.k;
     S.k = k2;
@@ -699,15 +755,19 @@ const BanDo = (() => {
 
   async function tra() {
     const q = $b("#svSearch").value.trim();
+    const sid = S.sid;
     if (!q) return;
     S.chon = "";
     toSang();
     pan(`<button class="sv-link bd-lui" data-bd="tq">← Tổng quan</button>
       <h3 class="bd-h">Đoạn khớp «${esc(catGon(q, 40))}»</h3>
+      <p class="muted small">Đây là tra đoạn văn, miễn phí. Muốn câu trả lời?</p>
+      <button class="btn xs" data-bd="hoi" data-q="${esc(q)}">Sang Hỏi đáp với câu này · xem giá trước khi hỏi</button>
       <div id="svHits" class="sv-hits"></div>
       <button id="svMoreHits" class="sv-link hidden">Xem thêm…</button>`);
     try {
       await svSearch();
+      if (sid !== S.sid || q !== $b("#svSearch").value.trim()) return;
       S.traBai = { q: khongDau(q.toLowerCase()), ids: SV.hits.map((h) => "P" + h.paper_id) };
       toSang();
     } catch (e) {

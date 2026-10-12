@@ -22,9 +22,9 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFil
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from . import llm, store
-from .survey import agent, embed
+from .survey import agent, embed, verify
 from .survey import db as sdb
-from .survey import ingest, lecture, refs, search, sources, synth
+from .survey import bientap, ingest, lecture, refs, search, sources, synth, thongtin_bai
 
 router = APIRouter(prefix="/api/survey", tags=["survey"])
 
@@ -70,6 +70,16 @@ async def create(body: dict = Body(default={})):
     return sdb.create_survey(name, (body.get("topic") or "").strip())
 
 
+_DA_BO_SUNG: set[str] = set()
+
+
+async def _bo_sung_ngam(sid: str) -> None:
+    try:
+        await thongtin_bai.bo_sung_kho(sid)
+    except Exception:                       # noqa: BLE001 — ngầm, hỏng thì thôi
+        pass
+
+
 @router.get("/{sid}")
 async def get_survey(sid: str):
     s = _need(sid)
@@ -77,6 +87,11 @@ async def get_survey(sid: str):
     # trống nghĩa là "theo .env", mà người dùng không đọc được .env từ trình
     # duyệt — trả về đúng thứ sắp chạy, kèm nguồn của nó, để giao diện nói thật.
     strong, fast = sdb.models_of(sid)
+    # Bài còn thiếu năm/tác giả thì điền NGẦM, một lần mỗi kho mỗi lần chạy
+    # server — không bắt người mở kho chờ mạng ngoài.
+    if sid not in _DA_BO_SUNG and any(thongtin_bai.thieu(p) for p in sdb.list_papers(sid)):
+        _DA_BO_SUNG.add(sid)
+        asyncio.create_task(_bo_sung_ngam(sid))
     return {**s, "papers": sdb.list_papers(sid), "stats": sdb.stats(sid),
             "runs": sdb.list_runs(sid),
             "models": {"strong": strong, "fast": fast,
@@ -356,9 +371,28 @@ async def get_chunk(sid: str, cid: str):
     if cid not in rows:
         raise HTTPException(404, "Không tìm thấy đoạn")
     ch = rows[cid]
+    # Đoạn kề chỉ lấy trong CÙNG MỤC: báo cáo 11/10 thấy popup của WAM kèm đoạn
+    # "cảm ơn robot operators…" — đoạn kề theo thứ tự nhưng thuộc mục Lời cảm
+    # ơn, chẳng liên quan gì tới câu đang kiểm.
     around = [c for c in sdb.paper_chunks(ch["paper_id"], level=ch.get("level", 0))
-              if abs((c.get("ord") or 0) - (ch.get("ord") or 0)) <= 1]
+              if abs((c.get("ord") or 0) - (ch.get("ord") or 0)) <= 1
+              and (c.get("section") or "") == (ch.get("section") or "")]
     return {"chunk": ch, "around": around}
+
+
+@router.get("/{sid}/nhan-trich")
+async def nhan_trich(sid: str, ids: str = ""):
+    """Nhãn đọc được cho mã đoạn: "World Models · tr.3" thay cho "[p7a45b79fafc3]".
+
+    Mã băm là thứ người mới không đọc được — phải bấm từng cái mới biết câu trích
+    bài nào. Miễn phí, chỉ tra DB."""
+    _need(sid)
+    ma = [x for x in ids.split(",") if x and x.isalnum()][:300]
+    rows = sdb.get_chunks(ma, sid)
+    return {cid: {"ten": bientap.ten_ngan(r.get("paper_title") or ""),
+                  "trang": r.get("page"), "muc": r.get("section") or "",
+                  "tom_luoc": bool(r.get("level"))}
+            for cid, r in rows.items()}
 
 
 # ------------------------------------------------------------- tổng hợp
@@ -422,7 +456,7 @@ async def get_lecture(sid: str, pid: str, fmt: str = "json"):
     p = sdb.load_paper(pid)
     if p["survey_id"] != sid:
         raise HTTPException(404, "Bài không thuộc kho này")
-    lec = sdb._loads(p.get("lecture"), {})
+    lec = lecture.load(pid)
     if fmt == "md":
         if not lec:
             raise HTTPException(404, "Bài này chưa có bài giảng")
@@ -434,7 +468,7 @@ async def get_lecture(sid: str, pid: str, fmt: str = "json"):
 
 @router.delete("/{sid}/paper/{pid}/lecture")
 async def drop_lecture(sid: str, pid: str):
-    """Bỏ bài giảng đã dựng. Miễn phí, nhưng dựng lại thì tốn ~$0,08."""
+    """Bỏ bài giảng đã dựng. Miễn phí, nhưng dựng lại thì tốn tiền như lần đầu."""
     _need(sid)
     p = sdb.load_paper(pid)
     if p["survey_id"] != sid:
@@ -484,7 +518,7 @@ async def soat_lecture(sid: str, pid: str):
 
 
 @router.get("/{sid}/paper/{pid}/lecture/build")
-async def build_lecture(sid: str, pid: str, deepen: bool = True):
+async def build_lecture(sid: str, pid: str, deepen: bool = True, muc: str = "moi"):
     """Dựng bài giảng, phát SSE. **Tốn tiền** — 2 lượt, cộng 1 lượt nếu đào sâu."""
     _need(sid)
     p = sdb.load_paper(pid)
@@ -493,7 +527,8 @@ async def build_lecture(sid: str, pid: str, deepen: bool = True):
 
     async def gen():
         try:
-            async for kind, payload in lecture.build(pid, deepen=deepen):
+            async for kind, payload in lecture.build(pid, deepen=deepen,
+                                                     muc=muc if muc in ("moi", "ml") else "moi"):
                 yield _sse(kind, payload)
         except Exception as e:               # noqa: BLE001
             yield _sse("error", {"msg": f"{type(e).__name__}: {e}"[:300]})
@@ -531,7 +566,60 @@ async def ban_do(sid: str):
 async def thuc_the(sid: str, ten: str = Query(...)):
     """Chi tiết một thực thể: quan hệ có nguồn và đoạn nhắc tới. **Miễn phí.**"""
     _need(sid)
-    return sdb.thuc_the(sid, ten)
+    result = sdb.thuc_the(sid, ten)
+    definitions = []
+    norm = sdb.norm_name(ten)
+    # Bảng thuật ngữ đã dựng khi dịch có sẵn câu giải thích cho người mới.
+    # Dùng lại bản đã lưu, không gọi model và không bịa định nghĩa từ tên.
+    for p in sdb.list_papers(sid):
+        did = p.get("loupe_doc_id")
+        if not did:
+            continue
+        try:
+            brief = store.load(did).get("brief") or {}
+        except (KeyError, ValueError):
+            continue
+        for g in brief.get("glossary") or []:
+            if not isinstance(g, dict) or norm not in (sdb.norm_name(g.get("en") or ""), sdb.norm_name(g.get("vi") or "")):
+                continue
+            if g.get("gloss"):
+                definitions.append({"text": g["gloss"], "title": p.get("title") or "",
+                                    "paper_id": p["id"], "loupe_doc_id": did})
+    return {**result, "definitions": definitions}
+
+
+# Ước giá bài giảng và bản tổng hợp từ ĐỘ DÀI THẬT và bảng giá của model — nút
+# ghi cứng "~$0,08" trong khi thực chi đo được $0,004–0,018 (báo cáo 11/10:
+# lệch 6–7 lần). Hệ số hiệu chỉnh trên các bài giảng / bản tổng hợp đã dựng
+# trong `data/` (V4 Flash): bài 63k ký tự ước $0,017, thực $0,012 — cố ý lệch
+# về phía CAO, vì ước rẻ hơn thực chi là kiểu sai tệ nhất cho nút tiêu tiền.
+_RA_BAI_GIANG = 11_000       # 8 mục ~5.700 chữ + vòng đào sâu + ban biên tập
+_RA_TONG_HOP = 9_000
+
+
+async def _uoc(model: str, vao: float, ra: float, du_phong: float) -> float:
+    gia = await llm.gia_model(model)
+    return round(vao * gia[0] + ra * gia[1], 4) if gia else du_phong
+
+
+@router.get("/{sid}/paper/{pid}/lecture/gia")
+async def gia_bai_giang(sid: str, pid: str):
+    """Ước giá dựng bài giảng một bài. Không gọi model."""
+    _need(sid)
+    strong, _fast = sdb.models_of(sid)
+    chu = sum(len(c["text"]) for c in sdb.paper_chunks(pid, level=0))
+    # Mỗi mẻ đọc lại toàn văn (4 mẻ + đào sâu), cộng phần ban biên tập đọc.
+    vao = chu / 3.5 * (len(lecture.prompts.LECTURE_BATCHES) + 1) + 15_000
+    return {"usd": await _uoc(strong, vao, _RA_BAI_GIANG, 0.02), "model": strong}
+
+
+@router.get("/{sid}/synthesis/gia")
+async def gia_tong_hop(sid: str):
+    """Ước giá dựng bản tổng hợp cả kho. Không gọi model."""
+    _need(sid)
+    strong, _fast = sdb.models_of(sid)
+    vao = len(agent.digest_of(sid)) / 3.5 * 2 + 12_000
+    return {"usd": await _uoc(strong, vao, _RA_TONG_HOP, 0.02), "model": strong}
 
 
 @router.get("/{sid}/do-thi/gia")
@@ -614,6 +702,17 @@ async def get_run(sid: str, rid: str):
     r = sdb.load_run(rid)
     if r is None:
         raise HTTPException(404, "Không tìm thấy lượt hỏi")
+    # Lượt cũ được soát lại bằng luật HIỆN TẠI, miễn phí (chỉ máy): thư ký gắn
+    # nguồn cho câu có số và đổi trích dẫn sai bài, rồi soát cơ học lại. Không
+    # thì lượt hỏi trước bản sửa mãi mang cảnh báo oan ("số 3.1" của "Mục 3.1").
+    # Cảnh báo của phép chấm kéo theo (model) thì giữ, vì không chạy lại được.
+    cites = r.get("cites") or []
+    if r.get("answer") and cites:
+        ans, _ = verify.doi_trich_sai_bai(sid, r["answer"], cites)
+        ans, _ = verify.gan_nguon_cho_so(ans, cites)
+        cu = [w for w in r.get("warns") or [] if w.get("kind") in ("không_được_đỡ", "đỡ_yếu")]
+        r["answer"] = ans
+        r["warns"] = verify.check_answer(sid, ans, cites) + cu
     return r
 
 
@@ -642,6 +741,58 @@ async def drop_run(sid: str, rid: str):
         raise HTTPException(404, "Không tìm thấy lượt hỏi này trong kho")
     sdb.drop_run(rid)
     return {"ok": True}
+
+
+def _bai_thieu_o(sid: str) -> list[dict]:
+    """Bài có phiếu mà còn ô trống ở cột đang hiện — phần lớn là phiếu dựng miễn
+    phí từ tóm lược của phần Dịch (`from_brief`), vốn không có dữ liệu / chỉ số /
+    đối chứng. Báo cáo 11/10: 5/11 cột trống ở cả 5 dòng, bảng trông như hỏng."""
+    keys = [f["key"] for f in _need(sid)["facets"]]
+    out = []
+    for p in sdb.list_papers(sid):
+        card = p.get("card") or {}
+        if not card:
+            continue
+        trong = [k for k in keys if not _cell(card, k).strip()]
+        if trong:
+            chu = sum(len(c["text"]) for c in sdb.paper_chunks(p["id"], level=0))
+            if chu:
+                out.append({"id": p["id"], "title": (p.get("title") or "")[:80],
+                            "trong": trong, "chars": chu})
+    return out
+
+
+@router.get("/{sid}/matrix/gia")
+async def gia_dien_bang(sid: str):
+    """Ước giá điền ô trống của bảng (bóc lại phiếu đầy đủ). Không gọi model."""
+    thieu = _bai_thieu_o(sid)
+    _strong, fast = sdb.models_of(sid)
+    gia = await llm.gia_model(fast) if thieu else None
+    usd = sum((min(p["chars"], 300_000) / 3.6 + 1500) * gia[0] + 1800 * gia[1]
+              if gia else 0.01 for p in thieu)
+    return {"bai": len(thieu), "usd": round(usd, 4), "model": fast,
+            "ten": [p["title"] for p in thieu]}
+
+
+@router.post("/{sid}/matrix/dien")
+async def dien_bang(sid: str):
+    """Điền ô trống: bóc lại phiếu đầy đủ cho những bài còn thiếu. **Tốn tiền**
+    (giá đã hỏi ở `…/matrix/gia`). Song song 3, mỗi bài một prefix riêng."""
+    thieu = _bai_thieu_o(sid)
+    sem = asyncio.Semaphore(3)
+    tong, hong = 0.0, []
+
+    async def mot(p):
+        nonlocal tong
+        async with sem:
+            try:
+                r = await ingest.recard(p["id"])
+                tong += r.get("cost") or 0
+            except Exception as e:           # noqa: BLE001
+                hong.append(f"{p['title'][:60]}: {e}"[:160])
+
+    await asyncio.gather(*(mot(p) for p in thieu))
+    return {"bai": len(thieu) - len(hong), "hong": hong, "cost": round(tong, 5)}
 
 
 @router.get("/{sid}/matrix")

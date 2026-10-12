@@ -125,6 +125,8 @@ async def resolve(client: httpx.AsyncClient, paper: dict) -> str:
 # Tiêu đề bóc từ PDF thỉnh thoảng hỏng — đã gặp một bài trong kho chỉ còn hai
 # chữ "Question Answering". Tiêu đề như vậy khớp trúng hàng nghìn bài, nên thà
 # không tra còn hơn tra ra nhầm bài rồi dựng cả phần đối chiếu sai.
+KHONG_TIM_THAY = ("Không tìm được bài này trên Semantic Scholar — phần đối chiếu với "
+                  "các bài nó dẫn sẽ bỏ qua. Bài giảng vẫn dựng được.")
 MIN_TITLE_WORDS = 3
 MIN_TITLE_CHARS = 16
 
@@ -184,14 +186,16 @@ async def dossier(paper: dict, corpus_titles: dict[str, str] | None = None,
     if not arxiv_id(paper) and not usable_title(paper.get("title") or ""):
         # Nói ra được chỗ sửa. "Không khớp được" thì đúng nhưng người dùng không
         # biết làm gì tiếp; "tiêu đề bóc hỏng" thì họ sửa được trong một giây.
-        out["why"] = ("tiêu đề của bài quá ngắn để tra (“"
-                      + (paper.get("title") or "").strip()[:40]
-                      + "”) — sửa lại tiêu đề bài rồi thử lại")
+        # Tên thật của bài có thể ngắn ("World Models"), nên đừng bảo người dùng
+        # "sửa lại tiêu đề" — báo cáo 11/10: họ không biết sửa thành gì. Nói thẳng
+        # hệ quả: phần đối chiếu bị bỏ, bài giảng vẫn dựng được.
+        out["why"] = KHONG_TIM_THAY
         return out
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         sid = await resolve(client, paper)
         if not sid:
+            out["why"] = KHONG_TIM_THAY
             return out
         out["s2_id"] = sid
 
@@ -292,6 +296,11 @@ async def ensure(paper: dict, corpus_titles: dict[str, str] | None = None,
     have = db._loads(paper.get("refs"), {})
     if have.get("refs") and time.time() - (have.get("fetched_at") or 0) < max_age:
         return have
+    # Chưa có mã arXiv/DOI thì điền trước: bài tên ngắn ("World Models") chỉ tra
+    # được qua mã, tiêu đề ngắn bị chặn có chủ ý (xem `usable_title`).
+    from . import thongtin_bai
+    if thongtin_bai.thieu(paper) and await thongtin_bai.bo_sung(paper["id"]):
+        paper = {**paper, **(db.load_paper(paper["id"]) or {})}
     got = await dossier(paper, corpus_titles)
     if got.get("refs") or got.get("s2_id"):
         save(paper["id"], got)

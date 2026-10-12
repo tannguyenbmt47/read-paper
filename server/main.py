@@ -26,9 +26,9 @@ app = FastAPI(title="Loupe")
 
 MODEL_CHOICES = [
     {"id": "~deepseek/deepseek-v4-flash-latest",
-     "label": "DeepSeek V4 Flash — rẻ nhất, 1M context ($0.09/$0.18 mỗi triệu token)"},
+     "label": "DeepSeek V4 Flash — rẻ nhất, 1M context ($0,09/$0,18 mỗi triệu token)"},
     {"id": "deepseek/deepseek-v4-pro",
-     "label": "DeepSeek V4 Pro — khá hơn, vẫn rẻ ($0.43/$0.87)"},
+     "label": "DeepSeek V4 Pro — khá hơn, vẫn rẻ ($0,43/$0,87)"},
     {"id": "anthropic/claude-sonnet-4.5",
      "label": "Claude Sonnet 4.5 — tiếng Việt mượt nhất ($3/$15)"},
     {"id": "anthropic/claude-opus-4.1", "label": "Claude Opus 4.1 — kỹ nhất, đắt nhất"},
@@ -37,7 +37,7 @@ MODEL_CHOICES = [
     {"id": "openai/gpt-5.6-terra-pro",
      "label": "GPT-5.6 Terra Pro — cùng giá Terra, suy luận sâu hơn ($1/$6)"},
     {"id": "openai/gpt-5.6-luna",
-     "label": "GPT-5.6 Luna — rẻ, 1M context ($0.10/$0.60)"},
+     "label": "GPT-5.6 Luna — rẻ, 1M context ($0,10/$0,60)"},
     {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro — context lớn, giá tốt"},
     {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash — rẻ, nhanh"},
     {"id": "qwen/qwen-max", "label": "Qwen Max — tiếng Việt khá"},
@@ -74,6 +74,8 @@ def _with_chunks(doc: dict) -> dict:
     doc["chunk_ids"] = [[b["id"] for b in c] for c in chunks]
     # chỉ stat một file — giao diện cần biết có mở được khung PDF gốc hay không
     doc["has_pdf"] = store.pdf_path(doc["id"]) is not None
+    # Tên thư mục học giữ tên gốc kể cả khi tên bài đã được sửa hoặc dịch.
+    doc["meta"] = db.get_meta(doc["id"])["data"]
     return doc
 
 
