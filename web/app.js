@@ -533,7 +533,7 @@ async function init() {
   wireHashNav();
   // `#survey` do survey.js tự mở lúc nạp; ở đây chỉ lo hash trỏ tới một bài.
   const h = docHash();
-  if (h.kind === "doc") openDoc(h.id).catch(() => (location.hash = ""));
+  if (h.kind === "doc") openDoc(h.id).then(() => nhayToiKhoi(h.khoi)).catch(() => (location.hash = ""));
 }
 
 /* ------------------------------------------------------ chọn model */
@@ -1404,14 +1404,26 @@ async function doImport() {
   }
 }
 
-async function openDoc(id) {
-  const r = await fetch(`/api/doc/${id}`);
-  if (!r.ok) throw new Error("not found");
-  location.hash = id;
-  const doc = await r.json();
-  // Bài chưa qua bước 1 thì vào bước 1; đã chốt rồi thì vào thẳng màn hình đọc.
-  if (doc.prepared) mountDoc(doc);
-  else mountReview(doc);
+/* Ghi `location.hash` SAU khi bài đã dựng, không trước. Ghi trước thì
+   `hashchange` bắn ra lúc `state.doc` còn là bài cũ, bộ canh tưởng bài khác và
+   gọi `openDoc` LẦN NỮA — trước đây chỉ tốn một lượt tải, nhưng lượt thứ hai
+   dựng lại màn đọc và `restorePos` kéo về chỗ đọc dở, đè mất cú nhảy tới đoạn
+   được trích từ phần Tìm hiểu (đo được: mountDoc chạy hai lần). Kèm chốt lượt
+   đang mở: cùng một bài thì dùng lại lượt đang chạy. */
+const _dangMoBai = new Map();
+function openDoc(id) {
+  if (_dangMoBai.has(id)) return _dangMoBai.get(id);
+  const lan = (async () => {
+    const r = await fetch(`/api/doc/${id}`);
+    if (!r.ok) throw new Error("not found");
+    const doc = await r.json();
+    // Bài chưa qua bước 1 thì vào bước 1; đã chốt rồi thì vào thẳng màn hình đọc.
+    if (doc.prepared) mountDoc(doc);
+    else mountReview(doc);
+    if (docHash().id !== id) location.hash = id;
+  })().finally(() => _dangMoBai.delete(id));
+  _dangMoBai.set(id, lan);
+  return lan;
 }
 
 /* ============================ bước 1: kiểm tra ============================ */
@@ -1447,7 +1459,56 @@ function docHash() {
   if (!h) return { kind: "start" };
   if (h === "survey" || h.startsWith("survey=")) return { kind: "survey" };
   if (h === "thu-vien") return { kind: "library" };
-  return { kind: "doc", id: h.startsWith("doc=") ? h.slice(4) : h };
+  // `#doc=<bài>&khoi=<khối>`: trích dẫn bên Tìm hiểu trỏ tới ĐÚNG đoạn được
+  // trích. Tách phần `&…` ra khỏi mã bài, không thì mở "bài" tên `abc&khoi=b5`.
+  const [dau, ...them] = (h.startsWith("doc=") ? h.slice(4) : h).split("&");
+  const q = new URLSearchParams(them.join("&"));
+  return { kind: "doc", id: dau, khoi: q.get("khoi") || "" };
+}
+
+/** Giữ khối ở giữa khung trong vài giây đầu. Hình phía trên nạp chậm (lazy) nên
+    trang dài thêm SAU cú cuộn và đẩy đoạn được trích ra khỏi khung — đo được:
+    nhảy xong, 1 giây sau khung nhìn đang ở một hình lớn phía trên. Người đọc tự
+    cuộn, bấm phím hay chạm là thôi ngay, không giành quyền cuộn với họ. */
+function giuTrongKhung(el, ms = 3000) {
+  const doc = $("#doc");
+  let thoi = false;
+  const dung = () => { thoi = true; };
+  const ev = ["wheel", "touchstart", "keydown", "mousedown"];
+  ev.forEach((t) => doc.addEventListener(t, dung, { passive: true, once: true }));
+  const het = Date.now() + ms;
+  const vong = () => {
+    if (thoi || !el.isConnected || Date.now() > het) {
+      ev.forEach((t) => doc.removeEventListener(t, dung));
+      return;
+    }
+    const k = doc.getBoundingClientRect(), b = el.getBoundingClientRect();
+    const lech = (b.top + b.height / 2) - (k.top + Math.min(k.height / 2, b.height / 2 + 120));
+    if (Math.abs(lech) > 60) doc.scrollTo({ top: doc.scrollTop + lech, behavior: "instant" });
+    setTimeout(vong, 150);
+  };
+  setTimeout(vong, 400);
+}
+
+/** Nhảy tới một khối và nháy sáng nó — đích của trích dẫn từ phần Tìm hiểu.
+    Gọi SAU `openDoc`: `restorePos` trong đó cuộn về chỗ đọc dở, cú nhảy này
+    phải thắng nó. Khối đang ẩn thì bật "xem khối ẩn" để nó có mặt mà nhảy tới. */
+function nhayToiKhoi(khoi) {
+  if (!khoi || !state.doc) return;
+  if (!$(`#p-${CSS.escape(khoi)}`) && state.doc.blocks.some((b) => b.id === khoi && b.hidden)) {
+    state.showHidden = true;
+    renderDoc();
+  }
+  const el = $(`#p-${CSS.escape(khoi)}`);
+  if (!el) return status("Không tìm thấy đoạn được trích trong bài này — có thể bài đã được bóc lại.");
+  jumpToBlock(khoi);
+  giuTrongKhung(el);
+  el.classList.remove("nhay-toi");
+  void el.offsetWidth;                       // chạy lại hiệu ứng nếu bấm lần nữa
+  el.classList.add("nhay-toi");
+  setTimeout(() => el.classList.remove("nhay-toi"), 2600);
+  const b = state.doc.blocks.find((x) => x.id === khoi);
+  status(`Đoạn được trích${b?.section ? ` · mục «${b.section}»` : ""}${b?.page != null ? ` · trang ${b.page + 1}` : ""}.`);
 }
 
 function wireHashNav() {
@@ -1484,10 +1545,10 @@ function wireHashNav() {
        đang hiện. */
     const man = state.doc?.prepared ? "reader" : "review";
     const dangMo = state.doc && id === state.doc.id;
-    if (dangMo && !$(`#${man}`).classList.contains("hidden")) return;
+    if (dangMo && !$(`#${man}`).classList.contains("hidden")) { nhayToiKhoi(h.khoi); return; }
     // Đã nạp rồi thì chỉ cần hiện lại, khỏi gọi lại API.
-    if (dangMo) { showScreen(man); return; }
-    openDoc(id).catch(() => { location.hash = ""; });
+    if (dangMo) { showScreen(man); nhayToiKhoi(h.khoi); return; }
+    openDoc(id).then(() => nhayToiKhoi(h.khoi)).catch(() => { location.hash = ""; });
   });
 }
 

@@ -1807,3 +1807,32 @@ def test_chon_bai_tu_thu_vien_dua_vao_tim_hieu():
         assert o in html
     assert "SV.tv.chon" in sv and "khongDau(" in sv.split("function svTvLoc", 1)[1][:300]
     assert 'id="tvSelTH"' in tv and 'id="tvToTH"' in tv and "async function tvSangTimHieu" in tv
+
+
+def test_trich_dan_tu_tim_hieu_nhay_dung_doan_trong_man_doc():
+    """`#doc=<bài>&khoi=<khối>` phải mở bài và nhảy tới đúng khối. Hai chỗ đã
+    hỏng thật: `docHash` coi cả `abc&khoi=b5` là mã bài; và `openDoc` ghi hash
+    TRƯỚC khi dựng bài nên `hashchange` mở bài lần hai, `restorePos` của lượt
+    sau kéo về chỗ đọc dở và đè mất cú nhảy."""
+    import re
+    from pathlib import Path
+    app = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text()
+    h = re.search(r"function docHash\(\) \{.*?\n\}", app, re.S).group(0)
+    assert "khoi" in h and 'split("&")' in h
+    o = re.search(r"function openDoc\(id\) \{.*?\n\}", app, re.S).group(0)
+    assert o.index("mountDoc(doc)") < o.index("location.hash = id"), "hash phải ghi SAU khi dựng bài"
+    assert "_dangMoBai" in o
+    assert "function giuTrongKhung" in app
+
+
+def test_doan_trong_kho_do_nguoc_ra_khoi_cua_bai_dich(app_client, monkeypatch):
+    """Đoạn kho ghép từ nguyên văn các khối → dò ngược ra khối đầu tiên."""
+    from server import survey_api, store
+    doc = {"blocks": [{"id": "b1", "text": "Intro heading", "page": 0},
+                      {"id": "b2", "text": "First paragraph of the method.", "page": 1},
+                      {"id": "b3", "text": "Second paragraph continues here.", "page": 1}]}
+    monkeypatch.setattr(store, "load", lambda did: doc)
+    ch = {"loupe_doc_id": "abc", "page": 1, "level": 0,
+          "text": "…tail of previous chunk\nFirst paragraph of the method.\nSecond paragraph continues here."}
+    assert survey_api._khoi_cua_doan(ch) == "b2"
+    assert survey_api._khoi_cua_doan({**ch, "loupe_doc_id": ""}) == ""

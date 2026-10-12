@@ -1872,6 +1872,13 @@ a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: trans
 .refs summary .muted { font-family: var(--sans); font-weight: 400; font-size: .8rem; }
 .refs-list { margin: .8rem 0 0; padding-left: 2.2rem; font-size: .88em; color: var(--ink-2); line-height: 1.55; }
 .refs-list li { margin: 0 0 .5rem; padding: .15rem .4rem; border-radius: 6px; overflow-wrap: anywhere; }
+/* Đích của trích dẫn từ phần Tìm hiểu: nháy dạ quang rồi tắt dần, đủ để mắt
+   bắt được đoạn nào giữa trang đầy chữ. */
+.pair.nhay-toi { animation: nhay-toi 2.6s ease-out; }
+@keyframes nhay-toi {
+  0%, 35% { background: color-mix(in srgb, var(--hl) 55%, transparent); box-shadow: 0 0 0 3px var(--hl); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
 .refs-list li.moi-nhay { background: var(--hl); color: #1d1b18; }
 
 /* Popover Aa: nhãn theme không được gãy dòng ("Tự / động" trông như vỡ), và hộp

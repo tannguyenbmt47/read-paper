@@ -1630,6 +1630,15 @@ hiểu" thì `svOpen` ghi `#survey`, bộ nghe gọi `openDoc("survey")`, nhận
 đá về màn nhập — **công cụ thứ hai của app mất hẳn lối vào**, không lỗi nào. Lúc
 khởi động cũng vậy với `#doc=<mã>`. Lộ ra lúc chụp màn survey để soát giao diện.
 
+**`#doc=<bài>&khoi=<khối>`** — trích dẫn bên Tìm hiểu ("Mở đúng đoạn này trong
+màn đọc") nhảy tới đúng khối được trích. Đoạn kho không lưu mã khối, nhưng nó
+ghép từ nguyên văn các khối nên `survey_api._khoi_cua_doan` dò ngược được (40/40
+đoạn thử). Hai bẫy đã vấp: `openDoc` từng ghi hash TRƯỚC khi dựng bài, nên
+`hashchange` bắn lúc `state.doc` còn là bài cũ và mở bài LẦN HAI — `restorePos`
+của lượt sau đè mất cú nhảy (giờ ghi hash sau khi dựng, kèm chốt lượt đang mở);
+và hình phía trên nạp chậm làm trang dài thêm SAU cú cuộn, đẩy đoạn ra khỏi
+khung — `giuTrongKhung` căn lại trong 3 giây đầu, thôi ngay khi người đọc tự cuộn.
+
 Mọi chỗ đọc hash phải đi qua `docHash()`;
 `test_moi_cho_doc_hash_deu_qua_mot_luat` cấm đọc thẳng `location.hash.slice(1)`.
 

@@ -377,7 +377,37 @@ async def get_chunk(sid: str, cid: str):
     around = [c for c in sdb.paper_chunks(ch["paper_id"], level=ch.get("level", 0))
               if abs((c.get("ord") or 0) - (ch.get("ord") or 0)) <= 1
               and (c.get("section") or "") == (ch.get("section") or "")]
-    return {"chunk": ch, "around": around}
+    return {"chunk": ch, "around": around, "khoi": _khoi_cua_doan(ch)}
+
+
+def _khoi_cua_doan(ch: dict) -> str:
+    """Khối của bài ở phần Dịch mà đoạn này bắt đầu từ đó — để "Mở trong màn đọc"
+    nhảy tới ĐÚNG chỗ được trích chứ không mở bài ở đầu (hay ở chỗ đọc dở).
+
+    Đoạn trong kho được `split_blocks` ghép từ nguyên văn các khối, nối bằng
+    xuống dòng, nên dò ngược được mà không phải lưu thêm cột nào: dòng đầu
+    (bỏ mẩu chồng lấn "…" mượn của đoạn trước) trùng nguyên văn một khối. Không
+    trùng (khối dài bị cắt theo câu) thì lấy khối CHỨA dòng đó, ưu tiên cùng trang."""
+    did = ch.get("loupe_doc_id") or ""
+    if not did or ch.get("level"):
+        return ""
+    try:
+        doc = store.load(did)
+    except Exception:                       # noqa: BLE001 — bài đã xoá khỏi phần Dịch
+        return ""
+    dong = [d for d in (ch.get("text") or "").split("\n") if d.strip() and not d.startswith("…")]
+    if not dong:
+        return ""
+    from . import db as maindb
+    dau = maindb.norm(dong[0])
+    khoi = [b for b in doc.get("blocks") or [] if b.get("text")]
+    for b in khoi:
+        if maindb.norm(b["text"]) == dau:
+            return b["id"]
+    mau = dau[:120]
+    hop = [b for b in khoi if mau and mau in maindb.norm(b["text"])]
+    hop.sort(key=lambda b: b.get("page") != ch.get("page"))
+    return hop[0]["id"] if hop else ""
 
 
 @router.get("/{sid}/nhan-trich")

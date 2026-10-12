@@ -1373,7 +1373,8 @@ async function svOpenCite(cid) {
     box.innerHTML = `<div class="modal-card">
       <header class="modal-head"><b>${esc(c.paper_title || "")}</b>
         <span class="grow"></span>
-        ${c.loupe_doc_id ? `<a class="btn btn-ghost small" href="#doc=${esc(c.loupe_doc_id)}">Mở trong màn đọc</a>` : ""}
+        ${c.loupe_doc_id ? `<a class="btn btn-ghost small" href="#doc=${esc(c.loupe_doc_id)}${d.khoi ? "&khoi=" + esc(d.khoi) : ""}"
+            title="Mở bài ở phần Dịch, nhảy tới đúng đoạn này">Mở đúng đoạn này trong màn đọc →</a>` : ""}
         <button class="btn btn-ghost" data-close>Đóng</button></header>
       <div class="modal-body">
         <p class="small muted">${esc(c.section || "")} · ${svTrang(c.page, "trang ")} ·
@@ -1390,7 +1391,9 @@ async function svOpenCite(cid) {
     const phim = (e) => { if (e.key === "Escape") { e.stopPropagation(); dong(); } };
     document.addEventListener("keydown", phim, true);
     box.onclick = (e) => {
-      if (e.target === box || e.target.hasAttribute("data-close")) dong();
+      // Liên kết sang màn đọc cũng đóng popup: nó gắn vào <body>, không đóng thì
+      // nằm đè lên đúng đoạn vừa nhảy tới.
+      if (e.target === box || e.target.hasAttribute("data-close") || e.target.closest('a[href^="#doc="]')) dong();
     };
     document.body.appendChild(box);
   } catch (e) {
