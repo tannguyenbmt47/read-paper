@@ -19,7 +19,7 @@ import re
 import unicodedata
 from typing import AsyncIterator
 
-from . import db, depth, llm, prompts, store
+from . import db, depth, llm, prompts, store, tieng_viet
 from .parser import Block, chunk_blocks
 
 LABEL = re.compile(r"<<<\s*([A-Za-z0-9_]+)\s*>>>")
@@ -1024,14 +1024,25 @@ async def stream_chunk(
             dirty[bid] = "".join(sorted(bad))[:12]
         elif leak_rx and leak_rx.search(body):
             dirty[bid] = "nhãn lọt vào chữ"
+        else:
+            # Chữ Latinh mà không phải tiếng Việt — `script_leak` không thấy vì
+            # nó chỉ soát HỆ CHỮ. Gặp thật 12/10 (nhà cung cấp chạy bản nén
+            # 4-bit): "có được viết sebagai", pinyin, âm tiết sai cấu trúc.
+            hong = [l for l in tieng_viet.loi_chu(body)
+                    if l["loai"] in ("tieng_indonesia", "pinyin", "am_tiet_la", "chu_han", "tieng_phap")]
+            if hong:
+                dirty[bid] = "chữ hỏng: " + tieng_viet.ten_loi(hong[0]["loai"])
 
     db.tm_put([(by_id[bid], final.get(bid, ""), plains.get(bid, ""))
                for bid in set(final) | set(plains)
                if bid in by_id and bid not in dirty], doc["model"])
     if dirty:
         nhan = [b for b, ly in dirty.items() if ly == "nhãn lọt vào chữ"]
-        chu = {ly for ly in dirty.values() if ly != "nhãn lọt vào chữ"}
+        hong_chu = {ly for ly in dirty.values() if ly.startswith("chữ hỏng")}
+        chu = {ly for ly in dirty.values() if ly != "nhãn lọt vào chữ" and ly not in hong_chu}
         vi_sao = []
+        if hong_chu:
+            vi_sao.append("tiếng Việt bị hỏng (" + ", ".join(sorted(h[10:] for h in hong_chu)[:3]) + ")")
         if chu:
             vi_sao.append("lẫn ký tự thuộc hệ chữ lạ (" + ", ".join(sorted(chu)[:3]) + ")")
         if nhan:

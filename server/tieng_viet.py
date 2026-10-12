@@ -116,7 +116,12 @@ def am_tiet_la(tu: str) -> bool:
     return bool(van) and not _CUOI_OK.search(van)
 
 
-_TEN_LOI = {"tieng_phap": "câu tiếng Pháp", "tieng_anh": "câu tiếng Anh",
+# Từ chức năng tiếng Indonesia/Mã Lai — gặp thật trong bản dịch hỏng ("có được
+# viết sebagai"). Không từ nào trùng một âm tiết tiếng Việt viết không dấu.
+_ID = re.compile(r"(?<![\w-])(sebagai|dengan|adalah|untuk|yang|dari|dalam|tidak|juga|akan|"
+                 r"bahwa|karena|oleh|pada|bisa|seperti|kami|mereka|tersebut)(?![\w-])")
+
+_TEN_LOI = {"tieng_indonesia": "lẫn tiếng Indonesia", "tieng_phap": "câu tiếng Pháp", "tieng_anh": "câu tiếng Anh",
             "ngon_ngu_khac": "câu không phải tiếng Việt", "pinyin": "lẫn pinyin",
             "chu_han": "lẫn chữ Hán", "am_tiet_la": "chữ không phải tiếng Việt",
             "noi_tieng_anh": "từ nối tiếng Anh"}
@@ -143,6 +148,9 @@ def loi_chu(text: str) -> list[dict]:
             if n_cn >= 2:
                 out.append({"loai": {"fr": "tieng_phap", "en": "tieng_anh"}.get(ngu, "ngon_ngu_khac"),
                             "doan": cau[:160]})
+    for m in _ID.finditer(text):
+        out.append({"loai": "tieng_indonesia", "doan": text[max(0, m.start() - 30):m.end() + 10]})
+        break
     for m in _NOI_EN.finditer(text):
         out.append({"loai": "noi_tieng_anh", "doan": m.group(0)})
     for w in set(_TU.findall(text)):

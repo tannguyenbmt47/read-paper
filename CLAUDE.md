@@ -2180,6 +2180,26 @@ xong cờ "Kho đã đổi" biến mất dù không đọc thêm bài nào. Vớ
 `kiem_so` chỉ soát số ở `CLAIM_SECTIONS` — mục cơ chế cố ý kể ví dụ giả định, và
 người kiểm chứng sẽ XOÁ câu ví dụ vì không đoạn nào đỡ nó.
 
+### Nhà cung cấp chạy bản NÉN 4-bit làm hỏng tiếng Việt (12/10)
+
+Bài dịch ra "Quá process của teacher T gần cùng, chúng tôi bỏ chi ti… có được
+viết sebagai" — rơi âm tiết, lẫn tiếng Indonesia, cả bài. Cùng model DeepSeek V4
+Flash, hai bài dịch hôm 11/10 sạch hoàn toàn, nên không phải prompt. Gốc rễ:
+OpenRouter mặc định chọn nhà cung cấp RẺ NHẤT, và các nhà chạy bản fp4
+(OpenInference, Relace) rẻ hơn bản fp8 ~10 lần ở đầu vào. Đo trên cùng một mẻ
+dịch thật: OpenInference bỏ cả đề bài, Relace ra "Tuy nhiối… thíết bị",
+DeepInfra (fp8) sạch. Gọi NGẮN thì cả nhà xấu cũng ra sạch — lỗi chỉ lộ với
+prompt dài (prefix toàn văn) và `session_id` dính cố định vào một nhà.
+
+`llm._them_nha_cung_cap` gắn `provider.quantizations` (mặc định
+`fp8,fp16,bf16,fp32,int8,unknown`, đổi bằng `OR_QUANTIZATIONS`) vào MỌI lượt
+`complete`/`stream_text`; model chỉ còn bản nén thì lùi về gọi không lọc. Lượt
+dịch giờ chạy `tieng_viet.loi_chu` lên từng khối: tiếng Indonesia, pinyin, âm
+tiết sai cấu trúc → khối vào `dirty`, KHÔNG ghi `tm`, giao diện báo. Rơi âm tiết
+thuần ("chi ti") thì máy vẫn không bắt được — chỗ dựa thật là bộ lọc nhà cung
+cấp. Dữ liệu nhiễm đã dọn (bản dịch của bài `2bbf370f9f55`, 89 mục `tm` ngày
+12/10), kèm bản sao lưu `data/papers.db.bak-20261012-1047-*`.
+
 ### Báo cáo thử 11/10 (Loupe Testing 2) — người mới dùng phần Tìm hiểu
 
 22 lỗi, cả bốn lỗi [Cao] đều là chuyện CHỮ và NGUỒN chứ không phải tính năng

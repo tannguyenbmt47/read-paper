@@ -1668,3 +1668,25 @@ def test_ghep_chu_thich_voi_vung_theo_cot_va_tong_diem():
     assert ghep["t4"] == [327, 70, 501, 194]     # bảng cột phải
     assert ghep["t1"] == [108, 420, 502, 448]
     assert ghep["t2"] == [108, 500, 502, 570]
+
+
+def test_moi_luot_goi_model_loai_ban_nen_4bit():
+    """OpenRouter mặc định chọn nhà cung cấp RẺ NHẤT, và bản nén fp4 rẻ hơn ~10
+    lần nên được chọn — đo 12/10: "Mạng convolution thâm… Tuy nhiối… có được
+    viết sebagai". Mọi lượt gọi phải mang bộ lọc lượng tử hoá, và bộ lọc không
+    được cho fp4/int4 lọt vào."""
+    from server import llm
+    extra = llm._them_nha_cung_cap({})
+    q = extra["provider"]["quantizations"]
+    assert "fp8" in q and "fp4" not in q and "int4" not in q
+    import inspect
+    for f in (llm.complete, llm.stream_text):
+        assert "_them_nha_cung_cap" in inspect.getsource(f), f"{f.__name__} không gắn bộ lọc nhà cung cấp"
+
+
+def test_bat_ban_dich_lan_tieng_indonesia():
+    from server import tieng_viet as tv
+    hong = "Theo ký hi trước, knowledge distillation đơn tầng có được viết sebagai công thức sau."
+    assert any(l["loai"] == "tieng_indonesia" for l in tv.loi_chu(hong))
+    sach = "Theo ký hiệu trước, knowledge distillation đơn tầng được viết như công thức sau, dùng ResNet và dữ liệu."
+    assert tv.loi_chu(sach) == []

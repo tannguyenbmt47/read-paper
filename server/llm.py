@@ -24,6 +24,28 @@ from openai import AsyncOpenAI
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
 DEFAULT_MODEL = os.getenv("OR_MODEL") or "anthropic/claude-sonnet-4.5"
+
+# Không để OpenRouter định tuyến tới bản model NÉN 4-bit. Nó mặc định chọn nhà
+# cung cấp rẻ nhất, và từ khoảng 11/10 hai nhà fp4 (OpenInference, Relace) rẻ hơn
+# bản fp8 ~10 lần ở đầu vào nên được chọn. Đo trên cùng một mẻ dịch thật:
+# OpenInference bỏ cả đề bài, viết về "knowledge graph"; Relace ra "Mạng
+# convolution thâm… Tuy nhiối… thíết bị"; DeepInfra (fp8) sạch. Nén mạnh hỏng
+# trước tiên ở ngôn ngữ ít dữ liệu — rơi âm tiết, lẫn tiếng Indonesia — và hỏng
+# CÂM: không lỗi nào, chỉ chữ là rác. Đặt ở đây để mọi lượt gọi của app đều theo.
+QUANTIZATIONS = [q.strip() for q in (os.getenv("OR_QUANTIZATIONS")
+                 or "fp8,fp16,bf16,fp32,int8,unknown").split(",") if q.strip()]
+
+
+def _them_nha_cung_cap(extra: dict) -> dict:
+    if QUANTIZATIONS:
+        extra["provider"] = {"quantizations": QUANTIZATIONS}
+    return extra
+
+
+def _khong_co_endpoint(e: Exception) -> bool:
+    """Lọc lượng tử hoá loại sạch mọi nhà cung cấp của model → 404 từ OpenRouter."""
+    t = str(e).lower()
+    return "no endpoints" in t or ("404" in t and "endpoint" in t)
 FAST_MODEL = os.getenv("OR_MODEL_FAST") or DEFAULT_MODEL
 
 
@@ -145,14 +167,17 @@ async def stream_text(
     if session_id:
         extra["session_id"] = session_id
 
-    stream = await _client().chat.completions.create(
-        model=model,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        stream=True,
-        extra_body=extra,
-    )
+    try:
+        stream = await _client().chat.completions.create(
+            model=model, messages=messages, max_tokens=max_tokens,
+            temperature=temperature, stream=True, extra_body=_them_nha_cung_cap(dict(extra)))
+    except Exception as e:                  # noqa: BLE001
+        # Model chỉ có bản nén thì gọi như cũ, còn hơn hỏng hẳn.
+        if not _khong_co_endpoint(e):
+            raise
+        stream = await _client().chat.completions.create(
+            model=model, messages=messages, max_tokens=max_tokens,
+            temperature=temperature, stream=True, extra_body=extra)
     usage = Usage()
     async for chunk in stream:
         if getattr(chunk, "usage", None):
@@ -181,13 +206,16 @@ async def complete(
         extra["reasoning"] = reasoning
     if session_id:
         extra["session_id"] = session_id
-    resp = await _client().chat.completions.create(
-        model=model,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        extra_body=extra,
-    )
+    try:
+        resp = await _client().chat.completions.create(
+            model=model, messages=messages, max_tokens=max_tokens,
+            temperature=temperature, extra_body=_them_nha_cung_cap(dict(extra)))
+    except Exception as e:                  # noqa: BLE001
+        if not _khong_co_endpoint(e):
+            raise
+        resp = await _client().chat.completions.create(
+            model=model, messages=messages, max_tokens=max_tokens,
+            temperature=temperature, extra_body=extra)
     return resp.choices[0].message.content or "", _usage_from(resp.usage)
 
 
