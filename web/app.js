@@ -268,10 +268,14 @@ function openCitePeek(numbers, origin) {
     + numbers.split(",").map((n) => {
       const item = state.citeIndex?.[n];
       if (!item) return "";
-      // Gỡ khoảng trắng PDF chèn ngay sau dấu / trong URL.
-      const text = item.text.replace(/(https?:\/\/\S*\/)\s+/g, "$1");
+      // Gỡ khoảng trắng PDF chèn giữa URL: sau dấu "/" và sau dấu "." của tên
+      // miền ("https://github. com/facebookresearch/…" — gặp thật ở bài
+      // Knowledge Review, liên kết ra cụt thành "https://github").
+      const text = item.text
+        .replace(/(https?:\/\/[^\s]*\.)\s+(?=[a-z]{2,6}(?:[\/:]|\b))/gi, "$1")
+        .replace(/(https?:\/\/\S*\/)\s+/g, "$1");
       const url = text.match(/https?:\/\/[^\s<>]+/i)?.[0].replace(/[.,;]+$/, "");
-      return `<section><h3>Trích dẫn [${esc(n)}]</h3><p>${esc(item.text)}</p>
+      return `<section><h3>Trích dẫn [${esc(n)}]</h3><p>${esc(text)}</p>
         ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Mở nguồn: ${esc(url)}</a>`
           : `<p class="muted">Mục này chưa có đường dẫn nguồn trong PDF.</p>`}
         <button type="button" data-ref-go="${esc(item.id)}">Đến mục tham khảo cuối bài</button></section>`;
