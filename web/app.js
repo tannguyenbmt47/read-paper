@@ -230,7 +230,7 @@ function refs(html) {
       const so = inner.split(/\s*[,–-]\s*/);
       if (!so.every((x) => cite[x])) return whole;
       const tip = so.map((x) => `[${x}] ${cite[x].text}`).join("\n");
-      return `<a class="cite" data-cite="${esc(so[0])}" title="${esc(tip)}">${whole}</a>`;
+      return `<a class="cite" href="#ref-${esc(cite[so[0]].id)}" data-cite="${esc(so.join(","))}" title="${esc(tip)}">${whole}</a>`;
     });
   }
   const map = state.figIndex;
@@ -256,6 +256,43 @@ function buildCiteIndex() {
     if (m) map[m[1]] ??= { id: b.id, text: m[2].replace(/\s+/g, " ").trim() };
   }
   state.citeIndex = map;
+}
+
+/* Xem nguồn ngay tại chỗ, giữ nguyên vị trí đang đọc. */
+function openCitePeek(numbers, origin) {
+  document.querySelector("#citePeek")?.remove();
+  const dialog = document.createElement("dialog");
+  dialog.id = "citePeek";
+  dialog.className = "citepeek";
+  dialog.innerHTML = `<header><strong>Tài liệu được trích dẫn</strong><button type="button" data-close>Đóng</button></header>`
+    + numbers.split(",").map((n) => {
+      const item = state.citeIndex?.[n];
+      if (!item) return "";
+      // Gỡ khoảng trắng PDF chèn ngay sau dấu / trong URL.
+      const text = item.text.replace(/(https?:\/\/\S*\/)\s+/g, "$1");
+      const url = text.match(/https?:\/\/[^\s<>]+/i)?.[0].replace(/[.,;]+$/, "");
+      return `<section><h3>Trích dẫn [${esc(n)}]</h3><p>${esc(item.text)}</p>
+        ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Mở nguồn: ${esc(url)}</a>`
+          : `<p class="muted">Mục này chưa có đường dẫn nguồn trong PDF.</p>`}
+        <button type="button" data-ref-go="${esc(item.id)}">Đến mục tham khảo cuối bài</button></section>`;
+    }).join("");
+  dialog.onclick = (event) => {
+    if (event.target === dialog || event.target.closest("[data-close]")) dialog.close();
+    const go = event.target.closest("[data-ref-go]");
+    if (go) {
+      dialog.close();
+      const li = document.getElementById("ref-" + go.dataset.refGo);
+      if (li) {
+        $("#refList").open = true;
+        li.scrollIntoView({ block: "center" });
+        li.classList.add("moi-nhay");
+        setTimeout(() => li.classList.remove("moi-nhay"), 2600);
+      }
+    }
+  };
+  dialog.onclose = () => { dialog.remove(); origin.focus({ preventScroll: true }); };
+  document.body.append(dialog);
+  dialog.showModal();
 }
 
 function buildFigIndex() {
@@ -3485,14 +3522,8 @@ function wirePairs() {
       const cite = e.target.closest("[data-cite]");
       if (cite) {
         e.stopPropagation();
-        const m = state.citeIndex?.[cite.dataset.cite];
-        const li = m && $(`#ref-${CSS.escape(m.id)}`);
-        if (li) {
-          $("#refList").open = true;
-          li.scrollIntoView({ block: "center" });
-          li.classList.add("moi-nhay");
-          setTimeout(() => li.classList.remove("moi-nhay"), 1600);
-        }
+        e.preventDefault();
+        openCitePeek(cite.dataset.cite, cite);
         return;
       }
       const ref = e.target.closest("[data-figref]");

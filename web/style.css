@@ -1865,7 +1865,7 @@ mark.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muc) 30%, transpa
 
 /* Tài liệu tham khảo cuối bài: gập sẵn, không dịch. `[n]` trong thân bài là chỗ
    rê chuột ra thấy mục tương ứng, bấm thì mở danh sách và nhảy tới mục đó. */
-a.cite { color: var(--accent); cursor: help; text-decoration: none; border-bottom: 1.5px dotted var(--accent); }
+a.cite { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1.5px dotted var(--accent); }
 a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: transparent; }
 .refs { margin: 2.2rem 0 1rem; border-top: 2px dashed var(--line); padding-top: .9rem; }
 .refs summary { cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 1.15rem; line-height: 1.4; }
@@ -2120,3 +2120,15 @@ a.cite:hover { background: var(--hl); color: #1d1b18; border-bottom-color: trans
   .sl2 { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .sl2-dai { grid-auto-flow: column; grid-auto-columns: 150px; overflow-x: auto; border-right: 0; border-bottom: 2px solid var(--muc); padding: .6rem; }
 }
+
+/* Hộp trích dẫn ghi rõ nguồn, không làm mất chỗ đang đọc. */
+.citepeek { width: min(620px, calc(100vw - 2rem)); max-height: 80vh; overflow: auto;
+  box-sizing: border-box; padding: 1.2rem; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; }
+.citepeek::backdrop { background: #0006; }
+.citepeek header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.citepeek section { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: .8rem; }
+.citepeek h3 { font-size: 1rem; margin: 0; }
+.citepeek p { line-height: 1.6; overflow-wrap: anywhere; }
+.citepeek a { display: block; color: var(--accent); overflow-wrap: anywhere; margin-bottom: 1rem; }
+.citepeek button { cursor: pointer; }
