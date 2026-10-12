@@ -1184,6 +1184,15 @@ Ba mức, và chia ba là quyết định sau khi đo trên cả thư viện (96
   priors" bảng ghi giữ nguyên, bản dịch viết "tiên nghiệm không gian-thời gian").
   Không gọi là "sai": "chọn khung hình" so với "lựa chọn khung hình" không sai.
 
+**Chiều ngược: từ bài sang trang thuật ngữ.** `danhDauTN` gạch chấm mờ dưới
+thuật ngữ trong cột gốc và cột dịch — chỉ LẦN ĐẦU mỗi ô ("Controller" 32 lần thì
+chi chít), không gạch tiêu đề — bằng `wrapRange` trên chữ đã dựng, nên
+`textContent` không đổi và vệt bôi vẫn neo đúng. Bấm vào (vùng chọn rỗng) hoặc bôi
+chọn một cụm chứa thuật ngữ rồi bấm nút "Thuật ngữ" trên thanh bôi →
+`diToiThuatNgu` mở đúng mục, mở sẵn danh sách và viền xanh đoạn đang đứng. Soát
+bằng headless phải bật `Emulation.setFocusEmulationEnabled`: thiếu nó thì cú bấm
+chuột thật không tới handler và phép thử báo hỏng oan.
+
 Khi không thấy thuật ngữ trong bản dịch, hiện câu dịch ở vị trí TƯƠNG ỨNG theo tỉ
 lệ độ dài (`cauTuongUng`), không hiện đầu đoạn — bản đầu hiện "Các RNN lớn là…"
 trong khi thuật ngữ nằm ở câu thứ ba. Và `jumpToBlock` chỉ đóng cột trái ở màn
@@ -2330,6 +2339,12 @@ Nên mọi thứ thuộc về bài trước còn nguyên ở đó, và hai chỗ
 Cùng họ: `state.sections`, `state.showHidden`, `state.stopping`, thanh tiến
 trình, thanh tìm, thanh "đang ẩn", panel tuỳ chọn dịch, khung chat, và đồng hồ
 đếm giây.
+
+**Cột trái cũng vậy, và nó đã hỏng thật (12/10).** `renderSide` chỉ vẽ khi bài
+ĐÃ có tóm lược (`if (b) {…}`, không có `else`), nên nạp bài mới rồi vào bước dịch
+là thấy nguyên Tóm lược, Lập luận, sơ đồ, Thuật ngữ của bài vừa đọc — người dùng
+báo "nạp bài khác nhưng phần dịch lại là của bài cũ". Nhánh `else` giờ dọn cả
+bốn hộp, và ô lọc thuật ngữ cũng về rỗng.
 
 **`#doc.scrollTop` cũng không tự về 0.** Thay `innerHTML` chỉ làm trình duyệt
 kẹp `scrollTop` vào chiều cao nội dung mới, không đặt lại — nên bài chưa đọc dở

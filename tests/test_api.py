@@ -1760,3 +1760,32 @@ def test_thuat_ngu_bam_vao_xem_da_dich_the_nao():
     assert re.search(r'addEventListener\("keydown".{0,200}term-cho, \.term-dau', app, re.S)
     nhay = re.search(r"function jumpToBlock\(id\) \{.*?\n\}", app, re.S).group(0)
     assert "if (narrow()) toggleSide(false)" in nhay, "màn rộng không được đóng cột trái khi nhảy"
+
+
+def test_bai_chua_co_tom_luoc_thi_cot_trai_duoc_don():
+    """Màn đọc không dựng lại khi mở bài khác. `renderSide` từng chỉ vẽ cột trái
+    khi bài ĐÃ có tóm lược, nên nạp bài mới (chưa có) rồi vào bước dịch là thấy
+    nguyên tóm lược, thuật ngữ, lập luận của bài đọc trước (báo lỗi 12/10)."""
+    import re
+    from pathlib import Path
+    app = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text()
+    m = re.search(r"function renderSide\(\) \{.*?\n\}", app, re.S)
+    assert m
+    nhanh_else = m.group(0).split("} else {", 1)
+    assert len(nhanh_else) == 2, "renderSide phải có nhánh dọn khi chưa có tóm lược"
+    for o in ("#briefBox", "#diagramBox", "#chainBox", "#termsBox"):
+        assert o in nhanh_else[1].split("\n  }\n")[0], f"nhánh chưa có tóm lược không dọn {o}"
+
+
+def test_tu_bai_sang_trang_thuat_ngu():
+    """Thuật ngữ trong bài được gạch chấm (trừ tiêu đề), bấm vào hoặc bôi chọn
+    rồi bấm nút "Thuật ngữ" là sang đúng mục ở tab Thuật ngữ."""
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "web"
+    app = (web / "app.js").read_text()
+    html = (web / "index.html").read_text()
+    for ten in ("function danhDauTN", "function diToiThuatNgu", "function tnTrongChu"):
+        assert ten in app, f"thiếu {ten}"
+    assert 'id="hlTerm"' in html, "thanh bôi chọn thiếu nút Thuật ngữ"
+    assert '$$("#doc .pair", host).forEach(danhDauTN)' in app, "renderDoc phải gạch thuật ngữ"
+    assert 'classList.contains("heading")' in app.split("function danhDauTN", 1)[1][:400]

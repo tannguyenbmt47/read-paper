@@ -865,6 +865,21 @@ body { padding-left: var(--rail-w); }
 .term-nhan { font-family: var(--sans); font-size: .9em; color: var(--warn); }
 .term-cho.is-mot { border-style: dashed; }
 .term-nhan-mot { font-family: var(--sans); font-size: .9em; color: var(--muted); }
+/* Thuật ngữ trong bài: gạch chấm MỜ, chỉ đậm lên khi rê chuột — đọc liền mạch
+   mà vẫn biết chỗ nào bấm được. */
+.doc .tn {
+  text-decoration: underline dotted; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 3px; cursor: help;
+}
+.doc .tn:hover { text-decoration-color: var(--accent); text-decoration-style: solid; }
+.term.is-dang > .term-dau { background: var(--hl-soft, var(--surface-2)); }
+.term-cho.is-dang { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hl-bar { display: flex; align-items: center; gap: .3rem; }
+.hl-term {
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
+  padding: .15rem .6rem; font: inherit; font-size: .8rem; cursor: pointer; white-space: nowrap;
+}
+.hl-term:hover { border-color: var(--muc); }
 mark.term-hit { background: var(--c-y, #ffe866); color: inherit; padding: 0 .1em; border-radius: 2px; }
 
 .outline a { display: block; padding: .22rem 0; text-decoration: none; color: var(--ink-2); font-size: .92em; cursor: pointer; }

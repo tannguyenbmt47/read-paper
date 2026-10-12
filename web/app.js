@@ -2360,6 +2360,16 @@ function onDocSelect() {
   if (end <= start || !text) return bar.classList.add("hidden");
 
   hlPending = { block: pair.dataset.id, col, start, end, text };
+  // Vùng chọn chứa một thuật ngữ thì thanh bôi có thêm nút sang trang thuật ngữ.
+  const ti = col === "gl" ? -1 : tnTrongChu(text);
+  const nutTN = $("#hlTerm");
+  nutTN.classList.toggle("hidden", ti < 0);
+  if (ti >= 0) {
+    const g = state.doc.brief.glossary[ti];
+    nutTN.dataset.term = ti;
+    nutTN.dataset.khoi = pair.dataset.id;
+    nutTN.textContent = `Thuật ngữ: ${catGonTho(g.en, 28)}`;
+  }
   const box = r.getBoundingClientRect();
   bar.style.left = `${box.left + box.width / 2 + scrollX}px`;
   bar.style.top = `${box.top + scrollY - 6}px`;
@@ -2564,6 +2574,13 @@ function wireHighlights() {
     if (e.shiftKey) setTimeout(onDocSelect, 0);
   });
   // màu vừa chọn được nhớ lại, vì người ta thường bôi nhiều đoạn cùng loại
+  $("#hlTerm").onclick = (e) => {
+    e.stopPropagation();
+    $("#hlBar").classList.add("hidden");
+    hlPending = null;
+    document.getSelection().removeAllRanges();
+    diToiThuatNgu(+e.currentTarget.dataset.term, e.currentTarget.dataset.khoi);
+  };
   $$("#hlPick .hl-sw").forEach((b) => (b.onclick = (e) => {
     e.stopPropagation();
     setPref("hlcolor", b.dataset.c);
@@ -3182,6 +3199,7 @@ function renderDoc() {
   syncHiddenBar(nHidden);
   wirePairs();
   repaintHighlights();
+  $$("#doc .pair", host).forEach(danhDauTN);
   hydrateDiagrams(host);
   applyReaderPrefs();
   host.onscroll = onDocScroll;
@@ -3386,6 +3404,14 @@ function hydrateDiagrams(root) {
 function wirePairs() {
   $$("#doc .pair").forEach((el) => {
     el.addEventListener("click", (e) => {
+      // Bấm vào thuật ngữ gạch chấm → sang trang thuật ngữ. Đang kéo chọn chữ
+      // thì không (vùng chọn khác rỗng), và chữ nằm trong liên kết hình thì để
+      // liên kết làm việc của nó.
+      const tn = e.target.closest(".tn");
+      if (tn && !e.target.closest("a") && document.getSelection()?.isCollapsed !== false) {
+        diToiThuatNgu(+tn.dataset.term, el.dataset.id);
+        return;
+      }
       // Thẻ giải thích của chú thích hình được thu gọn sẵn (xem `.pair.caption
       // .gl` trong style.css): bấm vào là mở hết / thu lại.
       const gl = e.target.closest(".pair.caption .gl");
@@ -3491,7 +3517,20 @@ function renderSide() {
           </div>
         </div>`).join("")
       : `<p class="muted">Chưa có.</p>`;
+  } else {
+    // Bài CHƯA có tóm lược thì phải DỌN cột trái, không bỏ qua: màn đọc không
+    // dựng lại khi mở bài khác, nên bỏ qua là tóm lược, sơ đồ, thuật ngữ và
+    // phản biện của bài TRƯỚC nằm nguyên đó. Báo lỗi 12/10: nạp bài mới, vào
+    // bước dịch thì thấy tóm lược của World Models (bài vừa đọc).
+    const chua = '<p class="muted">Bấm <em>Dịch</em> để tool đọc toàn bài, dựng tóm lược và chốt bảng thuật ngữ trước khi dịch.</p>';
+    $("#briefBox").innerHTML = chua;
+    $("#diagramBox").innerHTML = "";
+    $("#chainBox").innerHTML = '<p class="muted">Chưa có.</p>';
+    $("#termsBox").innerHTML = '<p class="muted">Chưa có — bảng thuật ngữ được dựng cùng tóm lược.</p>';
   }
+  // Ô lọc thuật ngữ là của bài trước: giữ chữ trong đó thì bài mới mở ra với
+  // danh sách đã bị lọc sẵn mà không ai gõ gì.
+  if ($("#termSearch").value) $("#termSearch").value = "";
 
   const heads = state.doc.blocks.filter((x) => x.type === "heading");
   // Không dùng href="#p-…": location.hash là chỗ lưu id bài, ghi đè vào đó thì
@@ -3666,6 +3705,80 @@ function quanhCho(chu, hit, rong = 110) {
   return (a > 0 ? "…" : "") + sci(chu.slice(a, hit.at))
     + `<mark class="term-hit">${sci(chu.slice(hit.at, hit.at + hit.len))}</mark>`
     + sci(chu.slice(hit.at + hit.len, b)) + (b < chu.length ? "…" : "");
+}
+
+/* ---------------------------------------- từ bài đi sang trang thuật ngữ
+
+   Chiều ngược của tab Thuật ngữ: đang đọc mà gặp một thuật ngữ thì bấm thẳng
+   vào nó (hoặc bôi chọn rồi bấm "Thuật ngữ") để xem bảng ghi nó là gì và bài đã
+   dịch nó ra sao ở mọi chỗ khác. */
+
+/** Mẫu dò của từng thuật ngữ cho cột gốc và cột dịch, dựng một lần mỗi bài. */
+function mauTN() {
+  const gl = state.doc?.brief?.glossary || [];
+  if (state.tnCache?.gl === gl) return state.tnCache.ds;
+  const ds = gl.map((g, i) => ({
+    i, dai: String(g.en || "").length,
+    en: mauThuatNgu(g.en, true),
+    // Cột dịch: thuật ngữ giữ nguyên tiếng Anh, hoặc cách dịch trong bảng.
+    vi: [...mauThuatNgu(g.en, true), ...mauThuatNgu(g.vi)],
+  })).filter((t) => t.en.length)
+    // Cụm dài trước: "World Action Model" phải thắng "World Model" khi chồng nhau.
+    .sort((a, b) => b.dai - a.dai);
+  state.tnCache = { gl, ds };
+  return ds;
+}
+
+/** Gạch chấm mờ dưới thuật ngữ trong một hàng — mỗi thuật ngữ chỉ LẦN ĐẦU
+    trong mỗi ô, không thì "Controller" 32 lần làm cả trang chi chít gạch. Bọc
+    bằng `wrapRange` trên chữ đã dựng: `textContent` không đổi, nên vệt bôi
+    (neo theo khoảng ký tự) vẫn đúng chỗ. */
+function danhDauTN(pairEl) {
+  const ds = mauTN();
+  // Tiêu đề mục không gạch: nó đã nổi bật, gạch chấm thêm vào chỉ làm rối.
+  if (!ds.length || pairEl.classList.contains("heading")) return;
+  for (const col of ["en", "vi"]) {
+    const cell = $("." + col, pairEl);
+    if (!cell || cell.querySelector(".pending") || cell.querySelector(".tn")) continue;
+    const chu = cell.textContent;
+    const lay = [];
+    for (const t of ds) {
+      const h = timMau(chu, t[col]);
+      if (h && !lay.some((x) => h.at < x.at + x.len && x.at < h.at + h.len)) lay.push({ ...h, i: t.i });
+    }
+    lay.sort((a, b) => b.at - a.at).forEach((h) => wrapRange(cell, h.at, h.at + h.len, () => {
+      const sp = document.createElement("span");
+      sp.className = "tn";
+      sp.dataset.term = h.i;
+      sp.title = "Thuật ngữ — bấm để xem bảng ghi gì và bài dịch nó thế nào";
+      return sp;
+    }));
+  }
+}
+
+/** Mở tab Thuật ngữ đúng mục `i`, mở sẵn danh sách chỗ dùng, và chỉ ra đoạn
+    người đọc vừa đứng (`tuKhoi`). */
+function diToiThuatNgu(i, tuKhoi) {
+  toggleSide(true);
+  $(`.side-tab[data-side="terms"]`)?.click();
+  const tim = $("#termSearch");
+  if (tim.value) { tim.value = ""; tim.dispatchEvent(new Event("input")); }
+  const el = $(`#termsBox .term[data-term="${i}"]`);
+  if (!el) return;
+  if (!el.querySelector(".term-dung")) moThuatNgu(el);
+  $$("#termsBox .term.is-dang, #termsBox .term-cho.is-dang").forEach((x) => x.classList.remove("is-dang"));
+  el.classList.add("is-dang");
+  const cho = tuKhoi && el.querySelector(`.term-cho[data-go="${CSS.escape(tuKhoi)}"]`);
+  if (cho) cho.classList.add("is-dang");
+  el.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+/** Thuật ngữ dài nhất nằm trọn trong một đoạn chữ người đọc bôi chọn. */
+function tnTrongChu(chu) {
+  for (const t of mauTN()) {
+    if (timMau(chu, t.vi) || timMau(chu, t.en)) return t.i;
+  }
+  return -1;
 }
 
 /** Câu dịch ở vị trí TƯƠNG ỨNG với chỗ thuật ngữ trong câu gốc (theo tỉ lệ độ
@@ -4133,7 +4246,7 @@ function streamChunk(i, refine, mode, only) {
       }
       state.doc.translations[id] = vi;
       const cell = $(`#p-${CSS.escape(id)} [data-vi]`);
-      if (cell) { cell.innerHTML = sci(vi); cell.classList.remove("pending"); }
+      if (cell) { cell.innerHTML = sci(vi); cell.classList.remove("pending"); danhDauTN(cell.closest(".pair")); }
     });
     es.addEventListener("status", (e) => status(JSON.parse(e.data).msg));
     /* Model trả về ký tự thuộc hệ chữ lạ. Bản dịch vẫn hiện ra (người đọc cần
@@ -4231,6 +4344,7 @@ async function redoBlock(id) {
     const gl = $("[data-gl]", pair);
     if (gl && res.plain) gl.innerHTML = renderMd(res.plain);
     paintHighlights(pair);
+    danhDauTN(pair);
     reportCost("Dịch lại xong", res.run, res.usage);
     if (res.warn) status("⚠ " + res.warn);
   } catch (e) {
