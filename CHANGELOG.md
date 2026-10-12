@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.1.0
+
+**Translation quality: the 4-bit provider fix.** OpenRouter routes to the
+cheapest provider, and some now serve DeepSeek V4 Flash compressed to 4 bits.
+Those produce broken Vietnamese: dropped syllables and stray Indonesian words.
+Every model call now asks for 8-bit or better (`OR_QUANTIZATIONS`), and a
+Vietnamese text checker keeps damaged translations out of the translation
+memory and flags them on screen.
+
+**Survey tool ("Tìm hiểu") rebuilt for newcomers.** The map is now the main
+screen. An editorial board (clerk, test reader, fact-checker, editor,
+proofreader) fixes problems before the reader sees them. Q&A answers always come
+back in Vietnamese. Citations read "World Models · p.1" instead of hashes, and a
+sentence that cites the wrong paper is fixed or underlined. Lectures have a
+beginner mode. The comparison table expands cells and can fill empty columns.
+Paper year, authors and arXiv id are looked up automatically. Every "Build"
+button shows a real price estimate instead of a fixed guess.
+
+**Critique in layers.** The paper summary gains a reviewer's view: hidden
+assumptions, alternative explanations, and a test that would tell them apart.
+
+**Slides.** Six-stage structure, detailed 30/45-minute decks quoting the
+translation verbatim, an editorial board that removes empty slides and
+overclaiming conclusions, and an illustrator that adds plain-language
+retellings and simple diagrams to dense slides. Arrow keys move between slides
+in the editor and the presenter.
+
+**Reader.** The left column can be resized by dragging. Clicking a glossary
+term lists every place the paper uses it, with the source next to the
+translation and a count of places that deviate from the glossary. Terms in the
+text are underlined and open the glossary entry. Opening a new paper no longer
+shows the previous paper's summary in the left column.
+
+**Docker.** A slimmer 349 MB image, with separate compose files for running and
+developing.
+
 ## 2.0.0
 
 **Slides, rebuilt from scratch.** Each slide now plays one role in the paper's
