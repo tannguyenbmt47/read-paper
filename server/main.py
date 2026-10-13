@@ -40,8 +40,10 @@ MODEL_CHOICES = [
      "label": "GPT-5.6 Luna — rẻ, 1M context ($0,10/$0,60)"},
     {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro — context lớn, giá tốt"},
     {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash — rẻ, nhanh"},
-    {"id": "qwen/qwen-max", "label": "Qwen Max — tiếng Việt khá"},
 ]
+# `qwen/qwen-max` đã bị gỡ: OpenRouter gỡ hết nhà cung cấp (13/10), người dùng
+# chọn nó là mọi lượt dịch ra 404. `/api/config` giờ lọc danh sách này theo danh
+# sách SỐNG của OpenRouter, nên model nào bị gỡ sau này cũng tự biến khỏi ô chọn.
 
 
 @app.on_event("startup")
@@ -82,7 +84,7 @@ def _with_chunks(doc: dict) -> dict:
 # ----------------------------------------------------------------- trang web
 
 
-_ASSETS = ("vendor/fonts.css", "style.css", "slide.css", "survey.css", "app.js", "survey.js", "sv-bando.js",
+_ASSETS = ("vendor/fonts.css", "style.css", "slide.css", "survey.css", "app.js", "survey.js", "sv-research.js", "sv-bando.js",
            "thuvien.js", "slide-ve.js", "slide.js")
 
 
@@ -119,11 +121,25 @@ async def index():
 # -------------------------------------------------------------------- config
 
 
+async def _model_con_song() -> list[dict]:
+    """`MODEL_CHOICES` bỏ những model OpenRouter không còn phục vụ. Tra không
+    được (mất mạng, OpenRouter lỗi) thì trả nguyên danh sách — chặn nhầm cả ô
+    chọn còn tệ hơn để lọt một model chết."""
+    try:
+        song = {m.get("id") for m in await llm.list_models()}
+    except Exception:                       # noqa: BLE001
+        return MODEL_CHOICES
+    if not song:
+        return MODEL_CHOICES
+    # Tên tắt `~…-latest` có mục riêng trong danh sách, nên tra thẳng được.
+    return [m for m in MODEL_CHOICES if m["id"] in song]
+
+
 @app.get("/api/config")
 async def config():
     return {
         "model": llm.DEFAULT_MODEL,
-        "models": MODEL_CHOICES,
+        "models": await _model_con_song(),
         "has_key": bool(os.getenv("OPENROUTER_API_KEY")),
         "layout_model": layout.available(),
     }
@@ -422,11 +438,14 @@ async def edit_blocks(doc_id: str, body: dict = Body(...)):
     hide = set(body.get("hide") or [])
     unhide = set(body.get("unhide") or [])
 
+    # Thu lại tên ảnh trước khi bỏ khối: lọc `blocks` xong thì không còn cách
+    # tìm ra hình gắn với khối đã xoá. Chỉ xoá file khi không khối nào dùng nữa.
+    removed_images = {b.get("figure") for b in doc["blocks"]
+                      if b["id"] in drop | drop_fig and b.get("figure")}
+
     if drop:
         doc["blocks"] = [b for b in doc["blocks"] if b["id"] not in drop]
-        for bid in drop:
-            doc["translations"].pop(bid, None)
-            doc["notes"].pop(bid, None)
+        _forget(doc, drop)
     for b in doc["blocks"]:
         if b["id"] in skip:
             b["translate"] = False
@@ -438,11 +457,12 @@ async def edit_blocks(doc_id: str, body: dict = Body(...)):
             b["hidden"] = True
         elif b["id"] in unhide:
             b["hidden"] = False
-        if b["id"] in drop_fig or b["id"] in drop:
-            if b.get("figure"):
-                store.delete_image(doc_id, b["figure"])
+        if b["id"] in drop_fig:
             b["figure"] = ""
     store.save(doc)
+    in_use = {b.get("figure") for b in doc["blocks"] if b.get("figure")}
+    for fig in removed_images - in_use:
+        store.delete_image(doc_id, fig)
     return _with_chunks(doc)
 
 
@@ -603,8 +623,11 @@ async def edit_translation(doc_id: str, body: dict = Body(...)):
         raise HTTPException(404, "Không có khối này")
 
     changed = []
+    changed_cols = set()
     if "vi" in body:
         vi = str(body["vi"]).strip()
+        if vi != doc["translations"].get(bid, ""):
+            changed_cols.add("vi")
         if vi:
             doc["translations"][bid] = vi
         else:
@@ -612,6 +635,8 @@ async def edit_translation(doc_id: str, body: dict = Body(...)):
         changed.append("vi")
     if "plain" in body:
         pl = str(body["plain"]).strip()
+        if pl != doc["plain"].get(bid, ""):
+            changed_cols.add("gl")
         if pl:
             doc["plain"][bid] = pl
         else:
@@ -620,12 +645,24 @@ async def edit_translation(doc_id: str, body: dict = Body(...)):
     if not changed:
         raise HTTPException(400, "Không có gì để sửa")
 
+    # Vệt bôi neo theo vị trí ký tự của từng cột. Sửa chữ khiến toạ độ cũ trỏ
+    # sang đoạn khác, nhưng vệt ở cột gốc và cột chưa sửa vẫn giữ nguyên được.
+    hl = doc.get("highlights") or {}
+    if changed_cols and bid in hl:
+        remaining = [h for h in hl[bid] if h.get("col") not in changed_cols]
+        if remaining:
+            hl[bid] = remaining
+        else:
+            del hl[bid]
+        doc["highlights"] = hl
+
     store.save(doc)
 
     db.tm_put([(blk.get("text") or "",
                 doc["translations"].get(bid, ""),
                 doc["plain"].get(bid, ""))], doc.get("model") or llm.DEFAULT_MODEL)
     return {"ok": True, "block_id": bid, "changed": changed,
+            "highlights": doc.get("highlights") or {},
             "vi": doc["translations"].get(bid, ""), "plain": doc["plain"].get(bid, "")}
 
 

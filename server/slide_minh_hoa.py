@@ -74,6 +74,9 @@ Kể lại ĐÚNG ý của đoạn trích bằng lời thường, 2 đến 4 câ
 - Thuật ngữ nào người mới không biết thì giải nghĩa ngay trong câu bằng lời
   thường. Ví dụ "mô hình lớn, cồng kềnh (cumbersome model)" thay cho để trơ tên.
 - Câu ngắn, chủ ngữ rõ, nói theo trình tự là gì → làm gì → vì sao.
+- Giọng khoa học, mô tả chức năng trực tiếp. Không dùng ẩn dụ, nhân hoá hoặc
+  các cụm “nút thắt cổ chai”, “điểm mù”, “nhìn vào một tầng”.
+  Quy tắc này cũng áp dụng cho mọi nhãn trong hình vẽ.
 - Không dấu chấm phẩy, không "tức là", không "nói cách khác".
 Slide không phải trích đoạn thì để `de_hieu` rỗng.
 

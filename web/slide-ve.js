@@ -21,6 +21,10 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  // Chỉ gỡ số thứ tự đúng vị trí; giữ số có nghĩa như “64 chiều”.
+  const tenBuoc = (ten, i) => String(ten || "").replace(
+    new RegExp(`^\\s*(?:Bước\\s+)?${i + 1}[.)：:\\s-]+`, "i"), "");
+
   /** `x^{2}`, `d_{i}` → chỉ số trên/dưới. Escape TRƯỚC rồi mới chèn thẻ. */
   function chu(s) {
     let t = esc(s);
@@ -148,6 +152,12 @@
     const cs = changCo(bo);
     // Trích đoạn không thuộc chặng nào: lấy chặng của slide gần nhất phía trước.
     let iChang = cs.findIndex(([, vai]) => vai.includes(s.vai));
+    // Khái niệm chuẩn bị cho phần phía sau, cùng quy tắc xếp thứ tự ở server.
+    if (s.vai === "khai_niem") {
+      for (let k = bo.indexOf(s) + 1; iChang < 0 && k < bo.length; k++) {
+        iChang = cs.findIndex(([, vai]) => vai.includes(bo[k].vai));
+      }
+    }
     for (let k = bo.indexOf(s) - 1; iChang < 0 && k >= 0; k--) {
       iChang = cs.findIndex(([, vai]) => vai.includes(bo[k].vai));
     }
@@ -202,7 +212,7 @@
         than = `${dau}${tieuDe}<div class="sld-kt">
           <div class="sld-kt-cu"><b class="sld-tay">Cách đang làm</b>${o("cach_cu", s.cach_cu, "p", "", "Cách đang làm")}</div>
           <div class="sld-mui">→</div>
-          <div class="sld-kt-hong"><b class="sld-tay">Hỏng ở đâu</b>${o("hong", s.hong, "p", "", "Hỏng ở đâu, trong kịch bản nào")}</div></div>
+          <div class="sld-kt-hong"><b class="sld-tay">Hạn chế</b>${o("hong", s.hong, "p", "", "Hạn chế cụ thể và điều kiện xảy ra")}</div></div>
           ${s.he_qua || sua ? `<p class="sld-hq"><b class="sld-tay">Hệ quả</b> ${o("he_qua", s.he_qua, "span", "", "Hệ quả đo được")}</p>` : ""}`;
         break;
       case "yeu_cau":
@@ -225,7 +235,7 @@
       case "co_che": {
         const anh = hinh();
         const buoc = ds("buoc", (b, i) => `<li style="--i:${i}"><span class="sld-buoc-so">${i + 1}</span><div>
-          ${o(`buoc.${i}.ten`, b.ten, "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Làm gì và vì sao cần")}</div></li>`);
+          ${o(`buoc.${i}.ten`, tenBuoc(b.ten, i), "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Làm gì và vì sao cần")}</div></li>`);
         // Có hình: bước dọc bên trái + hình. Không hình: lần đầu là dòng chảy
         // ngang, lần sau là bậc thang — hai slide cơ chế không bao giờ cùng dáng.
         // Bậc thang chỉ rộng ~62% khung: bốn bước dài trong đó là tràn (đã gặp).
@@ -249,7 +259,7 @@
           <div class="sld-hn-trai"><b class="sld-tay">Cách làm</b>${o("cach_lam", s.cach_lam, "p", "", "Hướng này làm thế nào")}
             ${dd ? `<ul class="sld-tl3-chip">${dd}</ul>` : ""}
             ${s.khia_canh || sua ? `<p class="sld-hn-kc"><b class="sld-tay">Tập trung vào</b> ${o("khia_canh", s.khia_canh, "span", "", "khía cạnh nào của bài toán")}</p>` : ""}</div>
-          <div class="sld-kt-hong"><b class="sld-tay">Vấn đề</b>${o("han_che", s.han_che, "p", "", "Hỏng trong kịch bản nào, hỏng ra sao")}</div></div>`;
+          <div class="sld-kt-hong"><b class="sld-tay">Vấn đề</b>${o("han_che", s.han_che, "p", "", "Hạn chế cụ thể và điều kiện xảy ra")}</div></div>`;
         break;
       }
       case "khai_niem": {
@@ -260,13 +270,13 @@
           ${o("thuat_ngu", s.thuat_ngu, "p", "sld-kn-ten", "Thuật ngữ")}
           ${o("dinh_nghia", s.dinh_nghia, "p", "sld-kn-dn", "Nó là gì")}
           ${s.vi_du || sua ? `<p class="sld-kn-vd"><b class="sld-tay">Ví dụ</b> ${o("vi_du", s.vi_du, "span", "", "một ví dụ cụ thể")}</p>` : ""}
-          ${s.vi_sao || sua ? `<p class="sld-kn-vs"><b class="sld-tay">Vì sao cần</b> ${o("vi_sao", s.vi_sao, "span", "", "thiếu nó thì hỏng ở đâu")}</p>` : ""}
+          ${s.vi_sao || sua ? `<p class="sld-kn-vs"><b class="sld-tay">Vì sao cần</b> ${o("vi_sao", s.vi_sao, "span", "", "chức năng và lý do cần thiết")}</p>` : ""}
           </div>${anh}</div>`;
         break;
       }
       case "cach_lam_tn": {
         const buoc = ds("buoc", (b, i) => `<li style="--i:${i}"><span class="sld-buoc-so">${i + 1}</span><div>
-          ${o(`buoc.${i}.ten`, b.ten, "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Làm gì")}</div></li>`);
+          ${o(`buoc.${i}.ten`, tenBuoc(b.ten, i), "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Làm gì")}</div></li>`);
         than = `${dau}${tieuDe}${s.muc_dich || sua ? `<p class="sld-dan"><b>Câu hỏi thí nghiệm:</b> ${o("muc_dich", s.muc_dich, "span", "", "Thí nghiệm này kiểm câu hỏi gì")}</p>` : ""}
           <div class="sld-cc ngang"><ol class="sld-buoc">${buoc}</ol></div>`;
         break;
@@ -355,7 +365,7 @@
         // hình chiếm bên phải, đầu vào/bước/đầu ra xếp dọc bên trái.
         const anh = hinh();
         const vao = `<div class="sld-note nho"><span class="bang-keo"></span><b class="sld-tay">Đầu vào${s.minh_hoa ? " · minh hoạ, không lấy từ bài" : ""}</b>${o("dau_vao", s.dau_vao, "p", "", "Một đầu vào có thật trong bài")}</div>`;
-        const tl = `<ol class="sld-tl">${ds("buoc", (b, i) => `<li>${o(`buoc.${i}.ten`, b.ten, "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Đầu vào biến đổi ra sao")}</li>`)}</ol>`;
+        const tl = `<ol class="sld-tl">${ds("buoc", (b, i) => `<li>${o(`buoc.${i}.ten`, tenBuoc(b.ten, i), "b", "", "Bước")}${o(`buoc.${i}.mo_ta`, b.mo_ta, "p", "", "Đầu vào biến đổi ra sao")}</li>`)}</ol>`;
         const ra = `<div class="sld-ra"><b class="sld-tay">Đầu ra</b>${o("dau_ra", s.dau_ra, "p", "", "Kết quả")}</div>`;
         than = coHinh ? `${dau}${tieuDe}<div class="sld-vdu co-hinh"><div class="sld-vdu-cot">${vao}${tl}${ra}</div>${anh}</div>`
           : `${dau}${tieuDe}<div class="sld-vdu">${vao}${tl}${ra}${anh}</div>`;
@@ -415,16 +425,29 @@
   /** Co chữ cho vừa khung — đo `scrollHeight`, giảm `--s`, đo lại (đúng thuật
       toán normAutofit của PowerPoint). Chỉ co tới 0,78: nhỏ hơn nữa là nhồi chữ,
       và lúc đó cần bớt chữ chứ không phải thu nhỏ (nhận xét B2 của chuyên gia). */
+  const daTheoDoiAnh = new WeakSet();
+  const daChoFont = new WeakSet();
   function vuaKhung(el) {
     const giay = el && el.querySelector(".sld-giay");
     if (!giay) return;
+    // Ảnh và font có thể về sau lượt đo đầu; đo lại trên cả app lẫn bản xuất.
+    el.querySelectorAll("img").forEach(img => {
+      if (!img.complete && !daTheoDoiAnh.has(img)) {
+        daTheoDoiAnh.add(img);
+        img.addEventListener("load", () => vuaKhung(el), { once: true });
+      }
+    });
+    if (document.fonts?.status === "loading" && !daChoFont.has(el)) {
+      daChoFont.add(el);
+      document.fonts.ready.then(() => { if (el.isConnected) vuaKhung(el); });
+    }
     let k = 1, n = 0;
     giay.style.setProperty("--s", "1");
     while (giay.scrollHeight > giay.clientHeight + 2 && k > 0.78 && n++ < 12) {
       k = Math.max(0.78, k - 0.03);
       giay.style.setProperty("--s", k.toFixed(2));
     }
-    el.classList.toggle("tran", giay.scrollHeight > giay.clientHeight + 2);
+    el.classList.toggle("tran", giay.scrollHeight > giay.clientHeight + 2 || giay.scrollWidth > giay.clientWidth + 2);
   }
 
   goc.SlideVe = { ve, vuaKhung, esc, chu, NHAN_VAI };

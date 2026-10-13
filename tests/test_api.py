@@ -58,6 +58,14 @@ def test_config_va_trang_chu(app_client):
     assert app_client.get("/").status_code == 200
 
 
+def test_so_nghien_cuu_nhan_phien_ban_javascript(app_client):
+    """Trình duyệt phải nạp bản Sổ nghiên cứu mới sau mỗi lần sửa mã."""
+    from server import main
+    res = app_client.get("/")
+    assert res.headers["cache-control"] == "no-store"
+    assert f'/sv-research.js?v={main._asset_tag()}' in res.text
+
+
 def test_nap_bai_ra_khoi(doc):
     assert doc["blocks"], "không bóc được khối nào"
     assert doc["chunks"] >= 1
@@ -103,6 +111,80 @@ def test_an_khoi_va_hien_lai(app_client, doc):
     r = app_client.patch(f"/api/doc/{doc['id']}/blocks", json={"unhide": [bid]})
     assert next(x for x in r.json()["blocks"] if x["id"] == bid)["hidden"] is False
     assert r.json()["chunks"] >= it, "hiện lại khối thì số mẻ không được giảm"
+
+
+def test_xoa_khoi_don_du_lieu_va_anh_khong_con_duoc_dung(app_client):
+    """Xoá khối phải dọn đủ bản dịch, ghi chú, vệt bôi và ảnh đã tách."""
+    from server import store
+    r = app_client.post("/api/import", data={
+        "text": "Bài kiểm tra xoá khối\n\nMột đoạn văn dùng để kiểm tra dữ liệu liên quan.",
+        "model": "test/model", "force": "1"})
+    assert r.status_code == 200, r.text
+    did = r.json()["id"]
+    d = store.load(did)
+    bid = d["blocks"][0]["id"]
+    d["blocks"][0]["figure"] = bid
+    d["translations"][bid] = "Đã dịch"
+    d["plain"][bid] = "Đã diễn giải"
+    d["notes"][bid] = "Ghi chú cũ"
+    d["highlights"][bid] = [{"id": "h1", "col": "vi", "start": 0, "end": 2}]
+    store.save(d)
+    store.save_images(did, {bid: b"anh-thu-nghiem"})
+
+    out = app_client.patch(f"/api/doc/{did}/blocks", json={"drop": [bid]})
+    assert out.status_code == 200, out.text
+    after = store.load(did)
+    assert bid not in {b["id"] for b in after["blocks"]}
+    for k in ("translations", "plain", "notes", "highlights"):
+        assert bid not in after[k], f"Dữ liệu {k} của khối đã xoá còn sót"
+    assert store.image_path(did, bid) is None
+
+
+def test_bo_anh_giu_khoi_nhung_xoa_file_anh(app_client):
+    """Bỏ hình cắt sai phải giữ nguyên nội dung chữ và dọn file hình."""
+    from server import store
+    r = app_client.post("/api/import", data={
+        "text": "Bài kiểm tra bỏ hình\n\nMột đoạn văn có hình bị cắt sai.",
+        "model": "test/model", "force": "1"})
+    assert r.status_code == 200, r.text
+    did = r.json()["id"]
+    d = store.load(did)
+    bid = d["blocks"][0]["id"]
+    d["blocks"][0]["figure"] = bid
+    store.save(d)
+    store.save_images(did, {bid: b"anh-thu-nghiem"})
+    out = app_client.patch(f"/api/doc/{did}/blocks", json={"drop_figure": [bid]})
+    assert out.status_code == 200, out.text
+    assert next(b for b in store.load(did)["blocks"] if b["id"] == bid)["figure"] == ""
+    assert store.image_path(did, bid) is None
+
+
+def test_sua_ban_dich_chi_bo_vet_boi_o_cot_da_doi(app_client):
+    """Sửa chữ làm đổi vị trí bôi; chỉ dọn vệt trên cột thực sự bị sửa."""
+    from server import store
+    r = app_client.post("/api/import", data={
+        "text": "Bài kiểm tra sửa dịch\n\nĐoạn văn để sửa riêng từng cột.",
+        "model": "test/model", "force": "1"})
+    assert r.status_code == 200, r.text
+    did = r.json()["id"]
+    d = store.load(did)
+    bid = d["blocks"][0]["id"]
+    d["translations"][bid] = "Bản dịch cũ"
+    d["plain"][bid] = "Diễn giải cũ"
+    d["highlights"][bid] = [
+        {"id": "h1", "col": "en", "start": 0, "end": 2},
+        {"id": "h2", "col": "vi", "start": 0, "end": 2},
+        {"id": "h3", "col": "gl", "start": 0, "end": 2},
+    ]
+    store.save(d)
+    url = f"/api/doc/{did}/translation"
+    r = app_client.patch(url, json={"block_id": bid, "vi": "Bản dịch thay đổi"})
+    assert r.status_code == 200, r.text
+    assert {h["col"] for h in store.load(did)["highlights"][bid]} == {"en", "gl"}
+    assert {h["col"] for h in r.json()["highlights"][bid]} == {"en", "gl"}
+    r = app_client.patch(url, json={"block_id": bid, "plain": "Diễn giải thay đổi"})
+    assert r.status_code == 200, r.text
+    assert {h["col"] for h in store.load(did)["highlights"][bid]} == {"en"}
 
 
 # --------------------------------------------------------------- bôi vàng
@@ -1679,7 +1761,8 @@ def test_ban_bien_tap_slide_lap_slide_trong_va_soat_ket_luan(app_client, monkeyp
     assert bo["s2"]["ket_luan"] == "Mô hình hơn baseline 3,1 điểm F1."   # sửa nói quá
     assert bo["s3"]["ket_luan"] == "Mô hình hơn baseline trên tập chính."  # số bịa → trả về
     bt = deck["bien_tap"]
-    assert bt["con_lai"] == [] and bt["theo_vai"]["bien_tap"] == 1 and bt["theo_vai"]["kiem_chung"] == 1
+    assert any(x["kind"] == "chưa_kiểm_chứng" and "s1:" in x["msg"] for x in bt["con_lai"])
+    assert bt["theo_vai"]["bien_tap"] == 1 and bt["theo_vai"]["kiem_chung"] == 1
     assert any("trả về" in x["viec"] for x in bt["nhat_ky"])
     assert app_client.get(f"/api/doc/{did}/slides").json()["bien_tap"]["sua"] == bt["sua"]
 
@@ -1836,3 +1919,96 @@ def test_doan_trong_kho_do_nguoc_ra_khoi_cua_bai_dich(app_client, monkeypatch):
           "text": "…tail of previous chunk\nFirst paragraph of the method.\nSecond paragraph continues here."}
     assert survey_api._khoi_cua_doan(ch) == "b2"
     assert survey_api._khoi_cua_doan({**ch, "loupe_doc_id": ""}) == ""
+
+
+def test_kiem_chung_slide_kiem_ca_tieu_de_va_khong_bo_slide_thu_chin(app_client, monkeypatch):
+    """Mười tiêu đề ngoài vai kết quả đều phải được kiểm, chia mẻ tối đa tám."""
+    import re
+    from server import store, slide_soat, slide_minh_hoa
+    r = app_client.post('/api/import', data={'text': 'Một nghiên cứu\n\nPhương pháp có thể hữu ích trong điều kiện đã khảo sát.', 'model': 'test/sld', 'force': '1'})
+    did = r.json()['id']
+    doc = store.load(did)
+    bid = doc['blocks'][-1]['id']
+    doc['slides'] = {'v': 2, 'bo': [
+        {'id': f's{i}', 'vai': 'khai_niem', 'tieu_de': f'Khái niệm thứ {i}',
+         'dinh_nghia': 'Một khái niệm được giải thích đầy đủ để người nghe theo được nội dung của nghiên cứu.',
+         'nguon': [bid], 'canh_bao': []} for i in range(1, 11)]}
+    store.save(doc)
+    batches = []
+    async def fake(task, user, *args):
+        if task == slide_soat.KIEM_TASK:
+            ids = re.findall(r'^### (s\d+)$', user, re.M)
+            batches.append(ids)
+            assert 'Trường cần kiểm: tieu_de' in user
+            return {'ket_qua': [{'slide': sid, 'ket_luan': 'dung'} for sid in ids]}
+        return {}
+    async def no_images(*args):
+        yield 'xong', {'log': []}
+    monkeypatch.setattr(slide_soat, '_goi', fake)
+    monkeypatch.setattr(slide_minh_hoa, 'minh_hoa', no_images)
+    body = app_client.get(f'/api/doc/{did}/slides/soat').text
+    assert 'event: done' in body, body
+    assert [len(b) for b in batches] == [8, 2]
+    assert {sid for b in batches for sid in b} == {f's{i}' for i in range(1, 11)}
+    assert store.load(did)['slides']['bien_tap']['con_lai'] == []
+
+
+def test_kiem_chung_chay_sau_bien_tap_va_minh_hoa(app_client, monkeypatch):
+    """Bản kiểm chứng phải là bản cuối, không bị lượt viết lại ghi đè mất."""
+    from server import store, slide, slide_soat, slide_minh_hoa, llm
+    r = app_client.post('/api/import', data={'text': 'Bài kiểm thứ tự\n\nPhương pháp hữu ích trên tập đã khảo sát.', 'model': 'test/sld', 'force': '1'})
+    did = r.json()['id']; doc = store.load(did); bid = doc['blocks'][-1]['id']
+    doc['slides'] = {'v': 2, 'bo': [{'id': 's1', 'vai': 'bang_chung', 'tieu_de': 'Kết quả',
+        'doc_hinh': 'So sánh các kết quả trong những điều kiện thí nghiệm đã được nêu trong bài.',
+        'ket_luan': 'Bản ban đầu', 'nguon': [bid], 'canh_bao': []}]}
+    store.save(doc)
+    order = []
+    async def fake(task, user, *args):
+        if task == slide_soat.XEM_THU_TASK:
+            return {'van_de': [{'slide': 's1', 'loai': 'mo_ho', 'can': 'Nói rõ phạm vi.'}]}
+        order.append('kiem')
+        assert 'Bản sau minh họa' in user
+        return {'ket_qua': [{'slide': 's1', 'ket_luan': 'sua', 'cau_moi': 'Hữu ích trên tập đã khảo sát.'}]}
+    async def rewrite(*args):
+        order.append('viet'); doc = store.load(did)
+        doc['slides']['bo'][0]['ket_luan'] = 'Bản sau viết lại'; store.save(doc)
+        return doc['slides']['bo'][0], llm.Usage().dict(), llm.Usage().dict()
+    async def images(*args):
+        order.append('hinh'); doc = store.load(did)
+        doc['slides']['bo'][0]['ket_luan'] = 'Bản sau minh họa'; store.save(doc)
+        yield 'xong', {'log': []}
+    monkeypatch.setattr(slide_soat, '_goi', fake)
+    monkeypatch.setattr(slide, 'viet_lai', rewrite)
+    monkeypatch.setattr(slide_minh_hoa, 'minh_hoa', images)
+    body = app_client.get(f'/api/doc/{did}/slides/soat').text
+    assert 'event: done' in body, body
+    assert order == ['viet', 'hinh', 'kiem']
+    assert store.load(did)['slides']['bo'][0]['ket_luan'] == 'Hữu ích trên tập đã khảo sát.'
+
+
+def test_soat_slide_dua_so_mo_ho_vao_hang_sua_va_bao_loi(app_client, monkeypatch):
+    """Số thiếu cấu hình phải được sửa; gọi model hỏng không được báo đã xong."""
+    from server import store, slide, slide_soat, slide_minh_hoa
+    r = app_client.post('/api/import', data={'text': 'Bài thử số liệu\n\nHai cấu hình đạt 71.5 và 72.6 phần trăm.', 'model': 'test/sld', 'force': '1'})
+    did = r.json()['id']; doc = store.load(did); bid = doc['blocks'][-1]['id']
+    doc['slides'] = {'v': 2, 'bo': [{'id': 's1', 'vai': 'bang_chung', 'tieu_de': 'Kết quả',
+        'ket_luan': 'Hai cấu hình được khảo sát đạt độ chính xác khác nhau trong thí nghiệm của bài.',
+        'so': [{'gia_tri': '71.5', 'nhan': 'Accuracy'}, {'gia_tri': '72.6', 'nhan': 'Accuracy'}],
+        'nguon': [bid], 'canh_bao': []}]}
+    store.save(doc)
+    calls = []
+    async def fake(task, *args):
+        return {'ket_qua': [{'slide': 's1', 'ket_luan': 'dung'}]} if task == slide_soat.KIEM_TASK else {}
+    async def rewrite(did, sid, goi_y):
+        calls.append(goi_y)
+        raise RuntimeError('Model tạm thời không trả lời')
+    async def no_images(*args):
+        yield 'xong', {'log': []}
+    monkeypatch.setattr(slide_soat, '_goi', fake)
+    monkeypatch.setattr(slide, 'viet_lai', rewrite)
+    monkeypatch.setattr(slide_minh_hoa, 'minh_hoa', no_images)
+    assert 'event: done' in app_client.get(f'/api/doc/{did}/slides/soat').text
+    assert len(calls) == 1 and 'cấu hình' in calls[0]
+    bt = store.load(did)['slides']['bien_tap']
+    assert bt['sua'] == 0
+    assert {v['kind'] for v in bt['con_lai']} == {'chưa_viết_lại', 'số_liệu_mơ_hồ'}

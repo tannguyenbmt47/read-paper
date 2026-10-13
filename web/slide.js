@@ -108,9 +108,9 @@ function sldVe() {
 const SLD_VAI = [
   ["thu_ky", "Thư ký", "bắt slide trống thân — máy làm, miễn phí"],
   ["doc_thu", "Người xem thử", "đọc cả bộ như khán giả: không lời nói, không bài gốc"],
-  ["kiem_chung", "Người kiểm chứng", "đặt kết luận cạnh số liệu thật trong bài"],
   ["bien_tap", "Biên tập viên", "viết lại đúng slide bị chỉ ra"],
   ["minh_hoa", "Người minh họa", "slide dày chữ: lời dễ hiểu và hình vẽ từ chính nội dung slide"],
+  ["kiem_chung", "Người kiểm chứng", "đặt kết luận cạnh số liệu thật trong bài"],
 ];
 
 function sldBtTram(vai) {
@@ -281,6 +281,21 @@ async function sldTao() {
 
 /* ------------------------------------------------------------ dải thu nhỏ */
 
+// Đổi slide chỉ cập nhật lựa chọn; không dựng lại hàng chục ảnh thu nhỏ.
+function sldChon(id, focus = false) {
+  SLD.chon = id;
+  $$("#slDai .sl2-thu").forEach(el => {
+    const selected = el.dataset.id === id;
+    el.classList.toggle("is-on", selected);
+    el.setAttribute("aria-current", selected ? "true" : "false");
+    if (selected) {
+      el.scrollIntoView({ block: "nearest" });
+      if (focus) el.focus();
+    }
+  });
+  sldSan();
+}
+
 function sldDai() {
   const ctx = sldCtx(false);
   $("#slDai").innerHTML = SLD.bo.map((s, i) => `
@@ -289,13 +304,13 @@ function sldDai() {
       <span class="sl2-thu-so">${i + 1}${(s.canh_bao || []).length ? '<i title="Có cảnh báo">!</i>' : ""}</span>
       ${SlideVe.ve(s, ctx)}</div>`).join("");
   $$("#slDai .sl2-thu").forEach((el) => {
-    el.onclick = () => { SLD.chon = el.dataset.id; sldDai(); sldSan(); };
+    el.onclick = () => sldChon(el.dataset.id);
     el.onkeydown = (e) => {
       const i = SLD.bo.findIndex((s) => s.id === el.dataset.id);
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const nx = SLD.bo[i + (e.key === "ArrowDown" ? 1 : -1)];
-        if (nx) { SLD.chon = nx.id; sldDai(); sldSan(); $(`#slDai [data-id="${nx.id}"]`)?.focus(); }
+        if (nx) sldChon(nx.id, true);
       }
     };
     // Kéo để đổi thứ tự — thả lên một thẻ khác là chèn vào trước thẻ đó.

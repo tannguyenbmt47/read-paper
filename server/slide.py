@@ -40,7 +40,7 @@ VAI = {
     "van_de": "Bối cảnh — tình huống thực tế, nhận định và nhận xét về nó",
     "huong_nc": "Hướng nghiên cứu — một hướng làm trước: cách làm, giải quyết khía cạnh nào, vấn đề gì",
     "khai_niem": "Khái niệm — giải nghĩa một thuật ngữ/hành vi trước khi nó được dùng",
-    "khoang_trong": "Khoảng trống — cách đang làm hỏng ở đâu, trong kịch bản nào",
+    "khoang_trong": "Khoảng trống — hạn chế cụ thể của phương pháp và điều kiện xảy ra",
     "yeu_cau": "Mong muốn — lời giải phải đạt những tiêu chí gì",
     "y_tuong": "Ý tưởng cốt lõi — trực giác giúp đạt các tiêu chí đó",
     "co_che": "Cơ chế — các bước chạy từ đầu vào tới đầu ra",
@@ -113,6 +113,32 @@ Người trình bày là nghiên cứu sinh / kỹ sư, nói cho một nhóm đ�
 Việt trong buổi seminar. Mỗi slide mang đúng MỘT vai trong lập luận của bài, và
 vai quyết định bố cục — nên chọn vai cho đúng, đừng ép mọi thứ thành gạch đầu dòng.
 
+### Ghi kết quả để người nghe đối chiếu được
+
+Mỗi số liệu phải có đơn vị/độ đo, tập dữ liệu và cấu hình hoặc điều kiện tương
+ứng. Hai accuracy trên cùng slide không được cùng nhãn chung “độ chính xác”:
+phải ghi rõ cặp teacher → student hoặc điều kiện mà cột trong bảng đại diện.
+Không tự đoán tên cột nếu nguồn không đủ. Phân biệt phần trăm và điểm phần trăm.
+Nếu một slide dẫn nhiều bảng, nói rõ số nào thuộc bảng nào; không khiến người
+xem tìm số ở một hình không chứa nó. Bảng ablation có các nhánh thử riêng thì
+giải thích từng nhánh, không mô tả thành chuỗi thêm dần giả tạo. Phần đúc kết
+nêu đóng góp cụ thể, phạm vi đã thử và giới hạn; không thay bằng lời khen SOTA.
+
+### Mạch kể và giới hạn khẳng định
+
+- Giới thiệu khái niệm trước khi dùng nó để giải thích phương pháp. Đi theo chuỗi:
+  bài toán cụ thể → giới hạn có bằng chứng → ý tưởng → từng thành phần → một
+  lượt chạy hoàn chỉnh → cách đo → kết quả → giới hạn và kết luận.
+- Tiêu đề không được mạnh hơn bằng chứng. Không viết “chưa có cách nào”,
+  “chỉ có thể”, “không đủ sức”, “không hội tụ” nếu bài chỉ nêu một khó khăn,
+  một xu hướng hoặc kết quả trên một môi trường. Nêu phạm vi của nhận định.
+- Phân biệt trạng thái ẩn lưu thông tin quá khứ với dự đoán tương lai; phân biệt
+  động cơ thiết kế với kết quả đã kiểm chứng. Không biến trực giác thành định lý.
+- Mỗi slide chỉ chứng minh một ý. Chuyển chi tiết phụ và câu chuyển ý sang
+  `loi_noi`; không lặp nguyên đoạn thân ở tiêu đề hoặc giữa hai slide liên tiếp.
+- Tên bước không có số thứ tự (giao diện tự đánh số). Tránh cụm từ đa nghĩa
+  như “mô hình sinh học cách”: viết “mô hình sinh, học cách…” hoặc diễn đạt rõ hơn.
+
 ### Các vai và trường phải viết
 
 MỌI slide BẮT BUỘC có `tieu_de`: một câu KHẲNG ĐỊNH điều slide chứng minh, 6–14
@@ -146,9 +172,9 @@ Ví dụ sửa (lấy từ một bộ slide thật bị chê "đọc không hi�
 | Viết điện tín (sai) | Viết diễn giải (đúng) |
 |---|---|
 | Cách đang làm: RL model-free thường dùng mạng nhỏ vài nghìn tham số. | Các thuật toán học tăng cường model-free (agent học thẳng từ điểm thưởng, không dựng mô hình của môi trường) thường chỉ huấn luyện được mạng nhỏ, cỡ vài nghìn tham số. |
-| Hỏng ở đâu: Mạng nhỏ thiếu sức biểu diễn để xử lý quan sát pixel phức tạp. | Mạng nhỏ như vậy không đủ sức nén một khung hình pixel thành thông tin hữu ích, nên agent không hiểu được cảnh trước mặt. Muốn mạng lớn thì lại vướng: điểm thưởng quá thưa để chỉnh hàng triệu tham số. |
+| Hạn chế: Mạng nhỏ thiếu sức biểu diễn. | Quan sát ảnh có nhiều chiều nên mô hình cần học biểu diễn phù hợp cho việc chọn hành động. Tín hiệu phần thưởng thưa có thể gây khó khăn khi tối ưu mạng nhiều tham số. |
 | Điều khiển nhỏ: Vùng tìm kiếm nhỏ để thuật toán RL hội tụ. | Bộ điều khiển (phần chọn hành động) cần rất ít tham số, để thuật toán tối ưu chỉ phải dò trong một không gian nhỏ và hội tụ được. |
-| Ý tưởng: Dồn sức mạnh vào world model học không giám sát, giữ controller thật nhỏ. | Tách agent làm hai phần: một world model lớn tự học cách tóm tắt và dự đoán môi trường từ dữ liệu, không cần điểm thưởng; và một controller rất nhỏ chỉ việc chọn hành động dựa trên bản tóm tắt ấy. |
+| Ý tưởng: Dùng world model và controller. | World model học biểu diễn và dự đoán quan sát từ dữ liệu. Controller dùng các biểu diễn đó để chọn hành động, nhờ đó giảm số tham số phải tối ưu theo phần thưởng. |
 
 - `van_de` — BỐI CẢNH. `cau` (tình huống thực tế và vì sao nó quan trọng, ≤40
   chữ), `nhan_dinh` (nhận định / nhận xét của bài về tình huống ấy, kèm QUAN SÁT
@@ -158,15 +184,15 @@ Ví dụ sửa (lấy từ một bộ slide thật bị chê "đọc không hi�
 - `huong_nc` — MỘT hướng nghiên cứu trước bài này. `dai_dien`: 1–4 tên phương
   pháp tiêu biểu, `cach_lam` (hướng này làm thế nào, ≤53 chữ), `khia_canh` (nó
   tập trung giải quyết khía cạnh nào của bài toán, ≤30 chữ), `han_che` (vấn đề
-  của nó, MÔ TẢ CHI TIẾT trong kịch bản nào thì hỏng và hỏng ra sao, ≤60 chữ).
+  của nó, nêu rõ điều kiện và đại lượng hoặc chức năng bị ảnh hưởng, ≤60 chữ).
 - `khai_niem` — giải nghĩa MỘT thuật ngữ / hành vi / tên mô-đun TRƯỚC khi nó được
   dùng. `thuat_ngu` (tên, kèm tên đầy đủ nếu là viết tắt), `dinh_nghia` (nó là gì,
   ≤53 chữ), `vi_du` (một ví dụ cụ thể, ≤38 chữ), `vi_sao` (vì sao bài cần nó /
-  thiếu nó thì hỏng ở đâu, ≤38 chữ).
-- `khoang_trong` — `cach_cu` (cách đang làm, ≤45 chữ), `hong` (nó hỏng ở đâu,
-  trong kịch bản nào, ≤53 chữ), `he_qua` (hệ quả đo được hoặc quan sát được, ≤38 chữ).
+  thiếu nó thì chức năng hoặc kết quả nào bị ảnh hưởng, ≤38 chữ).
+- `khoang_trong` — `cach_cu` (cách đang làm, ≤45 chữ), `hong` (hạn chế cụ thể của phương pháp,
+  điều kiện xảy ra và đại lượng bị ảnh hưởng, ≤53 chữ), `he_qua` (hệ quả đo được hoặc quan sát được, ≤38 chữ).
 - `yeu_cau` — MONG MUỐN. `tieu_chi`: 2–4 mục `{"ten": "3–7 chữ", "vi_sao": "≤35
-  chữ, tiêu chí này là gì và thiếu nó thì hỏng ra sao", "can_cu": "≤30 chữ, điều
+  chữ, tiêu chí này là gì và ảnh hưởng đến kết quả nào", "can_cu": "≤30 chữ, điều
   BÀI nói hoặc quan sát mà bài đưa ra dẫn tới tiêu chí này", "nguon": "mã khối
   chứa căn cứ ấy"}`. Tiêu chí nào cũng phải SINH RA TỪ một vấn đề đã nêu ở slide
   bối cảnh — người nghe phải thấy nó từ đâu ra, không được tự nhiên xuất hiện
@@ -281,12 +307,20 @@ tự nhiên — chỉ nói điều mặt slide CHƯA nói, đừng đọc lại 
 
 ### Văn phong (bắt buộc)
 
+- Áp dụng cho cả tiêu đề, nội dung, nhãn sơ đồ và lời người nói: diễn đạt khoa
+  học, trực tiếp, không nhân hoá mô hình hoặc dùng ví von thay cho cơ chế.
+  Không dùng “nút thắt cổ chai”, “điểm mù”, “nhìn vào một tầng”, “ôn lại kiến
+  thức”, “hỏng ở đâu”. Nêu đối tượng, thao tác và hệ quả cụ thể.
+  Ví dụ: “chỉ dùng đặc trưng tầng tương ứng của teacher để giám sát student”.
+  Thuật ngữ gốc như knowledge review vẫn giữ, nhưng định nghĩa bằng quan hệ
+  giữa các đặc trưng và hàm mất mát, không ví với việc học của con người.
+
 - Tiếng Việt học thuật, đủ chủ vị. Thuật ngữ đã giữ tiếng Anh trong bảng thuật
   ngữ thì giữ nguyên; viết tắt (ICI, KD…) phải được gọi đủ tên ở slide ĐẦU TIÊN
   nhắc tới nó. Mỗi mô-đun, thành phần, thước đo chỉ có MỘT tên trong cả bộ, đúng
   tên trong bảng thuật ngữ — ba tên cho một mô-đun là người nghe tưởng ba thứ.
 - KHÔNG dùng dấu chấm phẩy. KHÔNG dùng dấu hai chấm để cắt đôi câu, kể cả
-  trong tiêu đề ("Hai điểm mù: A và B" → "Hai điểm mù là A và B"). KHÔNG dùng
+  trong tiêu đề ("Hai hạn chế: A và B" → "Phương pháp còn hạn chế về A và B"). KHÔNG dùng
   "tức", "tức là", "nghĩa là" để vá phần giải thích. KHÔNG ẩn dụ, không từ đệm
   ("rõ ràng", "vô cùng", "hoàn toàn").
 - Mọi con số phải có mặt trong bài, và đi kèm mốc so sánh (baseline, benchmark,
@@ -486,6 +520,9 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
             out[k] = [{f: _sach(it.get(f)) if f != "ky_hieu" else " ".join(str(it.get(f) or "").split())
                        for f in truong}
                       for it in s[k][:5] if isinstance(it, dict) and any(it.get(f) for f in truong)]
+    for i, step in enumerate(out.get("buoc") or [], 1):
+        # Chỉ bỏ số thứ tự đúng vị trí; giữ tên mang số có ý nghĩa như “64 chiều”.
+        step["ten"] = re.sub(rf"^\s*(?:Bước\s+)?{i}(?:[.):：]\s*|\s+)(?=\D)", "", step["ten"], flags=re.I)
     if vai == "yeu_cau" and out.get("tieu_chi"):
         # Căn cứ của từng tiêu chí: câu của bài dẫn tới nó + mã khối (chỉ giữ mã có
         # thật). Mã ấy cũng vào `nguon` để phép soát số liệu và độ phủ thấy được.
@@ -633,37 +670,27 @@ def chuan_hoa(doc: dict, s: dict) -> dict | None:
 
 
 def _sap_lai(bo: list[dict]) -> list[dict]:
-    """Giữ `dong_lai` ở cuối, và tách hai slide liền nhau cùng vai (trừ bằng chứng)
-    bằng cách đẩy slide sau xuống chỗ hợp lệ gần nhất."""
-    cuoi = [s for s in bo if s["vai"] == "dong_lai"][-1:]
-    # Sắp ỔN ĐỊNH theo chặng: slide lộ trình gom vai theo `CHANG`, nên một slide
-    # con số đứng sau slide giới hạn (đã gặp trên bài World Models) làm lộ trình
-    # nói một đằng mà thứ tự chiếu một nẻo. Trong cùng chặng giữ thứ tự của model.
+    """Sắp ổn định theo chặng, giữ khái niệm dẫn nhập đi cùng slide cần nó.
+
+    Không tráo các slide chỉ để đổi dáng: hai ví dụ liên tiếp có thể là hai
+    bước phụ thuộc nhau. Khái niệm đứng trước một vai được chuyển cùng vai đó;
+    trích đoạn vẫn đi theo nội dung đứng trước như thứ tự người soạn chọn.
+    """
     chang = {v: i for i, (_, vs) in enumerate(CHANG) for v in vs}
-    # Trích đoạn không thuộc chặng nào: nó đi theo slide đứng TRƯỚC nó trong thứ
-    # tự model viết (đoạn trích minh hoạ cho slide ấy), không bị đẩy xuống cuối.
-    khoa, cu = {}, 0
+    nhom, cho, cu = [], [], 0
     for s in bo:
+        if s["vai"] == "khai_niem":
+            cho.append(s)
+            continue
         cu = chang.get(s["vai"], cu)
-        khoa[id(s)] = cu
-    # `thiet_lap` luôn đứng đầu chặng Thí nghiệm: chưa biết dữ liệu và thước đo
-    # thì không đọc được bảng kết quả.
-    con = sorted((s for s in bo if s["vai"] != "dong_lai"),
-                 key=lambda s: (khoa[id(s)], s["vai"] != "thiet_lap"))
-    for i in range(1, len(con)):
-        # Cơ chế liền nhau là chủ ý (mỗi thành phần một slide, công thức bám ngay
-        # sau thành phần của nó), trích đoạn liền nhau cũng vậy (đoạn văn liền
-        # nhau trong bài) — tráo là phá đúng thứ tự ấy.
-        if con[i]["vai"] == con[i - 1]["vai"] and con[i]["vai"] not in (
-                "bang_chung", "co_che", "doan_dich", "huong_nc", "khai_niem"):
-            # Chỉ tráo TRONG cùng chặng — tráo qua chặng là phá thứ tự vừa sắp.
-            for j in range(i + 1, len(con)):
-                if khoa[id(con[j])] != khoa[id(con[i])]:
-                    break
-                if con[j]["vai"] != con[i - 1]["vai"]:
-                    con[i], con[j] = con[j], con[i]
-                    break
-    return con + cuoi
+        nhom.append((cu, cho + [s]))
+        cho = []
+    if cho:
+        nhom.append((cu, cho))
+    nhom.sort(key=lambda x: (x[0], not any(s["vai"] == "thiet_lap" for s in x[1])))
+    con = [s for _, group in nhom for s in group]
+    cuoi = [s for s in con if s["vai"] == "dong_lai"][-1:]
+    return [s for s in con if s["vai"] != "dong_lai"] + cuoi
 
 
 # Một hình gắn nhiều slide thì giữ ở slide cần nó nhất. Đã gặp trên CIRAG: sơ đồ
@@ -819,10 +846,34 @@ def _soat_viet_tat(doc: dict, bo: list[dict]) -> None:
                 + ". Thêm tên đầy đủ, hoặc một slide khái niệm phía trước.")
 
 
+def loi_dien_dat(s: dict) -> list[str]:
+    """Bắt các cách nói ẩn dụ đã gây khó hiểu, yêu cầu viết lại theo ngữ cảnh."""
+    chu = _chu_slide(s) + " " + str(s.get("loi_noi") or "")
+    cum = re.findall(r"nút thắt cổ chai|điểm mù|nhìn vào (?:một|1) tầng|ôn lại kiến thức|hỏng ở đâu",
+                     chu, re.I)
+    return [f"Diễn đạt chưa cụ thể: «{x}». Nêu trực tiếp đối tượng, thao tác và hệ quả kỹ thuật, không dùng ẩn dụ."
+            for x in dict.fromkeys(cum)]
+
+
+def loi_so_lieu(s: dict) -> list[str]:
+    """Hai số khác nhau cùng nhãn cần ghi cấu hình; máy không tự đoán tên cột."""
+    nhom = {}
+    for item in s.get("so") or []:
+        key = " ".join(str(item.get("nhan") or "").casefold().split())
+        if key:
+            nhom.setdefault(key, set()).add(str(item.get("gia_tri") or ""))
+    return [f"Các số khác nhau cùng nhãn «{key}»: ghi rõ cấu hình, tập dữ liệu hoặc điều kiện của từng số."
+            for key, values in nhom.items() if len(values) > 1]
+
+
 def _soat_ca_bo(bo: list[dict]) -> None:
     """Phép kiểm mà từng slide không thấy được: bộ slide về bài phương pháp mà
     không có slide nào đi hết cơ chế thì người nghe nắm được bài toán và kết quả
     nhưng không kể lại được cách nó chạy. Cảnh báo gắn vào slide đầu tiên."""
+    for s in bo:
+        for warning in loi_so_lieu(s) + loi_dien_dat(s):
+            if warning not in s.setdefault("canh_bao", []):
+                s["canh_bao"].append(warning)
     if bo and not any(s["vai"] in ("co_che", "vi_du") and (s.get("buoc") or [])
                       for s in bo):
         bo[0].setdefault("canh_bao", []).append(
@@ -1005,18 +1056,29 @@ def _nen_nhe(doc: dict) -> str:
 
 
 def _nguon_chu(doc: dict, x: dict) -> list[dict]:
-    """Văn bản các khối nguồn của một slide (bản dịch, chưa dịch thì bản gốc)."""
+    """Nguồn gốc cho lượt viết và kiểm chứng; giữ đầu/cuối khi đoạn quá dài.
+
+    Chỉ dùng bản dịch làm đường lùi nếu khối không có chữ gốc. Không dùng
+    một bản diễn giải đã nói quá làm bằng chứng cho slide mới.
+    """
     ids = list(x.get("nguon") or [])
     if x.get("hinh"):
         ids.insert(0, x["hinh"])   # chú thích hình/bảng, hoặc chữ bóc được của công thức
     out, tong = [], 0
     for i in dict.fromkeys(ids):
-        chu = _chu_khoi(doc, i)[0][:1500]
-        if i == x.get("hinh"):
-            trong = _rut_gon(chu_vung_hinh(doc, i), 900)
+        block = next((b for b in doc.get("blocks", []) if b["id"] == i), {})
+        chu = block.get("text") or _chu_khoi(doc, i)[0]
+        if len(chu) > 3000:
+            chu = chu[:1800] + "\n[… nguồn đã rút gọn; không suy đoán phần bị lược …]\n" + chu[-1200:]
+        if i == x.get("hinh") or block.get("figure_rect"):
+            # Các bảng được dẫn nguồn đều cần số bên trong, không chỉ bảng
+            # đang hiện trên slide. Giữ cả cuối bảng để không mất cột/nhánh thử.
+            trong = chu_vung_hinh(doc, i)
+            if len(trong) > 6000:
+                trong = trong[:3600] + "\n[… bảng đã rút gọn; không suy đoán phần bị lược …]\n" + trong[-2400:]
             if trong:
                 chu += "\nChữ và số trong hình/bảng (theo dòng):\n" + trong
-        if chu and tong < 4000:
+        if chu and tong < 10000:
             out.append({"id": i, "chu": chu})
             tong += len(chu)
     return out
@@ -1393,6 +1455,11 @@ async def viet_lai(doc_id: str, sid: str, goi_y: str = "") -> tuple[dict, dict, 
     user = (_user(doc, 1) + f"\n## Slide cần viết lại (vai `{cu['vai']}`)\n"
             + str({k: v for k, v in cu.items() if k not in ("canh_bao", "id")})
             + (f"\n\nYêu cầu của người trình bày: {goi_y.strip()}" if goi_y.strip() else ""))
+    index = bo.index(cu)
+    nearby = bo[max(0, index - 2):index] + bo[index + 1:index + 3]
+    user += "\n\n## Slide trước/sau (giữ nhất quán ký hiệu, chiều xử lý và kết luận)\n" + "\n".join(
+        f"[{x['id']}] {_chu_slide(x)[:1800]}" for x in nearby)
+    user += "\nNếu viết ví dụ chạy tay, đi đúng thứ tự và chiều biến đổi của cơ chế; không tự đảo tầng, đầu vào hoặc đầu ra."
     model = (doc.get("slides") or {}).get("model") or doc["model"]
     raw, usage = await llm.complete(
         [llm.system_message(cached_prefix(doc), VIET_LAI_TASK, model=model),

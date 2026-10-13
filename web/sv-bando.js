@@ -71,9 +71,8 @@ const BanDo = (() => {
   function dung() {
     const d = S.data;
     let ents = d.entities.filter((e) => !S.an.has(e.kind) && (!S.chiChung || e.papers.length > 1));
-    // Kho chưa dựng: chỉ hiện bài, thay vì hàng chục điểm rời từ tóm tắt mà
-    // không có quan hệ nào. Các tên khái niệm vẫn đọc được trong chi tiết bài.
-    if (d.papers.every((p) => !p.co_do_thi)) ents = [];
+    // Khái niệm có sẵn trong tóm tắt vẫn nối được với bài miễn phí.
+    // Chỉ cạnh qh mới là quan hệ giữa khái niệm được bóc kèm đoạn nguồn.
     const bac = {};
     d.edges.forEach((g) => { bac[g.src] = (bac[g.src] || 0) + 1; bac[g.dst] = (bac[g.dst] || 0) + 1; });
     if (ents.length > TRAN) {
@@ -475,7 +474,7 @@ const BanDo = (() => {
     }
     if (chua.length) {
       html += `<div class="bd-goiy">
-        <p>Bản đồ cần dựng ${chua.length === d.papers.length ? "một lần" : "thêm cho " + chua.length + " bài"}${S.gia ? " (~" + money(S.gia.usd) + ")" : ""} để thấy các bài nối nhau. Bấm nút Dựng bản đồ ở thanh trên; các tên hiện tại lấy từ tóm tắt bài.</p></div>`;
+        <p>Các đường nối bài–khái niệm hiện tại lấy từ tóm tắt đã có, miễn phí. Dựng bản đồ${S.gia ? " (~" + money(S.gia.usd) + ")" : ""} để bổ sung quan hệ giữa các khái niệm kèm đoạn nguồn cho ${chua.length} bài.</p></div>`;
     }
     if (chung.length) {
       html += `<h4 class="bd-h4">Cầu nối giữa các bài</h4>
@@ -527,6 +526,7 @@ const BanDo = (() => {
 
   async function chiTietTT(n) {
     const e = n.ref;
+    const sid = S.sid;
     const [nhan] = LOAI[e.kind] || LOAI.concept;
     const dau = `<button class="sv-link bd-lui" data-bd="tq">← Tổng quan</button>
       <h3 class="bd-h">${esc(e.name)}</h3>
@@ -539,27 +539,48 @@ const BanDo = (() => {
     try {
       d = await svFetch(`/api/survey/${S.sid}/thuc-the?ten=${encodeURIComponent(e.name)}`);
     } catch (err) {
-      if (S.chon === n.id) pan(dau + `<p class="muted small">Lỗi: ${esc(err.message)}</p>`);
+      if (S.sid === sid && S.chon === n.id) pan(dau + `<p class="muted small">Lỗi: ${esc(err.message)}</p>`);
       return;
     }
-    if (S.chon !== n.id) return;          // người dùng đã bấm sang điểm khác
+    if (S.sid !== sid || S.chon !== n.id) return;          // người dùng đã bấm sang điểm khác
     const defs = (d.definitions || []).filter((x) => x.text);
     const definition = defs.length
-      ? `<div class="bd-goiy"><b>Hiểu đơn giản</b><p>${sci(defs[0].text)}</p>
-          <p class="muted small">Theo bảng thuật ngữ đã lưu của ${esc(defs[0].title)}
-          <a href="#doc=${esc(defs[0].loupe_doc_id)}">Đọc bài →</a></p></div>`
-      : '<p class="muted small">Chưa có định nghĩa đã lưu cho khái niệm này. Bạn có thể sang Hỏi đáp để yêu cầu giải thích; giá hiện trước khi hỏi.</p>';
-    const qh = (d.edges || []).map((g) => `<li class="bd-qh">
-        <span>${esc(g.src_name)}</span> <b>${esc(g.rel)}</b> <span>${esc(g.dst_name)}</span>
-        ${g.chunk_id ? `<a class="sv-cite" data-cite="${esc(g.chunk_id)}">[nguồn]</a>` : ""}
-        ${g.note ? `<div class="muted small">${esc(g.note)} · theo ${esc(catGon(g.paper_title || "", 40))}</div>` : ""}</li>`).join("");
-    const doan = (d.chunks || []).map((c) => `<li class="bd-doan" data-cite="${esc(c.id)}">
-        <div class="muted small">${esc(catGon(c.title, 50))}${c.section ? " · " + esc(catGon(c.section, 40)) : ""}</div>
-        <div>${sci(catGon(c.vi || c.text, 280))}</div></li>`).join("");
+      ? `<div class="bd-goiy"><b>${defs[0].related ? `Khái niệm nền: ${esc(defs[0].term)}` : "Hiểu đơn giản"}</b>
+          ${defs[0].vi ? `<div class="bd-ten-vi">${esc(defs[0].vi)}</div>` : ""}<p>${sci(defs[0].text)}</p>
+          ${defs[0].related ? '<p class="muted small">Đây là định nghĩa kỹ thuật nền; các quan hệ bên dưới cho biết khung này dùng những thành phần nào.</p>' : ""}
+          <details class="bd-nguon"><summary>Nguồn định nghĩa${defs.length > 1 ? ` · ${defs.length} bài` : ""}</summary>
+          ${defs.map(x => `<p>${sci(x.text)} <a href="#doc=${esc(x.loupe_doc_id)}">${esc(x.title)} →</a></p>`).join("")}</details></div>`
+      : '<p class="muted small">Chưa có lời giải thích đã lưu. Xem các mối liên hệ dưới đây, hoặc bấm Hỏi đáp để được giải thích từ bài gốc.</p>';
+    // Gom theo điểm nối để người đọc hiểu từng khái niệm trước khi xem cạnh kỹ thuật.
+    // Giữ nguyên mọi phát biểu và nguồn, kể cả hai cạnh ngược chiều.
+    const groups = new Map();
+    for (const g of d.edges || []) {
+      const other = g.src_name === e.name ? g.dst_name : g.src_name;
+      if (!groups.has(other)) groups.set(other, []);
+      groups.get(other).push(g);
+    }
+    const qh = [...groups].map(([name, edges]) => {
+      const term = (d.related_definitions?.[name] || [])[0];
+      const entity = S.data.entities.find(x => x.name === name);
+      const notes = [...new Set(edges.map(g => g.note).filter(Boolean))];
+      return `<li class="bd-lienhe">
+        <div>${entity ? nutTT(entity) : `<b>${esc(name)}</b>`}${term?.vi ? `<span class="bd-ten-vi">${esc(term.vi)}</span>` : ""}</div>
+        ${term ? `<p>${term.related ? `<b>Khái niệm nền ${esc(term.term)}:</b> ` : ""}${sci(term.text)}</p>` : ""}
+        <p class="bd-vaitro"><b>Liên hệ với ${esc(e.name)}:</b> ${notes.length ? notes.map(esc).join("; ") : edges.map(g => `${esc(g.src_name)} ${esc(g.rel)} ${esc(g.dst_name)}`).join("; ")}.</p>
+        <details class="bd-nguon"><summary>Xem ${edges.length} phát biểu và nguồn</summary>
+          ${edges.map(g => `<p>${esc(g.src_name)} <b>${esc(g.rel)}</b> ${esc(g.dst_name)}
+            ${g.chunk_id ? `<button class="sv-link" data-cite="${esc(g.chunk_id)}">Đọc đoạn nguồn</button>` : ""}
+            <span class="muted small"> · ${esc(g.paper_title || "")}</span></p>`).join("")}</details></li>`;
+    }).join("");
+    const doan = (d.chunks || []).map((c) => `<li class="bd-doan">
+        <div class="muted small">${esc(c.title)}${c.section ? " · " + esc(c.section) : ""}</div>
+        <div>${sci(catGon(c.vi || c.text, 280))}</div>
+        <button class="sv-link" data-cite="${esc(c.id)}">Đọc đầy đủ đoạn này →</button></li>`).join("");
     pan(dau + definition
-      + (qh ? `<h4 class="bd-h4">Quan hệ các bài phát biểu</h4><ul class="bd-ds">${qh}</ul>` : "")
-      + `<h4 class="bd-h4">Đoạn nhắc tới · ${(d.chunks || []).length}</h4>`
-      + (doan ? `<ul class="bd-ds">${doan}</ul>` : '<p class="muted small">Không tìm thấy đoạn nào chứa nguyên cụm tên này.</p>'));
+      + (qh ? `<h4 class="bd-h4">Vì sao nối với ${groups.size} khái niệm này?</h4><ul class="bd-ds">${qh}</ul>`
+        : '<p class="muted small">Đường nối tới bài chỉ cho biết bài có nhắc đến khái niệm này; chưa có quan hệ chi tiết được lưu.</p>')
+      + `<details class="bd-nguon bd-doannguon"><summary>Đọc các đoạn trong bài gốc · ${(d.chunks || []).length}</summary>`
+      + (doan ? `<ul class="bd-ds">${doan}</ul>` : '<p class="muted small">Không tìm thấy đoạn nào chứa nguyên cụm tên này.</p>') + '</details>');
   }
 
   function hien(id) {

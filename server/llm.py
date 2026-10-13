@@ -46,6 +46,25 @@ def _khong_co_endpoint(e: Exception) -> bool:
     """Lọc lượng tử hoá loại sạch mọi nhà cung cấp của model → 404 từ OpenRouter."""
     t = str(e).lower()
     return "no endpoints" in t or ("404" in t and "endpoint" in t)
+
+
+class ModelKhongCon(RuntimeError):
+    """Model không còn nhà cung cấp nào trên OpenRouter (đã bị gỡ).
+
+    Báo lỗi 13/10: người dùng chọn "Qwen Max" trong danh sách ghi cứng, còn
+    OpenRouter đã gỡ `qwen/qwen-max` (trang model vẫn còn, `endpoints: []`), nên
+    mọi lượt dịch ra "NotFoundError: Error code: 404 - {'error': …}". Có 24 chỗ
+    in lỗi theo mẫu `f"{type(e).__name__}: {e}"`, nên đặt TÊN LỚP thành chữ đọc
+    được (`__name__` dưới đây) là cả 24 chỗ cùng ra câu tiếng Việt, khỏi sửa
+    từng chỗ mà sót."""
+
+
+ModelKhongCon.__name__ = "Model đã bị gỡ"
+
+
+def _model_go(model: str) -> ModelKhongCon:
+    return ModelKhongCon(f"«{model}» không còn nhà cung cấp nào trên OpenRouter. "
+                         "Chọn model khác ở ô Model rồi thử lại.")
 FAST_MODEL = os.getenv("OR_MODEL_FAST") or DEFAULT_MODEL
 
 
@@ -175,9 +194,14 @@ async def stream_text(
         # Model chỉ có bản nén thì gọi như cũ, còn hơn hỏng hẳn.
         if not _khong_co_endpoint(e):
             raise
-        stream = await _client().chat.completions.create(
-            model=model, messages=messages, max_tokens=max_tokens,
-            temperature=temperature, stream=True, extra_body=extra)
+        try:
+            stream = await _client().chat.completions.create(
+                model=model, messages=messages, max_tokens=max_tokens,
+                temperature=temperature, stream=True, extra_body=extra)
+        except Exception as e2:             # noqa: BLE001
+            if _khong_co_endpoint(e2):
+                raise _model_go(model) from e2
+            raise
     usage = Usage()
     async for chunk in stream:
         if getattr(chunk, "usage", None):
@@ -213,9 +237,14 @@ async def complete(
     except Exception as e:                  # noqa: BLE001
         if not _khong_co_endpoint(e):
             raise
-        resp = await _client().chat.completions.create(
-            model=model, messages=messages, max_tokens=max_tokens,
-            temperature=temperature, extra_body=extra)
+        try:
+            resp = await _client().chat.completions.create(
+                model=model, messages=messages, max_tokens=max_tokens,
+                temperature=temperature, extra_body=extra)
+        except Exception as e2:             # noqa: BLE001
+            if _khong_co_endpoint(e2):
+                raise _model_go(model) from e2
+            raise
     return resp.choices[0].message.content or "", _usage_from(resp.usage)
 
 
@@ -336,10 +365,24 @@ async def gia_model(model: str) -> tuple[float, float] | None:
     return max(g[0] for g in gia), max(g[1] for g in gia)
 
 
+_MODELS_CACHE: tuple[float, list[dict]] = (0.0, [])
+_MODELS_TTL = 600        # giây — danh sách đổi theo ngày, không theo phút
+
+
 async def list_models() -> list[dict]:
-    """Danh sách model OpenRouter đang phục vụ (endpoint này không cần key)."""
+    """Danh sách model OpenRouter đang phục vụ (endpoint này không cần key).
+
+    Lưu tạm 10 phút: `/api/config` gọi nó mỗi lần mở app để lọc ô chọn model,
+    cộng mọi lượt ước giá — tải lại danh sách vài trăm model mỗi lần là thừa."""
+    import time
+
     import httpx
+    global _MODELS_CACHE
+    if _MODELS_CACHE[1] and time.time() - _MODELS_CACHE[0] < _MODELS_TTL:
+        return _MODELS_CACHE[1]
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.get(f"{BASE_URL}/models")
         r.raise_for_status()
-        return r.json().get("data", [])
+        data = r.json().get("data", [])
+    _MODELS_CACHE = (time.time(), data)
+    return data

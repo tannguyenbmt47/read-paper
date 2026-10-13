@@ -1,0 +1,32 @@
+{
+  "checked_at": "2026-10-13T15:53:31.515665+07:00",
+  "git_head": "a810b10f3544de7d1a7e5fc5b7c1fa721023a0a3",
+  "ports": {
+    "8010": {
+      "http_status": 200,
+      "answer_routes": {
+        "/api/survey/{sid}/research/answer/{qid}": [
+          "get",
+          "post"
+        ]
+      }
+    },
+    "8011": {
+      "http_status": 200,
+      "answer_routes": {
+        "/api/survey/{sid}/research/answer/{qid}": [
+          "get",
+          "post"
+        ]
+      }
+    }
+  },
+  "sha256": {
+    "server/survey/research.py": "f1e23633d5d342549730cdca3d9f1bd16b9476877c66108e4d2cf57afea22063",
+    "server/survey_api.py": "95bdd1c5724cb9b13e984d0f5b2ddb6f510924fea72315d633fd4fabf3fdda84",
+    "server/survey/db.py": "fae4a701bd0163364de60b150e7ef25fd012b1cea17f9ca4444233e3456378c6",
+    "web/sv-research.js": "7f305475196ed630c499c9e60b543876ddd24bdaaa3b95e43a5848b9aa115387",
+    "tests/test_research.py": "510eb3aa7ae5c50962c40e2277e94384cc2e8aa8c2a7b5de77179db4845e4259",
+    "tests/test_research_ui.cjs": "ec5d78b2dd85801a08cf2ca81f38eed9cfcb0980845b7fb18b98a34fbca426db"
+  }
+}

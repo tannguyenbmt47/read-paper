@@ -3442,6 +3442,7 @@ function editCell(pair, which) {
       const res = await r.json();
       if (which === "vi") state.doc.translations[id] = res.vi;
       else state.doc.plain[id] = res.plain;
+      state.doc.highlights = res.highlights;
       // Thanh tìm kiếm cất bản HTML gốc vào `dataset.orig` rồi khôi phục khi
       // đóng — bản chép đó nằm trên chính `cell` nên `innerHTML` không cuốn đi,
       // và nó sẽ ghi đè bản vừa sửa. Xoá đi thì đóng tìm kiếm không còn lật

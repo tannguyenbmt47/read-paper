@@ -492,3 +492,29 @@
   border: .55cqw solid transparent; border-left: .7cqw solid var(--muc); border-right: 0;
 }
 .sld-dd2-chinh .vx-nhanh { grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+
+/* Bản trình bày: ưu tiên nội dung và hình khoa học, bỏ trang trí gây nhiễu. */
+.sld { --giay: #fff; --muc: #172335; --muc-2: #334155; --mo: #64748b;
+  --chi: #dce2e9; --nho: #f4f7fb; --tieu-de: "Be Vietnam Pro", system-ui, sans-serif;
+  --tay: "Be Vietnam Pro", system-ui, sans-serif; background-image: none; }
+.sld-td { max-width: 100%; font-size: calc(var(--s) * 3cqw); line-height: 1.32;
+  text-decoration: none; margin-bottom: 1.6cqw; }
+.sld-note, .sld-hinh, .sld-hinh.nghieng { transform: none; box-shadow: none; border-color: var(--chi); border-radius: .6cqw; }
+.sld .bang-keo { display: none; }
+.sld-tay { font-size: .9em; font-weight: 600; }
+.sld-dau { font-size: .8em; margin-bottom: .9cqw; }
+.sld-dau span { border: 0; padding: 0; }
+.sld-buoc li { box-shadow: none; border-color: var(--chi); }
+.sld-chan { border-top-style: solid; }
+.sld-chan b { border: 0; }
+.sld-cc.bac .sld-buoc li { width: 100%; margin-left: 0; }
+.sld-cc.bac .sld-buoc li::after { content: none; }
+
+/* URL dài và ký hiệu dài không được đẩy nội dung khỏi khung. */
+.sld-mo-chu { min-width: 0; overflow-wrap: anywhere; }
+.sld-ct { gap: 1cqw; }
+.sld-ct-anh { padding: .8cqw 1.4cqw; box-shadow: none; }
+.sld-ct-anh img { max-height: 10cqw; }
+.sld-ct-tp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sld-ct-tp li { grid-template-columns: minmax(0, 1fr); gap: .2cqw; }
+.sld-kh { overflow-wrap: anywhere; }

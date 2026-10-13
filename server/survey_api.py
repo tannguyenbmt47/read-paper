@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
@@ -24,7 +25,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from . import llm, store
 from .survey import agent, embed, verify
 from .survey import db as sdb
-from .survey import bientap, ingest, lecture, refs, search, sources, synth, thongtin_bai
+from .survey import bientap, ingest, lecture, refs, research, search, sources, synth, thongtin_bai
 
 router = APIRouter(prefix="/api/survey", tags=["survey"])
 
@@ -108,6 +109,72 @@ async def patch_survey(sid: str, body: dict = Body(...)):
     return sdb.update_survey(sid, **fields)
 
 
+# ------------------------------------------------------------- sổ nghiên cứu
+
+
+@router.get("/{sid}/research")
+async def research_overview(sid: str):
+    """Bằng chứng, thực nghiệm và ghi chú từ dữ liệu đang có; không gọi model."""
+    _need(sid)
+    return research.overview(sid)
+
+
+@router.get("/{sid}/research/suggest")
+async def research_suggest(sid: str, q: str = Query(..., min_length=2, max_length=500)):
+    """Tìm đoạn ứng viên, để người đọc phân loại bằng chứng."""
+    _need(sid)
+    query = research.search_query(sid, q)
+    return {"hits": research.suggest(sid, query, prepared=True), "query": query, "cost_usd": 0}
+
+
+@router.get("/{sid}/research/answer/{qid}")
+async def research_saved_answer(sid: str, qid: str):
+    """Đọc câu trả lời còn khớp nguồn hiện tại, tuyệt đối không gọi model."""
+    _need(sid)
+    try:
+        return await research.answer_question(sid, qid, cached_only=True)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.post("/{sid}/research/answer/{qid}")
+async def research_answer(sid: str, qid: str):
+    """Trả lời có nguồn bằng model nhanh, chỉ chạy khi người đọc yêu cầu."""
+    _need(sid)
+    try:
+        return await research.answer_question(sid, qid)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.post("/{sid}/research/items")
+async def research_add(sid: str, body: dict = Body(...)):
+    _need(sid)
+    try:
+        return research.save_item(sid, body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.patch("/{sid}/research/items/{item_id}")
+async def research_edit(sid: str, item_id: str, body: dict = Body(...)):
+    _need(sid)
+    try:
+        return research.save_item(sid, body, item_id)
+    except KeyError:
+        raise HTTPException(404, "Không tìm thấy ghi chép") from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.delete("/{sid}/research/items/{item_id}")
+async def research_remove(sid: str, item_id: str):
+    _need(sid)
+    if not research.delete_item(sid, item_id):
+        raise HTTPException(404, "Không tìm thấy ghi chép")
+    return {"ok": True}
+
+
 @router.delete("/{sid}")
 async def drop_survey(sid: str):
     _need(sid)
@@ -158,7 +225,7 @@ async def add_papers(sid: str, files: list[UploadFile] = File(default=[]),
         _say(sid, f"[{i+1}/{len(files)}] {name}", pct=int(100 * i / max(1, len(files))))
         try:
             data = await f.read()
-            if data[:5] != b"%PDF-" and not name.lower().endswith(".pdf"):
+            if data[:5] != b"%PDF-":
                 raise ValueError("không phải file PDF")
             p = await ingest.ingest_pdf(
                 sid, data, source=name, enrich=bool(enrich),
@@ -228,7 +295,10 @@ def _need_paper(sid: str, pid: str) -> dict:
     Một helper thay vì chép ba dòng vào từng route, cùng lý do `SURVEY_FIELDS`
     là nguồn duy nhất.
     """
-    p = sdb.load_paper(pid)
+    try:
+        p = sdb.load_paper(pid)
+    except (KeyError, ValueError):
+        raise HTTPException(404, "Không tìm thấy bài") from None
     if p.get("survey_id") != sid:
         raise HTTPException(404, "Bài không thuộc kho này")
     return p
@@ -284,9 +354,7 @@ async def patch_paper(sid: str, pid: str, body: dict = Body(...)):
     lý do `PATCH …/slides` không cho sửa `source_block_ids`.
     """
     _need(sid)
-    p = sdb.load_paper(pid)
-    if p["survey_id"] != sid:
-        raise HTTPException(404, "Bài không thuộc kho này")
+    _need_paper(sid, pid)
 
     fields: dict = {}
     for k in PAPER_USER_FIELDS:
@@ -315,9 +383,7 @@ async def move_paper(sid: str, pid: str, to: str = Body(..., embed=True)):
     ~$0,034 mỗi bài.
     """
     _need(sid)
-    p = sdb.load_paper(pid)
-    if p["survey_id"] != sid:
-        raise HTTPException(404, "Bài không thuộc kho này")
+    _need_paper(sid, pid)
     try:
         got = sdb.move_paper(pid, to)
     except KeyError:
@@ -337,12 +403,8 @@ async def drop_paper(sid: str, pid: str):
 
 @router.get("/{sid}/paper/{pid}")
 async def get_paper(sid: str, pid: str):
-    _need_paper(sid, pid)
     _need(sid)
-    try:
-        p = sdb.load_paper(pid)
-    except (KeyError, ValueError):
-        raise HTTPException(404, "Không tìm thấy bài") from None
+    p = _need_paper(sid, pid)
     return {**p, "chunks": sdb.paper_chunks(pid, level=None)}
 
 
@@ -367,7 +429,7 @@ async def do_search(sid: str, q: str = Query(...), limit: int = 20):
 async def get_chunk(sid: str, cid: str):
     """Mở đúng đoạn được trích dẫn, kèm hai đoạn kề để đọc có ngữ cảnh."""
     _need(sid)
-    rows = sdb.get_chunks([cid])
+    rows = sdb.get_chunks([cid], sid)
     if cid not in rows:
         raise HTTPException(404, "Không tìm thấy đoạn")
     ch = rows[cid]
@@ -483,9 +545,7 @@ async def soat_synth(sid: str):
 async def get_lecture(sid: str, pid: str, fmt: str = "json"):
     """Đọc bài giảng đã dựng. **Không gọi model, miễn phí.**"""
     _need(sid)
-    p = sdb.load_paper(pid)
-    if p["survey_id"] != sid:
-        raise HTTPException(404, "Bài không thuộc kho này")
+    p = _need_paper(sid, pid)
     lec = lecture.load(pid)
     if fmt == "md":
         if not lec:
@@ -500,9 +560,7 @@ async def get_lecture(sid: str, pid: str, fmt: str = "json"):
 async def drop_lecture(sid: str, pid: str):
     """Bỏ bài giảng đã dựng. Miễn phí, nhưng dựng lại thì tốn tiền như lần đầu."""
     _need(sid)
-    p = sdb.load_paper(pid)
-    if p["survey_id"] != sid:
-        raise HTTPException(404, "Bài không thuộc kho này")
+    _need_paper(sid, pid)
     sdb.drop_lecture(pid)
     return {"ok": True}
 
@@ -515,9 +573,7 @@ async def get_refs(sid: str, pid: str, force: bool = False):
     mỏng trước lúc tiêu tiền.
     """
     _need(sid)
-    p = sdb.load_paper(pid)
-    if p["survey_id"] != sid:
-        raise HTTPException(404, "Bài không thuộc kho này")
+    p = _need_paper(sid, pid)
     titles = refs.corpus_titles(sid, skip=pid)
     dos = (await refs.dossier(p, titles)) if force else (await refs.ensure(p, titles))
     if force and (dos.get("refs") or dos.get("s2_id")):
@@ -551,9 +607,7 @@ async def soat_lecture(sid: str, pid: str):
 async def build_lecture(sid: str, pid: str, deepen: bool = True, muc: str = "moi"):
     """Dựng bài giảng, phát SSE. **Tốn tiền** — 2 lượt, cộng 1 lượt nếu đào sâu."""
     _need(sid)
-    p = sdb.load_paper(pid)
-    if p["survey_id"] != sid:
-        raise HTTPException(404, "Bài không thuộc kho này")
+    _need_paper(sid, pid)
 
     async def gen():
         try:
@@ -592,15 +646,27 @@ async def ban_do(sid: str):
     return sdb.ban_do(sid)
 
 
+def _ten_thuat_ngu(ten: str) -> set[str]:
+    """Nhận tên đầy đủ và viết tắt được ghi rõ trong ngoặc, không khớp chuỗi con."""
+    names = {sdb.norm_name(ten)}
+    m = re.fullmatch(r"\s*(.+?)\s*\(([^()]+)\)\s*", ten)
+    if m:
+        names.add(sdb.norm_name(m[1]))
+        # Chỉ nhận ngoặc viết tắt, không coi cả lời diễn giải tiếng Việt là tên.
+        if re.fullmatch(r"[A-Z][A-Z0-9-]{1,11}", m[2]):
+            names.add(sdb.norm_name(m[2]))
+    return names - {""}
+
+
 @router.get("/{sid}/thuc-the")
 async def thuc_the(sid: str, ten: str = Query(...)):
-    """Chi tiết một thực thể: quan hệ có nguồn và đoạn nhắc tới. **Miễn phí.**"""
+    """Chi tiết thực thể và thuật ngữ của các điểm nối, lấy từ dữ liệu đã lưu."""
     _need(sid)
     result = sdb.thuc_the(sid, ten)
-    definitions = []
-    norm = sdb.norm_name(ten)
-    # Bảng thuật ngữ đã dựng khi dịch có sẵn câu giải thích cho người mới.
-    # Dùng lại bản đã lưu, không gọi model và không bịa định nghĩa từ tên.
+    names = {ten}
+    for edge in result.get("edges", []):
+        names.update([edge["src_name"], edge["dst_name"]])
+    definitions = {name: [] for name in names}
     for p in sdb.list_papers(sid):
         did = p.get("loupe_doc_id")
         if not did:
@@ -610,12 +676,20 @@ async def thuc_the(sid: str, ten: str = Query(...)):
         except (KeyError, ValueError):
             continue
         for g in brief.get("glossary") or []:
-            if not isinstance(g, dict) or norm not in (sdb.norm_name(g.get("en") or ""), sdb.norm_name(g.get("vi") or "")):
+            if not isinstance(g, dict) or not g.get("gloss"):
                 continue
-            if g.get("gloss"):
-                definitions.append({"text": g["gloss"], "title": p.get("title") or "",
-                                    "paper_id": p["id"], "loupe_doc_id": did})
-    return {**result, "definitions": definitions}
+            aliases = _ten_thuat_ngu(g.get("en") or "") | _ten_thuat_ngu(g.get("vi") or "")
+            for name in names:
+                exact = bool(_ten_thuat_ngu(name) & aliases)
+                # Khung dùng một kỹ thuật không đồng nghĩa với chính kỹ thuật ấy.
+                # Trả định nghĩa nền riêng và ghi rõ tên, không nhận vơ là định nghĩa node.
+                base = re.sub(r"\s+framework$", "", name, flags=re.I)
+                related = base != name and bool(_ten_thuat_ngu(base) & aliases)
+                if exact or related:
+                    definitions[name].append({"text": g["gloss"], "term": g.get("en") or g.get("vi"),
+                        "vi": g.get("vi") or "", "related": not exact,
+                        "title": p.get("title") or "", "paper_id": p["id"], "loupe_doc_id": did})
+    return {**result, "definitions": definitions.pop(ten), "related_definitions": definitions}
 
 
 # Ước giá bài giảng và bản tổng hợp từ ĐỘ DÀI THẬT và bảng giá của model — nút
@@ -636,6 +710,7 @@ async def _uoc(model: str, vao: float, ra: float, du_phong: float) -> float:
 async def gia_bai_giang(sid: str, pid: str):
     """Ước giá dựng bài giảng một bài. Không gọi model."""
     _need(sid)
+    _need_paper(sid, pid)
     strong, _fast = sdb.models_of(sid)
     chu = sum(len(c["text"]) for c in sdb.paper_chunks(pid, level=0))
     # Mỗi mẻ đọc lại toàn văn (4 mẻ + đào sâu), cộng phần ban biên tập đọc.
@@ -730,7 +805,7 @@ async def ask(sid: str, q: str = Query(...), budget: float | None = None,
 async def get_run(sid: str, rid: str):
     _need(sid)
     r = sdb.load_run(rid)
-    if r is None:
+    if r is None or r.get("survey_id") != sid:
         raise HTTPException(404, "Không tìm thấy lượt hỏi")
     # Lượt cũ được soát lại bằng luật HIỆN TẠI, miễn phí (chỉ máy): thư ký gắn
     # nguồn cho câu có số và đổi trích dẫn sai bài, rồi soát cơ học lại. Không
@@ -751,6 +826,9 @@ async def get_run(sid: str, rid: str):
 
 def _cell(card: dict, key: str) -> str:
     v = (card or {}).get(key)
+    # Phiếu lấy từ phần Dịch có mô tả bài toán ở problem thay vì task.
+    if key == "task" and not v:
+        v = (card or {}).get("problem")
     if v is None:
         return ""
     if isinstance(v, list):

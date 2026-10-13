@@ -98,6 +98,7 @@ dẫn, phải chép lại đúng, không được bịa mã không có.
   "domain": "Lĩnh vực, ví dụ 'NLP / retrieval' hoặc 'robot learning'.",
   "problem": "Vấn đề tác giả nhắm tới, 1-2 câu.",
   "gap": "Cách làm trước đó thiếu đúng chỗ nào. 1-2 câu. Đây là chỗ hay bị viết chung chung — phải chỉ ra điểm cụ thể.",
+  "gap_chunk": "Mã đoạn trực tiếp hỗ trợ nhận định ở trường gap. Rỗng nếu không xác định được.",
   "idea": "Ý tưởng cốt lõi nói bằng ngôn ngữ thường, 1-2 câu.",
   "method": "Cơ chế cụ thể: dữ liệu vào gì, qua những bước nào, ra gì. 2-4 câu. Đủ để hiểu cách chạy, không chỉ tên gọi.",
   "datasets": ["Tên tập dữ liệu đúng như bài viết"],
@@ -106,9 +107,14 @@ dẫn, phải chép lại đúng, không được bịa mã không có.
   "results": [
     {"claim": "Một kết quả, viết thành câu có chủ ngữ.",
      "number": "Con số CHÍNH XÁC như trong bài, giữ nguyên dấu thập phân. Rỗng nếu kết quả không phải số.",
-     "chunk": "mã đoạn chứa con số này"}
+     "chunk": "mã đoạn chứa con số này",
+     "dataset": "Tên tập dữ liệu cho chính phép đo này, như bài nêu.",
+     "metric": "Tên độ đo của chính kết quả này.",
+     "baseline": "Tên phương pháp đối chứng nếu phép đo này có đối chứng.",
+     "conditions": "Điều kiện thí nghiệm quan trọng (split, thiết lập, số mẫu, giao thức); để rỗng nếu không rõ."}
   ],
   "limitations": "Giới hạn — cả phần tác giả tự nhận lẫn phần bạn thấy mà họ không nói. 1-3 câu.",
+  "limitations_chunks": ["Mã đoạn nguồn hỗ trợ giới hạn; để rỗng nếu chỉ là nhận xét của bạn."],
   "novelty": "Đóng góp mới thật sự nằm ở đâu, phân biệt với phần chỉ là ghép các thứ có sẵn. 1-2 câu.",
   "contribution_type": "một trong: phương pháp mới | tập dữ liệu | khảo sát | phân tích thực nghiệm | lý thuyết | hệ thống",
   "keywords_en": ["5-10 từ khoá tiếng Anh đúng như giới trong ngành gọi, dùng để tìm kiếm"],
@@ -122,6 +128,8 @@ Ba luật bắt buộc:
    thông tin thật, câu độn thì không.
 2. **Mọi con số trong `results` phải xuất hiện nguyên văn trong đoạn đã khai ở
    `chunk`.** Không làm tròn, không quy đổi, không ước lượng.
+   Không gán cùng dữ liệu/độ đo/đối chứng hoặc điều kiện cho mọi phép đo khi
+   từng kết quả không nêu rõ chúng; để trống những trường chưa xác định được.
 3. `keywords_en` là từ giới trong ngành thật sự dùng khi tìm bài — không phải từ
    chung chung ("machine learning", "deep learning") mà là từ phân biệt được bài
    này với bài khác ("multi-hop retrieval", "construction-integration model").

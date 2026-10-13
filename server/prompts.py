@@ -405,6 +405,15 @@ Quy tắc định dạng:
 - Block loại `heading` chỉ dịch tên mục, không thêm gì.
 - Block loại `caption` dịch bình thường nhưng giữ nguyên "Figure 3" → "Hình 3".
 
+Văn phong bản dịch:
+- Viết nghiêm túc, chính xác theo văn phong bài báo khoa học. Không dùng khẩu ngữ
+  hoặc hình ảnh đời thường như "hỏng", "nút thắt cổ chai", "nhìn vào một tầng".
+- Dịch `bottleneck` theo chức năng trong lập luận, ưu tiên "điểm nghẽn" hoặc
+  "thành phần giới hạn hiệu năng". Dịch `single-layer` là "một lớp" hoặc "một
+  tầng của mạng" và phải nói rõ lớp/tầng thuộc mô hình nào khi câu gốc cho biết.
+- Không để một cụm kỹ thuật mơ hồ đứng riêng. Câu phải nêu rõ đối tượng, thao tác,
+  đầu vào và đầu ra khi các thông tin đó có trong bản gốc.
+
 Ký hiệu toán — **không dùng LaTeX**:
 - Chỉ số trên viết `^{…}`, chỉ số dưới viết `_{…}`. Đó là dạng bản gốc đưa cho
   bạn, và cũng là dạng công cụ hiển thị được.
@@ -467,6 +476,10 @@ VAN_PHONG = """
   ràng mô tả cơ chế của nó.
 - Không từ đệm rỗng ("rõ ràng", "hoàn toàn", "vô cùng", "triệt để"), không câu
   cảm thán, không câu hỏi tu từ. Không dùng ngoặc kép để nhấn mạnh hay tạo nghĩa bóng.
+- Không dùng khẩu ngữ hoặc ẩn dụ cơ khí như "hỏng", "nút thắt cổ chai", "vá",
+  "nhìn vào một tầng". Dùng mô tả khoa học chỉ rõ điều kiện và hệ quả, chẳng hạn
+  "không xử lý được câu hỏi nhiều bước", "điểm nghẽn hiệu năng", "phân tích một
+  tầng của mạng".
 - Cụm trừu tượng về quy mô ("xử lý quy mô lớn", "nhìn xa") phải thay bằng đơn
   vị, số lượng và đầu vào/đầu ra cụ thể.
 - Con số đi kèm tập kiểm chuẩn (benchmark), mốc so sánh (baseline) và mô hình
@@ -520,7 +533,7 @@ chúng. Cũng cấm kết thúc bằng công thức lặp kiểu "Đoạn này �
 
 | Rập khuôn | Vào thẳng |
 |---|---|
-| Đoạn này đặt vấn đề: RAG hoạt động tốt với… | RAG hoạt động tốt với câu hỏi đơn giản nhưng hỏng ở câu hỏi đa bước, vì… |
+| Đoạn này đặt vấn đề: RAG hoạt động tốt với… | RAG trả lời tốt câu hỏi đơn giản nhưng không xử lý đầy đủ câu hỏi đa bước, vì… |
 | Đoạn này phân tích hai hạn chế của… | Hai hạn chế được nêu ra ở đây. Thứ nhất… |
 | Đoạn này giới thiệu mô-đun ACMG… | ACMG bắt đầu từ bộ ba ngắn gọn, chỉ mở rộng sang câu hoặc đoạn khi… |
 

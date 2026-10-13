@@ -1,0 +1,27 @@
+{
+  "wrong_answer_with_real_quote_accepted": true,
+  "unknown_dataset_returns_imagenet_for_mnist": true,
+  "unknown_dataset_hits": [
+    "Knowledge distillation improves ImageNet accuracy by 2 points."
+  ],
+  "dataset_only_in_card_returns_no_source": true,
+  "same_source_after_unrelated_addition": true,
+  "score_changes_after_unrelated_addition": true,
+  "scores": {
+    "before": [
+      -1e-06
+    ],
+    "after": [
+      -1.6268271711092006e-06
+    ]
+  },
+  "cache_get_without_sources": {
+    "findings": [],
+    "missing": [
+      "Chưa tìm được đoạn nguồn phù hợp trong kho."
+    ],
+    "cost_usd": 0,
+    "cached": false
+  },
+  "data_dir": "/tmp/loupe-audit-7k5a9sfy"
+}

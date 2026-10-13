@@ -121,6 +121,62 @@ def test_nhan_trich_khong_lay_doan_tu_kho_khac(client, sdb):
     assert labels[cid]["trang"] == 0
 
 
+def test_mo_doan_khong_lay_noi_dung_tu_kho_khac(client, sdb):
+    """Popup xem nguồn chỉ được mở đoạn thuộc chính kho đang xem."""
+    a = sdb.create_survey("Kho mở đoạn A", "")
+    b = sdb.create_survey("Kho mở đoạn B", "")
+    pid = sdb.add_paper(b["id"], title="Nguồn của B", status="indexed")
+    sdb.put_chunks(pid, [{"ord": 0, "section": "Methods", "text": "Dữ liệu chỉ thuộc B"}])
+    cid = sdb.paper_chunks(pid, level=0)[0]["id"]
+    assert client.get(f"/api/survey/{a['id']}/chunk/{cid}").status_code == 404
+    r = client.get(f"/api/survey/{b['id']}/chunk/{cid}")
+    assert r.status_code == 200
+    assert r.json()["chunk"]["text"] == "Dữ liệu chỉ thuộc B"
+
+
+def test_bai_khong_ton_tai_trong_kho_tra_404(client, sdb):
+    """Mã bài không tồn tại phải báo 404 thay vì lỗi máy chủ."""
+    sid = sdb.create_survey("Kho thử mã bài", "")["id"]
+    target = f"/api/survey/{sid}/paper/khongtontai"
+    for method, suffix, kwargs in (
+        (client.get, "", {}),
+        (client.patch, "", {"json": {"title": "Bài đã sửa"}}),
+        (client.post, "/move", {"json": {"to": sid}}),
+        (client.post, "/enrich", {}),
+        (client.post, "/recard", {}),
+        (client.get, "/lecture", {}),
+        (client.get, "/lecture/refs", {}),
+        (client.get, "/lecture/gia", {}),
+        (client.get, "/lecture/build", {}),
+        (client.delete, "/lecture", {}),
+    ):
+        r = method(target + suffix, **kwargs)
+        assert r.status_code == 404, (method.__name__, suffix, r.text)
+
+
+def test_uoc_gia_bai_giang_khong_doc_kho_khac(client, sdb):
+    """Chỉ được ước giá bài giảng của bài thuộc kho đang xem."""
+    a = sdb.create_survey("Kho giá A", "")
+    b = sdb.create_survey("Kho giá B", "")
+    pid = sdb.add_paper(b["id"], title="Bài của B", status="indexed")
+    assert client.get(f"/api/survey/{a['id']}/paper/{pid}/lecture/gia").status_code == 404
+
+
+def test_file_duoi_pdf_nhung_noi_dung_khong_phai_pdf_bi_tu_choi(client, sdb, monkeypatch):
+    """Đuôi .pdf không thể khiến HTML hoặc file giả lọt vào bộ bóc PDF."""
+    from server.survey import ingest
+    sid = sdb.create_survey("Kho lọc tệp giả", "")["id"]
+    async def khong_duoc_goi(*args, **kwargs):
+        raise AssertionError("Tệp giả đã lọt vào bộ bóc PDF")
+    monkeypatch.setattr(ingest, "ingest_pdf", khong_duoc_goi)
+    r = client.post(f"/api/survey/{sid}/papers", files={
+        "files": ("tep-gia.pdf", b"<html>Trang loi</html>", "application/pdf")
+    }, data={"enrich": "0"})
+    assert r.status_code == 200
+    assert r.json()["papers"][0]["status"] == "failed"
+    assert "không phải file PDF" in r.json()["papers"][0]["err"]
+
+
 def test_dinh_nghia_khai_niem_dung_lai_bang_thuat_ngu(client, sdb, monkeypatch):
     """Định nghĩa lấy từ brief đã lưu và chỉ từ các bài trong kho đang mở."""
     from server import store
@@ -1148,6 +1204,15 @@ def test_xoa_luot_hoi_cua_kho_khac_thi_tu_choi(client, sdb, kho):
     assert sdb.load_run(rid) is not None
 
 
+def test_doc_luot_hoi_cua_kho_khac_thi_tu_choi(client, sdb, kho):
+    """Biết mã lượt hỏi của kho khác cũng không được xem câu trả lời."""
+    sid2 = client.post("/api/survey", json={"name": "kho đọc riêng"}).json()["id"]
+    rid = sdb.save_run(sid2, "câu hỏi riêng", "câu trả lời riêng", [], [], [], {}, 0.0)
+    assert client.get(f"/api/survey/{kho['sid']}/run/{rid}").status_code == 404
+    r = client.get(f"/api/survey/{sid2}/run/{rid}")
+    assert r.status_code == 200 and r.json()["answer"] == "câu trả lời riêng"
+
+
 def test_xoa_ban_tong_hop_va_bai_giang(client, sdb, kho):
     sdb.save_synth(kho["sid"], {"scope": "thử"})
     assert sdb.load_survey(kho["sid"])["synth"]
@@ -1335,15 +1400,17 @@ def test_digest_mang_du_moi_truong_phieu_da_boc():
            "metrics": "DAUmt", "baselines": "DAUbl", "results": "DAUclaim0",
            "limitations": "DAUlim", "novelty": "DAUnovelty",
            "contribution_type": "DAUloai", "keywords_en": "DAUkw"}
-    # và khuôn phiếu trong CHÍNH prompt phải khớp — thêm trường mới vào
-    # `CARD_SYSTEM` mà quên digest thì lỗi cũ lặp lại y nguyên
+    # và khuôn phiếu trong CHÍNH prompt phải khớp — trừ trường chỉ chứa
+    # mã nguồn cho Sổ nghiên cứu, không cần gửi vào bản tổng hợp tốn token.
     import re
     khuon = re.search(r"\{\n(.*?)\n\}", prompts.CARD_SYSTEM, re.S).group(1)
     # đúng hai dấu cách: khoá cấp ngoài. `number`/`chunk` lồng trong `results[]`
     trong_prompt = set(re.findall(r'^  "([a-z_]+)":', khuon, re.M))
-    assert trong_prompt == set(card), (
+    truong_nguon = {"gap_chunk", "limitations_chunks"}
+    assert trong_prompt - truong_nguon == set(card), (
         f"khuôn phiếu và phép kiểm lệch nhau: "
-        f"prompt thừa {trong_prompt - set(card)}, thiếu {set(card) - trong_prompt}")
+        f"prompt thừa {trong_prompt - set(card) - truong_nguon}, thiếu {set(card) - trong_prompt}")
+    assert truong_nguon <= trong_prompt
     assert set(dau) | {"code_url"} == set(card)
     roi = [k for k, v in dau.items() if v not in d]
     assert not roi, f"phiếu bóc rồi mà digest bỏ: {roi}"
@@ -1554,3 +1621,41 @@ def test_thuc_the_tim_ca_ten_trong_ngoac_va_soat_ca_doan(client, sdb, kho):
     d = sdb.thuc_the(sid, "VAE (Variational Autoencoder)")
     assert any("compresses each frame" in c["text"] for c in d["chunks"]), \
         "tên viết tắt trong ngoặc, nằm sau ký tự thứ 80 của đoạn, vẫn phải tìm ra"
+
+
+def test_bang_so_sanh_dung_bai_toan_tu_tom_luoc():
+    """Phiếu miễn phí đã có bài toán thì không để ô trống hoặc bắt trả tiền."""
+    from server.survey_api import _cell
+    assert _cell({"task": "", "problem": "Nén mô hình", "from_brief": True}, "task") == "Nén mô hình"
+    assert _cell({"task": "Phân loại", "problem": "Nén mô hình"}, "task") == "Phân loại"
+    assert _cell({}, "task") == ""
+
+
+def test_dung_do_thi_khong_lam_mat_cau_noi_tu_phieu(client, sdb, kho):
+    """Hai bài vẫn nối bằng từ khoá chung sau khi model bổ sung thực thể riêng."""
+    sid, p1, p2 = kho["sid"], kho["p1"], kho["p2"]
+    for pid in (p1, p2):
+        sdb.update_paper(pid, card={"keywords_en": ["shared concept"], "from_brief": True})
+        sdb.put_graph(sid, pid, [{"name": pid, "norm": pid, "kind": "method",
+                                "chunks": [f"{pid}c1"]}], [])
+    d = sdb.ban_do(sid)
+    shared = next(e for e in d["entities"] if e["name"] == "shared concept")
+    assert set(shared["papers"]) == {p1, p2}
+    assert all(p["co_do_thi"] for p in d["papers"])
+
+
+def test_dinh_nghia_nhan_viet_tat_nhung_khong_danh_dong_khung(client, sdb, monkeypatch):
+    """Tên viết tắt khớp chính xác; định nghĩa nền không giả làm định nghĩa khung."""
+    from server import store
+    a = sdb.create_survey("Kho giải nghĩa node", "")
+    sdb.add_paper(a["id"], title="Tên paper gốc", loupe_doc_id="glossnode", status="indexed")
+    monkeypatch.setattr(store, "load", lambda did: {"brief": {"glossary": [
+        {"en": "attention based fusion (ABF)", "vi": "Hợp nhất", "gloss": "Kết hợp các đặc trưng."},
+        {"en": "residual learning", "vi": "Học phần dư", "gloss": "Học phần chênh lệch."}]}})
+    def get(name):
+        return client.get(f"/api/survey/{a['id']}/thuc-the", params={"ten": name}).json()["definitions"]
+    assert get("ABF")[0]["text"] == "Kết hợp các đặc trưng."
+    assert get("attention based fusion")[0]["related"] is False
+    assert get("Residual Learning Framework")[0]["related"] is True
+    assert get("fusion") == []
+    assert get("non-residual learning") == []

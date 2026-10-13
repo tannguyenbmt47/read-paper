@@ -88,19 +88,24 @@ người nói. Chỉ ra những slide khiến bạn không theo được:
 - "thuat_ngu": thuật ngữ, viết tắt, ký hiệu xuất hiện mà chưa slide nào giải nghĩa.
 - "nhay_buoc": slide này kết luận điều mà các slide trước chưa dẫn tới.
 - "mo_ho": đọc xong không biết thêm điều gì cụ thể.
+- "dien_dat": dùng ẩn dụ, khẩu ngữ hoặc nhân hoá thay cho mô tả cơ chế. Ví dụ
+  “nút thắt cổ chai”, “nhìn vào một tầng”. Yêu cầu nêu đối tượng và thao tác.
 - "mau_thuan": kết luận trên slide không khớp với số trên chính slide đó, hoặc
   với slide khác.
 
-Không báo lỗi văn phong hay độ dài. Tối đa 10 mục, chỗ cản nhiều nhất trước.
+Không báo sở thích văn phong hay độ dài. Phải báo diễn đạt mơ hồ cản trở hiểu
+cơ chế. Tối đa 10 mục, chỗ cản nhiều nhất trước.
 Trả về DUY NHẤT JSON:
-{"van_de": [{"slide": "s4", "loai": "rong|thuat_ngu|nhay_buoc|mo_ho|mau_thuan",
+{"van_de": [{"slide": "s4", "loai": "rong|thuat_ngu|nhay_buoc|mo_ho|mau_thuan|dien_dat",
              "can": "khán giả cần được nói thêm điều gì, ≤30 chữ"}]}
 """
 
 KIEM_TASK = """\
-Bạn là người kiểm chứng của ban biên tập. Mỗi mục là KẾT LUẬN trên một slide bằng
-chứng, kèm số liệu trên slide và các đoạn NGUYÊN VĂN của bài (cả chữ trong bảng
-nếu có). Chỉ dựa vào các đoạn đã cho, với từng kết luận:
+Bạn là người kiểm chứng của ban biên tập. Mỗi mục là KHẲNG ĐỊNH cần kiểm tra trên một slide (tiêu đề hoặc kết luận), kèm số liệu trên slide và các đoạn NGUYÊN VĂN của bài (cả chữ trong bảng
+nếu có). Thân slide chỉ là ngữ cảnh, không phải bằng chứng. Chỉ dựa vào nguồn
+đã cho để kiểm tra đúng trường được chỉ định. Chú ý các từ “chưa có cách nào”,
+“chỉ có thể”, “mọi”, “luôn”: một kết quả riêng không đỡ được khẳng định phổ quát.
+Nếu nguồn có dấu rút gọn, không coi phần không thấy là bằng chứng. Với từng câu:
 
 - "dung": các đoạn đỡ được đúng mức kết luận nói.
 - "sua": kết luận nói quá, hoặc ngược với số ("luôn tốt hơn" trong khi có cột
@@ -114,10 +119,12 @@ Trả về DUY NHẤT JSON:
 
 # Khoá loại vướng là ASCII cho model viết khỏi sai dấu; giao diện hiện bản có dấu.
 _TEN_VUONG = {"rong": "slide gần như trống", "thuat_ngu": "thuật ngữ chưa giải nghĩa",
-              "nhay_buoc": "nhảy bước", "mo_ho": "mơ hồ", "mau_thuan": "mâu thuẫn với số liệu"}
+              "nhay_buoc": "nhảy bước", "mo_ho": "mơ hồ", "mau_thuan": "mâu thuẫn với số liệu",
+              "dien_dat": "diễn đạt thiếu chính xác"}
 
 # Vai có ô kết luận mà người kiểm chứng phải soát.
-_O_KET_LUAN = {"bang_chung": "ket_luan", "so_sanh": "ket_luan", "so_lieu": "y_nghia"}
+_O_KET_LUAN = {vai: "tieu_de" for vai in sl.VAI}
+_O_KET_LUAN.update({"bang_chung": "ket_luan", "so_sanh": "ket_luan", "so_lieu": "y_nghia"})
 
 
 async def _goi(task: str, user: str, model: str, did: str, max_tokens: int,
@@ -139,15 +146,7 @@ async def _goi(task: str, user: str, model: str, did: str, max_tokens: int,
 def _nguon_chu(doc: dict, s: dict) -> str:
     """Đoạn nguồn của slide + chữ trong bảng/hình gắn kèm — thứ để đối chiếu."""
     from .pipeline import chu_vung_hinh
-    tr = doc.get("translations") or {}
-    text = {b["id"]: b.get("text") or "" for b in doc.get("blocks") or []}
-    out = [f"<<{b}>> {text.get(b, '')[:900]}" + (f"\n(bản dịch) {tr[b][:600]}" if tr.get(b) else "")
-           for b in (s.get("nguon") or [])[:4] if b in text]
-    if s.get("hinh"):
-        bang = chu_vung_hinh(doc, s["hinh"])
-        if bang:
-            out.append(f"<<chữ trong hình/bảng {s['hinh']}>> {bang[:1500]}")
-    return "\n".join(out)
+    return "\n".join(f"<<{x['id']}>> {x['chu']}" for x in sl._nguon_chu(doc, s))
 
 
 async def soat(doc_id: str):
@@ -167,6 +166,7 @@ async def soat(doc_id: str):
     log: list[dict] = []
     viec: dict[str, list[str]] = {}
     ngoai_tran: list[str] = []
+    sua_loi: dict[str, str] = {}
 
     # ---- 1. thư ký: slide trống thân
     yield "stage", {"msg": "thư ký soát slide trống thân (miễn phí)", "vai": "thu_ky"}
@@ -176,6 +176,13 @@ async def soat(doc_id: str):
             viec.setdefault(s["id"], []).append(f"Slide đang trống: {ly_do}. Viết đủ nội dung của vai.")
             log.append({"vai": "thu_ky", "viec": "slide trống thân", "o": s["id"],
                         "truoc": s.get("tieu_de", ""), "sau": ly_do})
+
+    # Cảnh báo định lượng có sẵn phải thành việc sửa, không chỉ là dấu chấm than.
+    for s in bo:
+        warnings = sl.loi_so_lieu(s) + sl.loi_dien_dat(s) + [w for w in s.get("canh_bao") or []
+                                      if w.startswith("Số không có")]
+        for warning in dict.fromkeys(warnings):
+            viec.setdefault(s["id"], []).append(warning)
 
     # ---- 2. người xem thử: cả bộ, như khán giả
     yield "stage", {"msg": "người xem thử đọc cả bộ như khán giả (không lời nói, không bài gốc)",
@@ -193,53 +200,7 @@ async def soat(doc_id: str):
                     "o": sid, "can": can})
         if loai == "mau_thuan":
             mau_thuan.add(sid)
-        else:
-            viec.setdefault(sid, []).append(f"Khán giả vướng ({_TEN_VUONG.get(loai, loai)}): {can}")
-
-    # ---- 3. người kiểm chứng: kết luận đặt cạnh số liệu thật
-    can_kiem = [s for s in bo if _O_KET_LUAN.get(s.get("vai")) and s.get(_O_KET_LUAN[s["vai"]])
-                and (s.get("nguon") or s.get("hinh"))]
-    can_kiem.sort(key=lambda s: s["id"] not in mau_thuan)
-    can_kiem = can_kiem[:8]
-    if can_kiem:
-        yield "stage", {"msg": f"người kiểm chứng đặt {len(can_kiem)} kết luận cạnh số liệu trong bài",
-                        "vai": "kiem_chung"}
-        khoi = [f"### {s['id']}\nKết luận: {s[_O_KET_LUAN[s['vai']]]}\n"
-                f"Số trên slide: {' · '.join(x.get('gia_tri', '') + ' ' + x.get('nhan', '') for x in s.get('so') or [])}\n"
-                f"Đoạn của bài:\n{_nguon_chu(doc, s)}" for s in can_kiem]
-        kq = await _goi(KIEM_TASK, "\n\n".join(khoi), model, doc_id, 300 + 200 * len(can_kiem), usage)
-        sua: dict[str, tuple[str, str]] = {}
-        for r in kq.get("ket_qua") or []:
-            if not isinstance(r, dict) or str(r.get("slide")) not in {s["id"] for s in can_kiem}:
-                continue
-            sid = str(r["slide"])
-            if r.get("ket_luan") == "sua" and str(r.get("cau_moi") or "").strip():
-                # Chỉ GHI NHẬN ở đây; biên bản ghi "đã sửa" lúc bản sửa thật sự được
-                # nhận — bản đầu ghi trước khi soát số, nên biên bản kể một lần sửa
-                # mà chốt số bịa đã trả về.
-                sua[sid] = (str(r["cau_moi"]).strip(), str(r.get("vi_sao") or ""))
-            elif r.get("ket_luan") == "bo":
-                viec.setdefault(sid, []).append(
-                    "Kết luận trên slide không có đoạn nào của bài đỡ được. Viết lại kết luận "
-                    "đúng điều bài nói, đúng mức bằng chứng.")
-        # Ghi liền mạch: load → sửa → save, không await chen giữa.
-        doc = store.load(doc_id)
-        deck = sl.lay(doc)
-        for s in deck["bo"]:
-            moi, vi_sao = sua.get(s["id"], ("", ""))
-            o = _O_KET_LUAN.get(s.get("vai"))
-            if not (moi and o):
-                continue
-            # Câu sửa mang số không có trong bài thì không nhận — đổi sạn này lấy sạn khác.
-            if so_bia(doc, s.get("nguon") or [], moi):
-                log.append({"vai": "kiem_chung", "o": s["id"],
-                            "viec": "bản sửa kết luận bị trả về (mang số không có trong bài)"})
-                continue
-            log.append({"vai": "kiem_chung", "viec": "sửa kết luận cho khớp số liệu", "o": s["id"],
-                        "truoc": s[o], "sau": sl._sach(moi), "can": vi_sao})
-            s[o] = sl._sach(moi)
-        doc["slides"] = deck
-        store.save(doc)
+        viec.setdefault(sid, []).append(f"Khán giả vướng ({_TEN_VUONG.get(loai, loai)}): {can}")
 
     # ---- 4. biên tập viên: viết lại đúng slide bị chỉ, kèm lời chê làm gợi ý
     # Slide trống đứng đầu hàng (thư ký ghi trước), rồi tới chỗ khán giả vướng.
@@ -261,6 +222,8 @@ async def soat(doc_id: str):
                     return sid, str(e)
 
         for sid, loi in await asyncio.gather(*(mot(x) for x in chon)):
+            if loi:
+                sua_loi[sid] = loi[:160]
             log.append({"vai": "bien_tap", "o": sid,
                         "viec": "viết lại slide" if not loi else f"không viết lại được: {loi[:80]}",
                         "can": " ".join(viec[sid])[:200]})
@@ -273,11 +236,83 @@ async def soat(doc_id: str):
         else:
             log += payload["log"]
 
+    # Kiểm chứng SAU mọi bước sinh/viết lại. Nếu kiểm trước, biên tập viên có
+    # thể ghi đè câu vừa sửa và biên bản báo đạt trên một bản không còn tồn tại.
+    doc = store.load(doc_id)
+    bo = sl.lay(doc)["bo"]
+    # ---- 5. người kiểm chứng: đối chiếu bản cuối với nguồn
+    can_kiem = [s for s in bo if _O_KET_LUAN.get(s.get("vai")) and s.get(_O_KET_LUAN[s["vai"]])
+                and (s.get("nguon") or s.get("hinh"))]
+    can_kiem.sort(key=lambda s: s["id"] not in mau_thuan)
+    chua_kiem = set()
+    if can_kiem:
+        yield "stage", {"msg": f"người kiểm chứng đặt {len(can_kiem)} kết luận cạnh số liệu trong bài",
+                        "vai": "kiem_chung"}
+        khoi = [f"### {s['id']}\nKết luận: {s[_O_KET_LUAN[s['vai']]]}\n"
+                f"Trường cần kiểm: {_O_KET_LUAN[s['vai']]}\nTiêu đề: {s.get('tieu_de', '')}\n"
+                f"Thân slide: {sl._chu_slide(s)}\n"
+                f"Số trên slide: {' · '.join(x.get('gia_tri', '') + ' ' + x.get('nhan', '') for x in s.get('so') or [])}\n"
+                f"Đoạn của bài:\n{_nguon_chu(doc, s)}" for s in can_kiem]
+        # Kiểm hết bộ theo mẻ nhỏ; trước đây chỉ tám slide bằng chứng được đọc,
+        # mọi tiêu đề về khoảng trống/động cơ đều lọt qua.
+        ket_qua = []
+        for offset in range(0, len(khoi), 8):
+            batch = can_kiem[offset:offset + 8]
+            result = await _goi(KIEM_TASK, "\n\n".join(khoi[offset:offset + 8]),
+                               model, doc_id, 300 + 200 * len(batch), usage)
+            valid_ids = {s["id"] for s in batch}
+            rows = [r for r in result.get("ket_qua") or [] if isinstance(r, dict)
+                    and r.get("slide") in valid_ids and r.get("ket_luan") in ("dung", "sua", "bo")]
+            chua_kiem.update(valid_ids - {r["slide"] for r in rows
+                                         if r["ket_luan"] != "sua" or str(r.get("cau_moi") or "").strip()})
+            ket_qua.extend(rows)
+        kq = {"ket_qua": ket_qua}
+        sua: dict[str, tuple[str, str]] = {}
+        for r in kq.get("ket_qua") or []:
+            if not isinstance(r, dict) or str(r.get("slide")) not in {s["id"] for s in can_kiem}:
+                continue
+            sid = str(r["slide"])
+            if r.get("ket_luan") == "sua" and str(r.get("cau_moi") or "").strip():
+                # Chỉ GHI NHẬN ở đây; biên bản ghi "đã sửa" lúc bản sửa thật sự được
+                # nhận — bản đầu ghi trước khi soát số, nên biên bản kể một lần sửa
+                # mà chốt số bịa đã trả về.
+                sua[sid] = (str(r["cau_moi"]).strip(), str(r.get("vi_sao") or ""))
+            elif r.get("ket_luan") == "bo":
+                chua_kiem.add(sid)
+                log.append({"vai": "kiem_chung", "o": sid,
+                            "viec": "không đủ bằng chứng cho khẳng định", "can": str(r.get("vi_sao") or "")})
+        # Ghi liền mạch: load → sửa → save, không await chen giữa.
+        doc = store.load(doc_id)
+        deck = sl.lay(doc)
+        for s in deck["bo"]:
+            moi, vi_sao = sua.get(s["id"], ("", ""))
+            o = _O_KET_LUAN.get(s.get("vai"))
+            if not (moi and o):
+                continue
+            # Câu sửa mang số không có trong bài thì không nhận — đổi sạn này lấy sạn khác.
+            if so_bia(doc, s.get("nguon") or [], moi):
+                chua_kiem.add(s["id"])
+                log.append({"vai": "kiem_chung", "o": s["id"],
+                            "viec": "bản sửa kết luận bị trả về (mang số không có trong bài)"})
+                continue
+            log.append({"vai": "kiem_chung", "viec": "sửa kết luận cho khớp số liệu", "o": s["id"],
+                        "truoc": s[o], "sau": sl._sach(moi), "can": vi_sao})
+            s[o] = sl._sach(moi)
+        doc["slides"] = deck
+        store.save(doc)
+
     # ---- 6. soát lần cuối: slide nào vẫn trống thì gắn cảnh báo, đừng im lặng
     doc = store.load(doc_id)
     deck = sl.lay(doc)
-    con_lai = []
+    con_lai = [{"kind": "chưa_kiểm_chứng", "msg": f"{sid}: khẳng định chưa được kiểm chứng hoặc bản sửa chưa được chấp nhận."}
+               for sid in sorted(chua_kiem)]
+    con_lai += [{"kind": "chưa_viết_lại", "msg": f"{sid}: viết lại chưa thành công — {loi}"}
+                for sid, loi in sua_loi.items()]
     for s in deck["bo"]:
+        for warning in sl.loi_dien_dat(s):
+            con_lai.append({"kind": "diễn_đạt", "msg": f"{s['id']}: {warning}"})
+        for warning in sl.loi_so_lieu(s):
+            con_lai.append({"kind": "số_liệu_mơ_hồ", "msg": f"{s['id']}: {warning}"})
         ly_do = than_rong(s)
         if ly_do:
             canh = f"Slide còn trống sau khi ban biên tập viết lại: {ly_do}."
@@ -291,7 +326,7 @@ async def soat(doc_id: str):
                                    + " ".join(viec[s["id"]])[:160]})
     dem: dict[str, int] = {}
     for x in log:
-        if x["vai"] in ("kiem_chung", "bien_tap", "minh_hoa") and not re.search(r"không viết lại|trả về", x["viec"]):
+        if x["vai"] in ("kiem_chung", "bien_tap", "minh_hoa") and not re.search(r"không viết lại|trả về|không đủ bằng chứng", x["viec"]):
             dem[x["vai"]] = dem.get(x["vai"], 0) + 1
     # Thư ký chỉ PHÁT HIỆN slide trống; slide được sửa thật là việc của hai vai sau.
     ca = llm.Usage(**usage.dict())

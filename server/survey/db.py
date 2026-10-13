@@ -178,6 +178,30 @@ CREATE TABLE IF NOT EXISTS qcache (
     run_id     TEXT,
     created_at REAL
 );
+
+-- Nhật ký nghiên cứu của kho. Giữ câu hỏi, nhận định, ghi chú và phân loại
+-- bằng chứng tách khỏi phiếu bóc tự động để không mất khi đọc lại bài.
+CREATE TABLE IF NOT EXISTS research_item (
+    id         TEXT PRIMARY KEY,
+    survey_id  TEXT NOT NULL,
+    kind       TEXT NOT NULL,       -- question|claim|note|issue|evidence
+    title      TEXT NOT NULL,
+    body       TEXT DEFAULT '',
+    stance     TEXT DEFAULT '',     -- support|oppose|unclear (bằng chứng)
+    chunk_id   TEXT DEFAULT '',
+    paper_id   TEXT DEFAULT '',
+    status     TEXT DEFAULT 'open',
+    question_id TEXT DEFAULT '',    -- bằng chứng thuộc câu hỏi nào
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_item_survey ON research_item(survey_id, kind, created_at);
+CREATE TABLE IF NOT EXISTS research_answer (
+    key TEXT PRIMARY KEY,
+    survey_id TEXT NOT NULL,
+    question_id TEXT NOT NULL,
+    result TEXT NOT NULL
+);
 """
 
 # `title` không nằm trong bảng `chunk` — nó thuộc `paper`. Bảng external content
@@ -200,7 +224,8 @@ _ADDED_COLS = (("chunk", "level", "INTEGER DEFAULT 0"),
                ("survey", "fast_model", "TEXT"),
                ("paper", "refs", "TEXT"),        # hồ sơ đối chiếu, xem refs.py
                ("paper", "lecture", "TEXT"),     # bài giảng, xem lecture.py
-               ("paper", "lecture_fp", "TEXT"))
+               ("paper", "lecture_fp", "TEXT"),
+               ("research_item", "question_id", "TEXT DEFAULT ''"))
 
 
 def conn():
@@ -377,6 +402,8 @@ def delete_survey(sid: str) -> None:
     for p in list_papers(sid):
         drop_paper(p["id"])
     with conn() as c:
+        c.execute("DELETE FROM research_item WHERE survey_id = ?", (sid,))
+        c.execute("DELETE FROM research_answer WHERE survey_id = ?", (sid,))
         # Xoá phải kéo theo thứ trỏ tới nó — cùng luật đã áp cho `drop_run`.
         c.execute("DELETE FROM qcache WHERE run_id IN"
                   " (SELECT id FROM run WHERE survey_id = ?)", (sid,))
@@ -589,6 +616,10 @@ def drop_paper(pid: str) -> None:
     c = conn()
     rows = c.execute("SELECT rowid, * FROM chunk WHERE paper_id = ?", (pid,)).fetchall()
     with c:
+        # Ghi chú độc lập giữ lại; bằng chứng trỏ tới bài bị xoá thì gỡ liên kết
+        # để không vô tình dùng mã đoạn cũ như nguồn hợp lệ.
+        c.execute("UPDATE research_item SET chunk_id = '', paper_id = '',"
+                  " status = 'source_removed' WHERE paper_id = ?", (pid,))
         for r in rows:
             _fts_write(c, "delete", r["rowid"], r)
             c.execute("DELETE FROM emb WHERE chunk_id = ?", (r["id"],))
@@ -1029,9 +1060,8 @@ def ban_do(survey_id: str) -> dict:
                              "papers": sorted(ps), "nguon": "do_thi"}
     co_do_thi = {p for s in links.values() for p in s}
 
+    # Đồ thị model bổ sung quan hệ, không xoá cầu nối đã có trong phiếu.
     for p in papers:
-        if p["id"] in co_do_thi:
-            continue
         card = p.get("card") or {}
         for key, kind in _PHIEU_THANH_NODE:
             for ten in _ten_trong_phieu(card.get(key)):
@@ -1155,7 +1185,8 @@ def fts_query(text: str) -> str:
 
 
 def bm25(survey_id: str, query: str, limit: int = 30,
-         weights: tuple = (4.0, 2.0, 2.0, 6.0, 1.0)) -> list[tuple[str, float]]:
+         weights: tuple = (4.0, 2.0, 2.0, 6.0, 1.0),
+         *, leaf_only: bool = False, text_only: bool = False, source_only: bool = False) -> list[tuple[str, float]]:
     """Tìm BM25 trong phạm vi một dự án. Trả [(chunk_id, điểm)] tốt nhất trước.
 
     `bm25()` của SQLite trả điểm **âm**, càng nhỏ càng khớp — nên sắp tăng dần.
@@ -1165,12 +1196,17 @@ def bm25(survey_id: str, query: str, limit: int = 30,
     q = fts_query(query)
     if not q:
         return []
+    if source_only:
+        q = "{text section} : (" + q + ")"
+    elif text_only:
+        q = "text : (" + q + ")"
     sql = (
         "SELECT ch.id AS cid, bm25(chunk_fts, ?, ?, ?, ?, ?) AS score"
         " FROM chunk_fts JOIN chunk ch ON ch.rowid = chunk_fts.rowid"
         " JOIN paper p ON p.id = ch.paper_id"
         " WHERE chunk_fts MATCH ? AND p.survey_id = ?"
-        " ORDER BY score LIMIT ?")
+        + (" AND ch.level = 0" if leaf_only else "")
+        + " ORDER BY score LIMIT ?")
     try:
         rows = conn().execute(sql, (*weights, q, check_id(survey_id), limit)).fetchall()
     except Exception:            # noqa: BLE001 — truy vấn hỏng thì coi như không tìm ra

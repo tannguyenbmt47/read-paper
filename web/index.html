@@ -712,9 +712,10 @@
 
   <div class="sv-body">
     <!-- ------------------------------ cột trái: tài liệu ----------------- -->
-    <aside class="sv-left">
+    <aside id="svLeft" class="sv-left">
       <div class="sv-lhead">
         <h2 id="svCount">Tài liệu</h2>
+        <button id="svResearchDocs" class="sv-link sv-research-docs" type="button" aria-controls="svPapers" aria-expanded="false">Xem danh sách ▾</button>
         <button id="svFromLib" class="btn btn-ghost xs" title="Chọn bài đã có trong Thư viện — miễn phí, mang theo cả bản dịch">📚 Từ Thư viện</button>
         <button id="svAddTog" class="btn btn-ghost xs">+ Thêm</button>
       </div>
@@ -758,11 +759,38 @@
       </div>
       <nav class="sv-tabs">
         <button id="svTabMap"  class="sv-tab is-on" title="Bài và khái niệm nối với nhau thế nào — miễn phí">Bản đồ</button>
+        <button id="svTabResearch" class="sv-tab" title="Tra cứu và ghi chép miễn phí; trả lời bằng AI có phí khi yêu cầu">Sổ nghiên cứu</button>
         <button id="svTabAsk"  class="sv-tab" title="Hỏi một câu, máy tìm trong mọi bài của kho rồi trả lời kèm nguồn — có ghi giá trước khi hỏi">Hỏi đáp</button>
         <button id="svTabSyn"  class="sv-tab" title="Bức tranh chung cả kho: bài toán, các hướng, nên đọc bài nào trước">Tổng hợp</button>
         <button id="svTabLec"  class="sv-tab" title="Giảng kỹ MỘT bài cho người mới, từ kiến thức nền tới cơ chế">Bài giảng</button>
         <button id="svTabGrid" class="sv-tab" title="Đặt các bài cạnh nhau theo từng tiêu chí — miễn phí">Bảng so sánh</button>
+        <button id="svGuideOpen" class="sv-tab sv-guide-open" aria-haspopup="dialog">? Hướng dẫn</button>
       </nav>
+      <dialog id="svGuide" class="sv-guide" aria-labelledby="svGuideTitle">
+        <form method="dialog" class="sv-guide-head"><h2 id="svGuideTitle">Dùng trang Tìm hiểu thế nào?</h2><button class="btn xs" aria-label="Đóng hướng dẫn">Đóng ✕</button></form>
+        <p>Gom các paper cùng chủ đề vào một kho, rồi đọc, đối chiếu và hỏi dựa trên nguồn của kho đó.</p>
+        <h3>1. Chọn tài liệu để bắt đầu</h3>
+        <p>Chọn kho ở góc trên trái. Bấm <b>Từ Thư viện</b> để lấy bài đã có, hoặc <b>+ Thêm</b> để nạp tài liệu mới. Các tab bên phải đều làm việc với kho đang chọn.</p>
+        <h3>2. Đọc bản đồ từ một bài hoặc một khái niệm</h3>
+        <ul>
+          <li><b>Ô tên bài</b> là paper; <b>chấm tròn</b> là khái niệm, phương pháp, mô hình hoặc dữ liệu. Màu tương ứng với chú giải phía trên.</li>
+          <li>Bấm một điểm: các điểm liên quan sáng lên, phần bên phải giải thích điểm đang chọn và các mối liên hệ. Bấm tên khái niệm trong phần chi tiết để đi tiếp.</li>
+          <li><b>Nối bài–khái niệm</b> nghĩa là khái niệm xuất hiện trong bài. <b>Nối hai khái niệm</b> là quan hệ đã trích từ bài; mở “Xem phát biểu và nguồn” để biết chính xác quan hệ và kiểm tra bằng chứng.</li>
+          <li>Định nghĩa lấy từ bảng thuật ngữ đã lưu, nên có điểm chưa có giải thích. Chọn <b>Sang Hỏi đáp</b> nếu muốn hỏi kỹ hơn.</li>
+          <li>Gõ tên để tô sáng; nhấn <b>Enter</b> để tìm đoạn văn. Tick <b>Khái niệm chung</b> để xem các điểm có ở nhiều bài. Cuộn để phóng, kéo nền để di chuyển, bấm <b>⤢</b> để vừa khung.</li>
+        </ul>
+        <h3>3. Chọn cách đọc phù hợp</h3>
+        <ul>
+          <li><b>Bảng so sánh:</b> chọn một tiêu chí để đối chiếu các bài; bấm ô dài để mở rộng. “Tất cả cột” dùng khi cần nhìn toàn bảng.</li>
+          <li><b>Tổng hợp:</b> đọc bức tranh chung của cả kho và các hướng nghiên cứu.</li>
+          <li><b>Bài giảng:</b> chọn một paper để tìm hiểu từ kiến thức nền đến cách làm.</li>
+          <li><b>Hỏi đáp:</b> hỏi cụ thể, chẳng hạn “ABF và HCL đóng vai trò gì trong Knowledge Review?”. Bấm trích dẫn trong câu trả lời để đọc đoạn nguồn.</li>
+          <li><b>Sổ nghiên cứu:</b> lưu câu hỏi, tìm đoạn có thể liên quan rồi phân loại ủng hộ/phản bác/chưa rõ; đối chiếu thực nghiệm, xem quan hệ giữa bài, khoảng trống cần kiểm tra và mức đầy đủ để tái lập.</li>
+        </ul>
+        <h3>4. Biết lúc nào có phí</h3>
+        <p>Xem bản đồ, tra đoạn văn, so sánh và đọc nội dung đã lưu không gọi model. Dựng bản đồ, tạo câu trả lời, bản tổng hợp, bài giảng hoặc làm giàu tài liệu có thể gọi model và tốn phí; xem giá ước tính ở nút trước khi chạy. Chỉ mở hướng dẫn hoặc chọn node không phát sinh phí.</p>
+        <form method="dialog"><button class="btn">Đã hiểu · quay lại trang</button></form>
+      </dialog>
       <p id="svTabHelp" class="small muted sv-tabhelp">Bản đồ: bấm vào bài hoặc khái niệm để xem các liên hệ và nguồn.</p>
 
       <!-- ---- tab 0: tổng hợp — thứ để ĐỌC MÀ HIỂU, đặt trước hỏi đáp vì hỏi
@@ -895,8 +923,13 @@
 
       <!-- ---- tab 2: bảng so sánh ---- -->
       <section id="svPaneGrid" class="sv-pane hidden">
+        <div class="sv-compare-head">
+          <div><h3>So sánh theo tiêu chí</h3><p class="small muted">Chọn một tiêu chí để đọc các bài cùng một lượt. Không tốn phí.</p></div>
+          <button id="svGridMode" class="btn xs" aria-pressed="false">Xem toàn bộ cột</button>
+        </div>
+        <div id="svGridCriteria" class="sv-criteria" role="group" aria-label="Tiêu chí so sánh"></div>
         <div class="sv-gridbar">
-          <span class="small muted">Dựng thẳng từ bản tóm tắt của từng bài — mở bảng không tốn tiền. Bấm vào ô để xem đủ.</span>
+          <span id="svGridSummary" class="small muted"></span>
           <span class="grow"></span>
           <button id="svDienBang" class="btn btn-primary xs hidden" title="Bài lấy từ phần Dịch chỉ có bản tóm tắt rút gọn, thiếu dữ liệu / chỉ số đo / so với ai. Nút này cho model đọc toàn văn và điền đủ.">Điền ô trống bằng model</button>
           <a id="svCsv" class="btn xs" download>Tải CSV</a>
@@ -933,6 +966,109 @@
             <p id="bdMsg" class="bd-msg"></p>
           </div>
           <aside id="bdPan" class="bd-pan"></aside>
+        </div>
+      </section>
+
+      <section id="svPaneResearch" class="sv-pane hidden">
+        <div class="rs-root">
+          <header class="rs-top">
+            <div class="rs-heading">
+              <span class="rs-eyebrow">KHÔNG GIAN LÀM VIỆC · DỰA TRÊN NGUỒN GỐC</span>
+              <h2>Sổ nghiên cứu<span class="rs-title-period">.</span></h2>
+              <p>Theo dõi câu hỏi, kiểm tra bằng chứng và đối chiếu kết quả giữa các bài báo. Mỗi kết luận đều có thể truy về nguồn.</p>
+            </div>
+            <div class="rs-top-actions"><span class="rs-free">Tra cứu tự động <b>miễn phí</b></span>
+              <button id="rsRefresh" class="btn xs" type="button" title="Đọc lại thông tin từ kho">↻ Cập nhật</button></div>
+          </header>
+          <div class="rs-overview" aria-label="Tổng quan kho nghiên cứu">
+            <button type="button" class="rs-stat" data-rs-to="rsRepro"><span>Bài trong kho</span><strong id="rsCountPapers">—</strong><small>Kiểm tra khả năng tái lập <span aria-hidden="true">↗</span></small></button>
+            <button type="button" class="rs-stat" data-rs-to="rsQuestions"><span>Câu hỏi nghiên cứu</span><strong id="rsCountQuestions">—</strong><small>Quản lý các câu hỏi <span aria-hidden="true">↗</span></small></button>
+            <button type="button" class="rs-stat" data-rs-to="rsQuestions"><span>Bằng chứng đã phân loại</span><strong id="rsCountEvidence">—</strong><small>Đối chiếu các nguồn <span aria-hidden="true">↗</span></small></button>
+            <button type="button" class="rs-stat rs-stat-attention" data-rs-to="rsClaims"><span>Nhận định cần kiểm tra</span><strong id="rsCountPending">—</strong><small>Tiếp tục kiểm chứng <span aria-hidden="true">↗</span></small></button>
+          </div>
+          <p id="rsStatus" class="rs-status small muted" role="status" aria-live="polite"></p>
+          <div class="rs-workspace">
+          <nav class="rs-nav" aria-label="Các phần của sổ nghiên cứu">
+            <span class="rs-nav-caption">CÔNG CỤ NGHIÊN CỨU</span>
+            <button type="button" class="is-on" data-rs-to="rsQuestions" aria-current="page"><span class="rs-nav-index">01</span><span class="rs-nav-label">Câu hỏi &amp; bằng chứng<small>Đối chiếu các nguồn</small></span><span class="rs-nav-count" id="rsNavQuestions">0</span></button>
+            <button type="button" data-rs-to="rsExperiments"><span class="rs-nav-index">02</span><span class="rs-nav-label">Kết quả thực nghiệm<small>Dữ liệu và độ đo</small></span><span class="rs-nav-count" id="rsNavExperiments">0</span></button>
+            <button type="button" data-rs-to="rsGaps"><span class="rs-nav-index">03</span><span class="rs-nav-label">Khoảng trống<small>Giới hạn đã ghi nhận</small></span><span class="rs-nav-count" id="rsNavGaps">0</span></button>
+            <button type="button" data-rs-to="rsRelations"><span class="rs-nav-index">04</span><span class="rs-nav-label">Quan hệ giữa các bài<small>Dữ liệu sử dụng chung</small></span><span class="rs-nav-count" id="rsNavRelations">0</span></button>
+            <button type="button" data-rs-to="rsClaims"><span class="rs-nav-index">05</span><span class="rs-nav-label">Kiểm chứng nhận định<small>Kiểm tra với bản gốc</small></span><span class="rs-nav-count" id="rsNavClaims">0</span></button>
+            <button type="button" data-rs-to="rsNotes"><span class="rs-nav-index">06</span><span class="rs-nav-label">Nhật ký nghiên cứu<small>Ghi chú và tiến độ</small></span><span class="rs-nav-count" id="rsNavNotes">0</span></button>
+            <button type="button" data-rs-to="rsRepro"><span class="rs-nav-index">07</span><span class="rs-nav-label">Khả năng tái lập<small>Mã nguồn và thiết lập</small></span><span class="rs-nav-count" id="rsNavRepro">0</span></button>
+            <div class="rs-nav-foot">Thông tin tự động là gợi ý để người đọc xác minh, chưa phải kết luận khoa học.</div>
+          </nav>
+          <div class="rs-content">
+          <div class="rs-section-context"><span id="rsContextIndex">MỤC 01 / 07</span><span class="rs-context-sep" aria-hidden="true"></span><span id="rsContextHint">Bắt đầu bằng câu hỏi nghiên cứu</span></div>
+          <section id="rsQuestions" class="rs-section" aria-label="Câu hỏi và bằng chứng">
+            <h3>1. Câu hỏi nghiên cứu và ma trận bằng chứng</h3>
+            <p class="rs-section-intro">Lưu một câu hỏi, tìm các đoạn liên quan rồi tự phân loại theo mức độ hỗ trợ. Luôn đọc nguồn trước khi kết luận.</p>
+            <div class="rs-action-card"><label for="rsQuestionInput">Câu hỏi bạn đang tìm lời giải</label>
+              <div class="rs-row"><input id="rsQuestionInput" class="input" maxlength="240" placeholder="Ví dụ: Phương pháp nào cải thiện độ chính xác trên HotpotQA?" aria-label="Câu hỏi nghiên cứu">
+                <button id="rsAddQuestion" class="btn btn-primary">+ Lưu câu hỏi</button></div></div>
+            <div id="rsStarters" class="rs-starters"></div>
+            <div class="rs-search-card"><div class="rs-search-head"><label for="rsQuestionPick">Đang xem câu hỏi</label><span class="small muted">Tự tìm nguồn · miễn phí</span></div>
+              <select id="rsQuestionPick" class="input"></select>
+              <div class="rs-row"><input id="rsSuggestQuery" class="input" type="search" aria-label="Từ khoá tìm nguồn" placeholder="Ví dụ: HotpotQA exact match, ablation, limitations">
+                <button id="rsSuggest" class="btn">Tìm đoạn nguồn →</button></div>
+              <p class="small muted rs-search-note">Nguồn được tìm tự động khi lưu hoặc mở câu hỏi. Thuật ngữ tiếng Việt được đối chiếu với bảng thuật ngữ có sẵn trong kho. Bạn có thể nhập từ khóa khác để tìm sâu hơn; phân loại bằng chứng vẫn do bạn xác nhận.</p></div>
+            <p id="rsProgress" class="small muted" aria-live="polite"></p>
+            <div class="rs-answer-panel">
+              <b>Trả lời đúng câu hỏi từ các nguồn</b>
+              <p class="small muted">AI đọc đoạn gốc, trả lời kèm trích dẫn và nêu phần còn thiếu. Bản nháp cần bạn kiểm tra. Một lượt model nhanh, ước tính không quá $0,02; kết quả được lưu để dùng lại.</p>
+              <button id="rsAnswerRun" class="btn">Đọc nguồn và trả lời · AI</button>
+              <div id="rsAnswerBody" aria-live="polite"></div>
+            </div>
+            <div id="rsSuggestions" class="rs-suggestions" aria-live="polite"></div>
+            <div id="rsEvidence" class="rs-evidence"></div>
+          </section>
+          <section id="rsExperiments" class="rs-section" hidden>
+            <h3>2. Kết quả thực nghiệm</h3>
+            <p class="small muted">Giữ đúng số trong phiếu; chỉ đánh dấu khớp nguồn khi số xuất hiện trong đoạn gốc. So sánh trực tiếp cần cùng dữ liệu, độ đo, điều kiện và giao thức.</p>
+            <div class="rs-filterbar"><label for="rsExperimentFilter">Lọc kết quả</label><input id="rsExperimentFilter" class="input" type="search" placeholder="Tên bài, tập dữ liệu, độ đo, phương pháp…">
+              <select id="rsExperimentStatus" class="input" aria-label="Lọc mức kiểm tra"><option value="all">Tất cả kết quả</option><option value="matched">Số có trong nguồn</option><option value="unmatched">Cần kiểm tra số</option></select>
+              <span id="rsExperimentCount" class="rs-filtercount" aria-live="polite"></span></div>
+            <div id="rsExperimentBody" class="rs-table-wrap"></div>
+          </section>
+          <section id="rsGaps" class="rs-section" hidden>
+            <h3>3. Khoảng trống và câu hỏi còn mở</h3>
+            <p class="small muted">Giới hạn được lấy từ phiếu bài. Giả thuyết đề xuất được đánh dấu riêng, chưa thể kết luận một hướng nghiên cứu chưa từng được giải quyết.</p>
+            <div id="rsGapBody"></div>
+          </section>
+          <section id="rsRelations" class="rs-section" hidden>
+            <h3>4. Quan hệ giữa các bài</h3>
+            <p class="small muted">Chỉ nối các bài cùng nhắc đến một tập dữ liệu trong đoạn toàn văn. Mở cả hai nguồn để xem mối liên hệ.</p>
+            <div id="rsRelationBody"></div>
+          </section>
+          <section id="rsClaims" class="rs-section" hidden>
+            <h3>5. Sổ kiểm chứng nhận định</h3>
+            <p class="small muted">Nhập nhận định và mã đoạn nguồn. Máy kiểm tra sự hiện diện của con số; ý nghĩa, điều kiện và mức hỗ trợ vẫn cần người đọc đánh giá.</p>
+            <div class="rs-form rs-action-card">
+              <input id="rsClaimInput" class="input" maxlength="240" placeholder="Nhận định khoa học cần kiểm tra…">
+              <input id="rsClaimCite" class="input" placeholder="Mã đoạn nguồn, ví dụ p123c4 (nếu có)">
+              <button id="rsAddClaim" class="btn btn-primary xs">Lưu nhận định</button>
+            </div>
+            <div id="rsClaimBody"></div>
+          </section>
+          <section id="rsNotes" class="rs-section" hidden>
+            <h3>6. Nhật ký dự án nghiên cứu</h3>
+            <p class="small muted">Lưu ghi chú, việc chưa giải quyết và quá trình kiểm tra. Nội dung được giữ khi mở lại kho.</p>
+            <div class="rs-form rs-action-card">
+              <select id="rsNoteKind" class="input" aria-label="Loại ghi chép"><option value="note">Ghi chú</option><option value="issue">Việc cần giải quyết</option></select>
+              <input id="rsNoteTitle" class="input" maxlength="240" placeholder="Tiêu đề ghi chú…">
+              <textarea id="rsNoteBody" class="input" maxlength="6000" rows="3" placeholder="Nội dung, phương án kiểm tra, tiến độ…"></textarea>
+              <button id="rsAddNote" class="btn btn-primary xs">Lưu vào dự án</button>
+            </div>
+            <div id="rsNoteList"></div>
+          </section>
+          <section id="rsRepro" class="rs-section" hidden>
+            <h3>7. Kiểm tra khả năng tái lập</h3>
+            <p class="small muted">Tìm dấu hiệu về mã nguồn, dữ liệu, siêu tham số, phần cứng, thí nghiệm loại thành phần và độ bất định. Không tìm thấy trong tài liệu đã nạp không có nghĩa là tác giả không công bố.</p>
+            <div id="rsReproBody"></div>
+          </section>
+          </div>
+          </div>
         </div>
       </section>
     </main>
@@ -998,6 +1134,7 @@
 <script src="/vendor/mermaid.min.js"></script>
 <script src="/app.js"></script>
 <script src="/survey.js"></script>
+<script src="/sv-research.js"></script>
 <script src="/sv-bando.js"></script>
 <script src="/thuvien.js"></script>
 <script src="/slide-ve.js"></script>

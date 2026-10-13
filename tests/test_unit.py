@@ -1055,6 +1055,16 @@ def test_dau_hai_cham_van_la_doan_bi_cong_thuc_chen():
     assert mark_continuations(bs3) == 0
 
 
+def test_prompt_cam_cach_noi_khau_ngu_mo_ho():
+    """Bản dịch và diễn giải phải dùng mô tả khoa học, có chủ thể rõ ràng."""
+    from server import prompts
+    assert "nút thắt cổ chai" in prompts.TRANSLATE_TASK
+    assert "điểm nghẽn" in prompts.TRANSLATE_TASK
+    assert "tầng của mạng" in prompts.TRANSLATE_TASK
+    assert "Không dùng khẩu ngữ" in prompts.VAN_PHONG
+    assert "không xử lý đầy đủ câu hỏi đa bước" in prompts.PLAIN_TASK
+
+
 # ------------------------------------------- đánh dấu câu đáng nhớ (pass 5)
 
 def test_va_escape_cuu_duoc_json_co_latex():
@@ -1690,3 +1700,107 @@ def test_bat_ban_dich_lan_tieng_indonesia():
     assert any(l["loai"] == "tieng_indonesia" for l in tv.loi_chu(hong))
     sach = "Theo ký hiệu trước, knowledge distillation đơn tầng được viết như công thức sau, dùng ResNet và dữ liệu."
     assert tv.loi_chu(sach) == []
+
+
+@pytest.mark.parametrize('term,role', [('VAE', 'co_che'), ('p-value', 'thiet_lap'), ('BM25', 'huong_nc')])
+def test_slide_khai_niem_di_cung_phan_can_no(term, role):
+    """Đổi chặng không được bỏ khái niệm dẫn nhập ở chặng cũ."""
+    from server import slide
+    intro = {'vai': 'van_de', 'id': 'intro'}
+    concept = {'vai': 'khai_niem', 'thuat_ngu': term, 'id': 'term'}
+    target = {'vai': role, 'id': 'target'}
+    late = {'vai': 'bang_chung', 'id': 'late'}
+    result = slide._sap_lai([intro, late, concept, target])
+    assert result.index(target) == result.index(concept) + 1
+    assert result.index(target) < result.index(late)
+
+
+def test_slide_khong_tron_vi_du_chi_de_doi_dang():
+    from server import slide
+    bo = [{'vai': v, 'id': str(i)} for i, v in enumerate(['vi_du', 'vi_du', 'cong_thuc'])]
+    assert slide._sap_lai(bo) == bo
+
+
+def test_slide_viet_va_kiem_chung_dung_nguon_goc():
+    """Bản dịch từng nói quá không được trở thành bằng chứng cho slide mới."""
+    from server import slide, slide_soat
+    doc = {'blocks': [{'id': 'b1', 'text': 'The method may help on this dataset.'}],
+           'translations': {'b1': 'Phương pháp luôn tốt hơn trên mọi tập dữ liệu.'}}
+    source = slide._nguon_chu(doc, {'nguon': ['b1']})
+    assert 'may help' in source[0]['chu']
+    assert 'luôn' not in source[0]['chu']
+    assert 'may help' in slide_soat._nguon_chu(doc, {'nguon': ['b1']})
+
+
+def test_slide_nguon_dai_giu_gioi_han_cuoi_doan():
+    from server import slide
+    doc = {'blocks': [{'id': 'b1', 'text': 'Results. ' * 600 + 'However, this does not generalize.'}]}
+    source = slide._nguon_chu(doc, {'nguon': ['b1']})[0]['chu']
+    assert 'does not generalize' in source
+    assert 'nguồn đã rút gọn' in source
+    assert len(source) < 3200
+
+
+def test_slide_doc_so_trong_moi_bang_duoc_dan(monkeypatch):
+    """Bảng phụ cũng phải có dữ liệu; không cắt mất kết quả ở cuối bảng chính."""
+    from server import slide
+    doc = {'blocks': [{'id': bid, 'text': 'Chú thích', 'figure_rect': [0, 0, 100, 100]}
+                      for bid in ('b1', 'b2')]}
+    monkeypatch.setattr(slide, 'chu_vung_hinh', lambda d, bid:
+                        'Dòng kết quả. ' * 100 + '33.62' if bid == 'b1' else '31.25')
+    source = slide._nguon_chu(doc, {'hinh': 'b1', 'nguon': ['b1', 'b2']})
+    assert [x['id'] for x in source] == ['b1', 'b2']
+    assert '33.62' in source[0]['chu']
+    assert '31.25' in source[1]['chu']
+
+
+def test_slide_chuan_hoa_so_buoc_khong_xoa_so_co_y_nghia():
+    from server import slide
+    doc = {'blocks': [], 'translations': {}}
+    s = slide.chuan_hoa(doc, {'vai': 'co_che', 'tieu_de': 'Mã hóa đầu vào',
+        'buoc': [{'ten': '1. Mã hóa', 'mo_ta': 'Nén đầu vào.'},
+                 {'ten': '64 chiều', 'mo_ta': 'Biểu diễn có kích thước cố định.'},
+                 {'ten': 'Bước 3: Giải mã', 'mo_ta': 'Tái tạo đầu vào.'}]})
+    assert [b['ten'] for b in s['buoc']] == ['Mã hóa', '64 chiều', 'Giải mã']
+
+
+def test_slide_so_khac_nhau_phai_phan_biet_cau_hinh():
+    from server.slide import loi_so_lieu
+    s = {'so': [{'gia_tri': '77.45', 'nhan': 'Accuracy CIFAR-100'},
+                {'gia_tri': '77.78', 'nhan': 'Accuracy CIFAR-100'}]}
+    assert loi_so_lieu(s)
+    s['so'][0]['nhan'] += ' · ResNet → MobileNet'
+    s['so'][1]['nhan'] += ' · WRN → ShuffleNet'
+    assert not loi_so_lieu(s)
+
+
+def test_slide_dien_dat_khoa_hoc_ke_ca_loi_noi():
+    from server.slide import loi_dien_dat
+    assert loi_dien_dat({'tieu_de': 'Nút thắt cổ chai của phương pháp', 'vai': 'khoang_trong'})
+    assert loi_dien_dat({'tieu_de': 'Giám sát đặc trưng', 'vai': 'co_che',
+                        'loi_noi': 'Mô hình chỉ nhìn vào một tầng.'})
+    assert not loi_dien_dat({'tieu_de': 'Giám sát đặc trưng cùng mức', 'vai': 'co_che',
+                            'loi_noi': 'So sánh đặc trưng tầng i của student với tầng tương ứng của teacher.'})
+
+
+def test_model_da_bi_go_bao_loi_de_hieu_va_bien_khoi_o_chon(monkeypatch):
+    """OpenRouter gỡ `qwen/qwen-max` (13/10) mà ô chọn vẫn liệt kê nó, lượt dịch
+    ra "NotFoundError: Error code: 404 - {…}". Lỗi phải đọc được qua đúng mẫu in
+    `type(e).__name__: e` mà 24 chỗ đang dùng, và `/api/config` phải lọc danh
+    sách theo danh sách sống (mất mạng thì giữ nguyên, không chặn nhầm cả ô)."""
+    import asyncio
+    from server import llm, main
+    e = llm._model_go("qwen/qwen-max")
+    assert f"{type(e).__name__}: {e}".startswith("Model đã bị gỡ: «qwen/qwen-max»")
+    assert "qwen/qwen-max" not in {m["id"] for m in main.MODEL_CHOICES}
+
+    async def song():
+        return [{"id": m["id"]} for m in main.MODEL_CHOICES[1:]]
+    monkeypatch.setattr(llm, "list_models", song)
+    ids = [m["id"] for m in asyncio.run(main._model_con_song())]
+    assert ids == [m["id"] for m in main.MODEL_CHOICES[1:]]
+
+    async def hong():
+        raise OSError("mất mạng")
+    monkeypatch.setattr(llm, "list_models", hong)
+    assert asyncio.run(main._model_con_song()) == main.MODEL_CHOICES
