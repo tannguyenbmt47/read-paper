@@ -25,6 +25,8 @@ WEB = ROOT / "web"
 app = FastAPI(title="Loupe")
 
 MODEL_CHOICES = [
+    {"id": "deepseek/deepseek-v4.1-flash-1017",
+     "label": "DeepSeek V4.1 Flash 1017 — mới nhất, 1M context ($0,15/$0,60 mỗi triệu token)"},
     {"id": "~deepseek/deepseek-v4-flash-latest",
      "label": "DeepSeek V4 Flash — rẻ nhất, 1M context ($0,09/$0,18 mỗi triệu token)"},
     {"id": "deepseek/deepseek-v4-pro",

@@ -87,7 +87,7 @@ Mọi cấu hình nằm trong `.env`. Các khoá hay dùng:
 | Khoá | Ý nghĩa |
 |---|---|
 | `OPENROUTER_API_KEY` | **Bắt buộc** |
-| `OR_MODEL` | Model dịch mặc định (`~deepseek/deepseek-v4-flash-latest`) |
+| `OR_MODEL` | Model dịch mặc định (`deepseek/deepseek-v4.1-flash-1017`) |
 | `OR_MODEL_FAST` | Model rẻ cho các việc nhẹ |
 | `PORT` | Cổng trên máy chủ (mặc định 8010) |
 | `WITH_LAYOUT`, `LAYOUT_BACKEND`, `TORCH_CPU` | Mô hình bố cục, xem mục 3 |
